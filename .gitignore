@@ -1,0 +1,16 @@
+*.s
+*.o
+*.d
+*.jcl
+.build-warnings
+compile_commands.json
+
+.env
+
+.mbt/
+contrib/
+dist/
+*.xmit
+
+.cache/
+.DS_Store
