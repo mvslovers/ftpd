@@ -368,24 +368,24 @@ terminate(ftpd_server_t *server)
         server->listen_sock = -1;
     }
 
-    ftpd_log_wto("FTPD095I terminate: waiting for socket thread");
+    ftpd_log_wto("FTPD095I terminate: sock_task=%08X listen=%d",
+                 (unsigned)server->sock_task, server->listen_sock);
 
     if (server->sock_task) {
         int i;
+        ftpd_log_wto("FTPD095I terminate: entering poll loop");
         for (i = 0; i < 50; i++) {
             if (server->sock_task->termecb & 0x40000000U)
                 break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
-        if (server->sock_task->termecb & 0x40000000U) {
-            ftpd_log_wto("FTPD095I terminate: socket thread ended");
-        } else {
-            ftpd_log_wto("FTPD095W socket thread stuck, termecb=%08X",
-                         server->sock_task->termecb);
-        }
+        ftpd_log_wto("FTPD095I terminate: poll done i=%d termecb=%08X",
+                     i, server->sock_task->termecb);
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
-        ftpd_log_wto("FTPD095I terminate: socket thread deleted");
+        ftpd_log_wto("FTPD095I terminate: cthread_delete done");
+    } else {
+        ftpd_log_wto("FTPD095I terminate: no sock_task");
     }
 
     ftpd_log_wto("FTPD095I terminate: stopping thread manager");
