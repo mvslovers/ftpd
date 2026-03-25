@@ -237,6 +237,9 @@ socket_thread(void *arg1, void *arg2)
     ecblist[0] = (unsigned *)((unsigned)&server->wakeup_ecb | 0x80000000U);
     ecblist[1] = NULL;
 
+    ftpd_log_wto("FTPD060I socket_thread: entering accept loop, "
+                 "ecb@%08X", (unsigned)&server->wakeup_ecb);
+
     while (server->flags & FTPD_ACTIVE) {
         FD_ZERO(&rfds);
         FD_SET(sock, &rfds);
@@ -251,8 +254,12 @@ socket_thread(void *arg1, void *arg2)
         ** on a false-positive FD_ISSET.  (HTTPD does the same check
         ** after selectex, before accept.)
         */
-        if (!(server->flags & FTPD_ACTIVE))
+        if (!(server->flags & FTPD_ACTIVE)) {
+            ftpd_log_wto("FTPD061I socket_thread: shutdown detected "
+                         "after selectex rc=%d ecb=%08X",
+                         rc, server->wakeup_ecb);
             break;
+        }
 
         if (rc < 0) {
             ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
@@ -264,6 +271,8 @@ socket_thread(void *arg1, void *arg2)
 
         if (!FD_ISSET(sock, &rfds))
             continue;
+
+        ftpd_log_wto("FTPD062I socket_thread: accepting connection");
 
         /* Accept new connection */
         len = sizeof(caddr);
@@ -301,6 +310,8 @@ socket_thread(void *arg1, void *arg2)
 
     } /* end selectex ecblist scope */
 
+    ftpd_log_wto("FTPD063I socket_thread: exited accept loop, "
+                 "closing socket");
     closesocket(sock);
     server->listen_sock = -1;
 
