@@ -54,6 +54,8 @@ main(int argc, char **argv)
     }
     __cibset(5);
 
+    ftpd_log_wto("FTPD000I FTPD Server %s starting", FTPD_VERSION);
+
     /* Initialize server (config, trace, socket thread, worker pool) */
     rc = initialize(&server, argc, argv);
     if (rc != 0) {
@@ -61,15 +63,14 @@ main(int argc, char **argv)
         return rc;
     }
 
-    ftpd_log_wto("FTPD001I FTPD %s started on port %d",
-                 FTPD_VERSION, server.config.port);
-
     /* Kick the thread manager so workers start accepting sessions.
     ** This must happen AFTER __cibset and FTPD_ACTIVE are set.
     */
     if (server.mgr) {
         cthread_post(&server.mgr->wait, CTHDMGR_POST_DATA);
     }
+
+    ftpd_log_wto("FTPD001I Server is READY");
 
     /* ----------------------------------------------------------------
     ** Main event loop
@@ -177,8 +178,6 @@ socket_thread(void *arg1, void *arg2)
     struct sockaddr_in caddr;
     int len;
     int sock;
-    fd_set rfds;
-    struct timeval tv;
     int rc;
     unsigned a1, a2, a3, a4;
     ftpd_session_t *sess;
@@ -264,55 +263,39 @@ socket_thread(void *arg1, void *arg2)
     }
 
     server->listen_sock = sock;
-    ftpd_log(LOG_INFO, "%s: listening on port %d", __func__,
-             server->config.port);
+    ftpd_log_wto("FTPD054I Listening for FTP connections on port %d",
+                 server->config.port);
 
-    /* Accept loop — use selectex() with wakeup_ecb so that
-    ** cmd_shutdown() can break the select immediately by posting
-    ** the ECB.  Plain select() on MVS DYN75 may not honour the
-    ** timeout on a listening socket with no pending connections.
+    /* Accept loop — non-blocking socket + ecb_timed_wait.
+    **
+    ** DYN75 selectex() does not reliably honour its timeout on a
+    ** listening socket (SVC 75 uses its own internal wait, not MVS
+    ** WAIT).  Closing the fd from another thread also fails to
+    ** interrupt selectex.
+    **
+    ** Instead: set the socket non-blocking, then poll with
+    ** ecb_timed_wait on wakeup_ecb (1 second).  accept() returns
+    ** EWOULDBLOCK when no connection is pending.  cmd_shutdown()
+    ** posts wakeup_ecb which breaks the timed_wait immediately.
     */
     {
-    unsigned *ecblist[2];
-    ecblist[0] = (unsigned *)((unsigned)&server->wakeup_ecb | 0x80000000U);
-    ecblist[1] = NULL;
+        int nb = 1;
+        ioctlsocket(sock, FIONBIO, &nb);
+    }
 
     while (server->flags & FTPD_ACTIVE) {
-        FD_ZERO(&rfds);
-        FD_SET(sock, &rfds);
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
+        /* Wait 1 second or until wakeup_ecb is posted */
+        server->wakeup_ecb = 0;
+        ecb_timed_wait(&server->wakeup_ecb, 100, 0);
 
-        rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, ecblist);
-
-        /* Check shutdown BEFORE touching the socket — selectex may
-        ** have returned because wakeup_ecb was posted, not because
-        ** of a real connection.  Without this guard accept() blocks
-        ** on a false-positive FD_ISSET.  (HTTPD does the same check
-        ** after selectex, before accept.)
-        */
         if (!(server->flags & FTPD_ACTIVE))
             break;
 
-        if (rc < 0) {
-            ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
-                     errno);
-            continue;
-        }
-        if (rc == 0)
-            continue;
-
-        if (!FD_ISSET(sock, &rfds))
-            continue;
-
-        /* Accept new connection */
+        /* Try accept — non-blocking, returns <0 if no connection */
         len = sizeof(caddr);
         rc = accept(sock, (struct sockaddr *)&caddr, &len);
-        if (rc < 0) {
-            ftpd_log(LOG_WARN, "%s: accept() failed, errno=%d", __func__,
-                     errno);
-            continue;
-        }
+        if (rc < 0)
+            continue;   /* EWOULDBLOCK — no pending connection */
 
         /* Check session limit */
         if (server->num_sessions >= server->config.max_sessions) {
@@ -338,8 +321,6 @@ socket_thread(void *arg1, void *arg2)
 
         cthread_queue_add(server->mgr, sess);
     }
-
-    } /* end selectex ecblist scope */
 
     closesocket(sock);
     server->listen_sock = -1;
@@ -370,36 +351,33 @@ terminate(ftpd_server_t *server)
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
-    /* Wait for socket thread to exit.
-    ** The socket thread checks FTPD_ACTIVE after every selectex()
-    ** (woken immediately by wakeup_ecb) and exits when cleared.
-    ** Use cthread_delete (like HTTPD) — it handles DETACH internally.
-    ** Do NOT call cthread_detach separately: MVS DETACH blocks until
-    ** the subtask ends.
+    /* Close listener socket to force selectex() to return.
+    ** ecb_post alone does NOT reliably wake DYN75 selectex —
+    ** SVC 75 uses its own internal wait, not MVS WAIT on the ECB.
+    ** Closing the fd makes selectex return with rc<0 or rc>0.
+    ** The FTPD_ACTIVE check after selectex catches the shutdown.
     */
-    if (server->sock_task) {
-        int i;
-        for (i = 0; i < 50; i++) {
-            if (server->sock_task->termecb & 0x40000000U)
-                break;
-            __asm__("STIMER WAIT,BINTVL==F'10'");
-        }
-        if (!(server->sock_task->termecb & 0x40000000U)) {
-            ftpd_log_wto("FTPD095W socket thread did not terminate "
-                         "in 5 seconds");
-        }
-        cthread_delete(&server->sock_task);
-        server->sock_task = NULL;
-    }
-
-    /* Close listener socket (fallback — socket thread normally closes
-    ** its own copy, but guard against the case where it didn't). */
     if (server->listen_sock >= 0) {
         closesocket(server->listen_sock);
         server->listen_sock = -1;
     }
 
-    /* Terminate thread manager (posts workers for shutdown) */
+    if (server->sock_task) {
+        int i;
+        for (i = 0; (i < 10) && (!(server->sock_task->termecb & 0x40000000U)); i++) {
+            if (i) {
+                ftpd_log_wto("FTPD095I Waiting for socket thread "
+                             "to terminate (%d)", i);
+            }
+            __asm__("STIMER WAIT,BINTVL==F'100'");
+        }
+        if (!(server->sock_task->termecb & 0x40000000U)) {
+            ftpd_log_wto("FTPD095W socket thread did not terminate");
+        }
+        cthread_delete(&server->sock_task);
+        server->sock_task = NULL;
+    }
+
     if (server->mgr) {
         cthread_manager_term(&server->mgr);
         server->mgr = NULL;

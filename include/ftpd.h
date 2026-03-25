@@ -30,7 +30,7 @@
 typedef unsigned char   UCHAR;
 
 /* --- Version --- */
-#define FTPD_VERSION        "1.0.0"
+#define FTPD_VERSION        "1.0.0-dev"
 #define FTPD_VERSION_STR    "MVS 3.8j FTPD Server " FTPD_VERSION
 
 /* --- Filesystem / filetype modes --- */

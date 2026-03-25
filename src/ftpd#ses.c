@@ -136,6 +136,12 @@ ftpd_session_reply_multi(ftpd_session_t *sess, int code,
 ** Read one command line from control connection.
 ** Reads byte-by-byte, converts ASCII -> EBCDIC.
 ** Returns command length, or -1 on error/disconnect.
+**
+** Uses short select() timeout (5 seconds) and checks FTPD_QUIESCE
+** on every timeout — matching HTTPD's ftpcgets.c pattern.  The real
+** idle timeout is measured cumulatively across multiple 5s rounds.
+** Without this, a 300s select() blocks shutdown for up to 5 minutes
+** because cthread_manager_term() waits for all workers to exit.
 ** ----------------------------------------------------------------- */
 int
 ftpd_session_getline(ftpd_session_t *sess)
@@ -144,24 +150,40 @@ ftpd_session_getline(ftpd_session_t *sess)
     int rc;
     fd_set rfds;
     struct timeval tv;
+    time_t start;
+    time_t now;
 
     sess->cmdlen = 0;
     memset(sess->cmd, 0, sizeof(sess->cmd));
 
+    time(&start);
+
     while (sess->cmdlen < FTPD_MAX_CMD_LEN - 1) {
-        /* Wait for data with timeout */
+        /* Short select timeout — poll every 5 seconds so we can
+        ** check the shutdown flag.  The real idle timeout is
+        ** measured cumulatively via start/now.
+        */
         FD_ZERO(&rfds);
         FD_SET(sess->ctrl_sock, &rfds);
-        tv.tv_sec = sess->server->config.idle_timeout;
+        tv.tv_sec = 5;
         tv.tv_usec = 0;
 
         rc = select(sess->ctrl_sock + 1, &rfds, NULL, NULL, &tv);
-        if (rc <= 0) {
-            if (rc == 0) {
+        if (rc < 0)
+            return -1;
+
+        if (rc == 0) {
+            /* select() timed out — check shutdown and idle */
+            if (sess->server->flags & FTPD_QUIESCE)
+                return -1;
+
+            time(&now);
+            if ((now - start) >= sess->server->config.idle_timeout) {
                 ftpd_session_reply(sess, FTP_421,
                                    "Idle timeout, closing connection");
+                return -1;
             }
-            return -1;
+            continue;
         }
 
         rc = recv(sess->ctrl_sock, &c, 1, 0);
