@@ -210,11 +210,51 @@ socket_thread(void *arg1, void *arg2)
         }
     }
 
+    /* Close any stale socket left over from a previous instance that
+    ** did not shut down cleanly.  On MVS the socket fd table is
+    ** per-address-space, so a new STC inherits fds from a prior run
+    ** of the same jobname.  Iterate all fds, check with getsockname
+    ** whether any is bound to our port, and close it.  This avoids
+    ** EADDRINUSE on bind() (same technique as HTTPD).
+    */
+    {
+        int si;
+        int salen;
+        struct sockaddr sa;
+        struct sockaddr_in *sin;
+        for (si = 1; si < FD_SETSIZE; si++) {
+            salen = sizeof(sa);
+            if (getsockname(si, &sa, &salen) == 0) {
+                sin = (struct sockaddr_in *)&sa;
+                if (sin->sin_port == htons(server->config.port)) {
+                    ftpd_log_wto("FTPD053I Closing stale socket %d "
+                                 "on port %d", si, server->config.port);
+                    closesocket(si);
+                    __asm__("STIMER WAIT,BINTVL==F'200'");
+                    break;
+                }
+            }
+        }
+    }
+
     if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+        int err = errno;
         ftpd_log_wto("FTPD051E bind() failed on port %d, errno=%d",
-                     server->config.port, errno);
-        closesocket(sock);
-        return 8;
+                     server->config.port, err);
+        if (err == EADDRINUSE) {
+            ftpd_log_wto("FTPD051I EADDRINUSE, retrying in 10s");
+            __asm__("STIMER WAIT,BINTVL==F'1000'");
+            if (bind(sock, (struct sockaddr *)&saddr,
+                     sizeof(saddr)) < 0) {
+                ftpd_log_wto("FTPD051E bind() retry failed, errno=%d",
+                             errno);
+                closesocket(sock);
+                return 8;
+            }
+        } else {
+            closesocket(sock);
+            return 8;
+        }
     }
 
     if (listen(sock, 10) < 0) {
@@ -227,18 +267,35 @@ socket_thread(void *arg1, void *arg2)
     ftpd_log(LOG_INFO, "%s: listening on port %d", __func__,
              server->config.port);
 
-    /* Accept loop */
+    /* Accept loop — use selectex() with wakeup_ecb so that
+    ** cmd_shutdown() can break the select immediately by posting
+    ** the ECB.  Plain select() on MVS DYN75 may not honour the
+    ** timeout on a listening socket with no pending connections.
+    */
+    {
+    unsigned *ecblist[2];
+    ecblist[0] = (unsigned *)((unsigned)&server->wakeup_ecb | 0x80000000U);
+    ecblist[1] = NULL;
+
     while (server->flags & FTPD_ACTIVE) {
         FD_ZERO(&rfds);
         FD_SET(sock, &rfds);
         tv.tv_sec = 1;
         tv.tv_usec = 0;
 
-        rc = select(sock + 1, &rfds, NULL, NULL, &tv);
+        rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, ecblist);
+
+        /* Check shutdown BEFORE touching the socket — selectex may
+        ** have returned because wakeup_ecb was posted, not because
+        ** of a real connection.  Without this guard accept() blocks
+        ** on a false-positive FD_ISSET.  (HTTPD does the same check
+        ** after selectex, before accept.)
+        */
+        if (!(server->flags & FTPD_ACTIVE))
+            break;
+
         if (rc < 0) {
-            if (!(server->flags & FTPD_ACTIVE))
-                break;
-            ftpd_log(LOG_ERROR, "%s: select() failed, errno=%d", __func__,
+            ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
                      errno);
             continue;
         }
@@ -282,6 +339,8 @@ socket_thread(void *arg1, void *arg2)
         cthread_queue_add(server->mgr, sess);
     }
 
+    } /* end selectex ecblist scope */
+
     closesocket(sock);
     server->listen_sock = -1;
 
@@ -289,31 +348,34 @@ socket_thread(void *arg1, void *arg2)
 }
 
 /* ====================================================================
-** Shutdown -- close listener, terminate threads, cleanup
+** Shutdown -- terminate threads, close listener, cleanup
 **
-** Resource cleanup follows UFSD order:
-**   1. Close listener socket
-**   2. Terminate thread manager (waits for workers)
-**   3. Free trace buffer
+** Shutdown sequence (modelled after HTTPD terminate):
+**   1. Set QUIESCE flag (FTPD_ACTIVE already cleared by cmd_shutdown)
+**   2. Wait for socket thread to notice FTPD_ACTIVE==0 and exit
+**   3. Close listener socket (fallback if socket thread didn't)
+**   4. Terminate thread manager (posts workers for shutdown)
+**   5. Free trace buffer
+**
+** IMPORTANT: Do NOT closesocket the listener before the socket
+** thread exits.  On MVS 3.8j closing a socket while another TCB
+** has it in select() leaves the TCP/IP control block in an
+** undefined state and can hang select() indefinitely.  The socket
+** thread checks FTPD_ACTIVE on every select() timeout (1 s) and
+** closes its own socket on exit.
 ** ================================================================= */
 static void
 terminate(ftpd_server_t *server)
 {
-    ftpd_log(LOG_INFO, "%s: shutting down...", __func__);
-
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
-    /* Close listener socket to unblock select() in socket thread */
-    if (server->listen_sock >= 0) {
-        closesocket(server->listen_sock);
-        server->listen_sock = -1;
-        ftpd_log(LOG_INFO, "%s: listener closed", __func__);
-    }
-
-    /* Wait for socket thread to exit, then DETACH + free.
-    ** Without this, MVS finds an un-DETACHed subtask TCB on the
-    ** parent's subtask queue at task termination and ABENDs S0A3.
+    /* Wait for socket thread to exit.
+    ** The socket thread checks FTPD_ACTIVE after every selectex()
+    ** (woken immediately by wakeup_ecb) and exits when cleared.
+    ** Use cthread_delete (like HTTPD) — it handles DETACH internally.
+    ** Do NOT call cthread_detach separately: MVS DETACH blocks until
+    ** the subtask ends.
     */
     if (server->sock_task) {
         int i;
@@ -322,20 +384,27 @@ terminate(ftpd_server_t *server)
                 break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
-        cthread_detach(server->sock_task);
+        if (!(server->sock_task->termecb & 0x40000000U)) {
+            ftpd_log_wto("FTPD095W socket thread did not terminate "
+                         "in 5 seconds");
+        }
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
-        ftpd_log(LOG_INFO, "%s: socket thread terminated", __func__);
     }
 
-    /* Terminate thread manager (waits for workers to finish) */
+    /* Close listener socket (fallback — socket thread normally closes
+    ** its own copy, but guard against the case where it didn't). */
+    if (server->listen_sock >= 0) {
+        closesocket(server->listen_sock);
+        server->listen_sock = -1;
+    }
+
+    /* Terminate thread manager (posts workers for shutdown) */
     if (server->mgr) {
         cthread_manager_term(&server->mgr);
         server->mgr = NULL;
-        ftpd_log(LOG_INFO, "%s: thread manager terminated", __func__);
     }
 
     /* Free trace buffer */
     ftpd_trace_free();
-    ftpd_log(LOG_INFO, "%s: trace buffer freed", __func__);
 }
