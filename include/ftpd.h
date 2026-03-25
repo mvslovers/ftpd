@@ -132,6 +132,7 @@ struct ftpd_server {
     ftpd_config_t   config;         /* server configuration          */
     int             listen_sock;    /* listening socket fd            */
     CTHDMGR         *mgr;          /* thread manager                */
+    unsigned        wakeup_ecb;     /* ECB posted by socket thread   */
     int             num_sessions;   /* active session count           */
     long            total_sessions; /* total sessions since start     */
     long            total_bytes_in; /* total bytes received           */

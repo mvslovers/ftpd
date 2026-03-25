@@ -68,18 +68,37 @@ main(int argc, char **argv)
     ** Main event loop (UFSD pattern)
     **
     ** 1. Drain ALL pending CIBs unconditionally
-    ** 2. STIMER WAIT (console ECB + periodic wakeup)
+    ** 2. WAIT on ECBLIST: console ECB + wakeup ECB
+    **
+    ** The WAIT on the console ECB is critical — STIMER WAIT causes
+    ** IEE342I TASK BUSY because MVS cannot deliver CIBs to a task
+    ** that is in a timed wait.  WAIT on com->comecbpt tells MVS
+    ** the task is ready to accept MODIFY commands.
     ** ---------------------------------------------------------------- */
-    while (server.flags & FTPD_ACTIVE) {
+    {
+        unsigned *ecblist[3];
 
-        /* Drain all pending CIBs unconditionally */
-        while ((cib = __cibget()) != NULL) {
-            ftpd_process_cib(&server, cib);
-            __cibdel(cib);
+        while (server.flags & FTPD_ACTIVE) {
+
+            /* Drain all pending CIBs unconditionally */
+            while ((cib = __cibget()) != NULL) {
+                ftpd_process_cib(&server, cib);
+                __cibdel(cib);
+            }
+
+            /* WAIT on console ECB + wakeup ECB */
+            if (com->comecbpt) {
+                *(com->comecbpt) = 0;       /* reset console ECB */
+                server.wakeup_ecb = 0;      /* reset wakeup ECB  */
+                ecblist[0] = (unsigned *)com->comecbpt;
+                ecblist[1] = (unsigned *)
+                    ((unsigned)&server.wakeup_ecb | 0x80000000U);
+                __asm__("WAIT 1,ECBLIST=(%0)" : : "r"(ecblist));
+            } else {
+                /* Fallback if no COM ECB (should not happen for STCs) */
+                __asm__("STIMER WAIT,BINTVL==F'100'   1 second");
+            }
         }
-
-        /* Wait for next console event (1 second timeout) */
-        __asm__("STIMER WAIT,BINTVL==F'100'   1 second");
     }
 
     terminate(&server);
@@ -146,6 +165,17 @@ initialize(ftpd_server_t *server, int argc, char **argv)
 }
 
 /* ====================================================================
+** Signal main thread to shut down.
+** Called from the socket thread on fatal errors.
+** ================================================================= */
+static void
+signal_shutdown(ftpd_server_t *server)
+{
+    server->flags &= ~FTPD_ACTIVE;
+    server->wakeup_ecb = 0x40000000U;  /* post the ECB */
+}
+
+/* ====================================================================
 ** Socket thread -- listener, accept loop
 ** ================================================================= */
 static int
@@ -168,7 +198,7 @@ socket_thread(void *arg1, void *arg2)
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         ftpd_log(LOG_ERROR, "%s: socket() failed, errno=%d", __func__, errno);
-        server->flags &= ~FTPD_ACTIVE;
+        signal_shutdown(server);
         return 8;
     }
 
@@ -190,14 +220,14 @@ socket_thread(void *arg1, void *arg2)
         ftpd_log(LOG_ERROR, "%s: bind() failed on port %d, errno=%d",
                  __func__, server->config.port, errno);
         closesocket(sock);
-        server->flags &= ~FTPD_ACTIVE;
+        signal_shutdown(server);
         return 8;
     }
 
     if (listen(sock, 10) < 0) {
         ftpd_log(LOG_ERROR, "%s: listen() failed, errno=%d", __func__, errno);
         closesocket(sock);
-        server->flags &= ~FTPD_ACTIVE;
+        signal_shutdown(server);
         return 8;
     }
 
