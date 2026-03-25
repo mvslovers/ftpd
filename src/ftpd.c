@@ -133,13 +133,19 @@ initialize(ftpd_server_t *server, int argc, char **argv)
     int i;
     int rc;
 
-    /* APF authorize STEPLIB */
-    rc = clib_apf_setup(argv[0]);
-    if (rc) {
-        ftpd_log_wto("FTPD003W APF setup failed RC=%d", rc);
-    } else {
-        ftpd_log_wto("FTPD000I FTPD was APF authorized via SVC 244");
-        ftpd_log_wto("FTPD003I STEPLIB is now APF authorized");
+    /* APF authorize task + STEPLIB */
+    {
+        CLIBCRT *crt = __crtget();
+        rc = clib_apf_setup(argv[0]);
+        if (rc) {
+            ftpd_log_wto("FTPD003W APF setup failed RC=%d", rc);
+        } else {
+            if (crt->crtauth & CRTAUTH_ON)
+                ftpd_log_wto("FTPD000I FTPD was APF authorized "
+                             "via SVC 244");
+            if (crt->crtauth & CRTAUTH_STEPLIB)
+                ftpd_log_wto("FTPD003I STEPLIB is now APF authorized");
+        }
     }
 
     /* Parse PARM for config override: CONFIG=dsname */
