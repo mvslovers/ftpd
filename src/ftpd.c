@@ -370,13 +370,8 @@ terminate(ftpd_server_t *server)
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
-    /* Wait for socket thread to exit.
-    ** The socket thread checks FTPD_ACTIVE after every selectex()
-    ** (woken immediately by wakeup_ecb) and exits when cleared.
-    ** Use cthread_delete (like HTTPD) — it handles DETACH internally.
-    ** Do NOT call cthread_detach separately: MVS DETACH blocks until
-    ** the subtask ends.
-    */
+    ftpd_log_wto("FTPD095I terminate: waiting for socket thread");
+
     if (server->sock_task) {
         int i;
         for (i = 0; i < 50; i++) {
@@ -384,25 +379,27 @@ terminate(ftpd_server_t *server)
                 break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
-        if (!(server->sock_task->termecb & 0x40000000U)) {
-            ftpd_log_wto("FTPD095W socket thread did not terminate "
-                         "in 5 seconds");
+        if (server->sock_task->termecb & 0x40000000U) {
+            ftpd_log_wto("FTPD095I terminate: socket thread ended");
+        } else {
+            ftpd_log_wto("FTPD095W socket thread stuck, termecb=%08X",
+                         server->sock_task->termecb);
         }
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
+        ftpd_log_wto("FTPD095I terminate: socket thread deleted");
     }
 
-    /* Close listener socket (fallback — socket thread normally closes
-    ** its own copy, but guard against the case where it didn't). */
     if (server->listen_sock >= 0) {
         closesocket(server->listen_sock);
         server->listen_sock = -1;
     }
 
-    /* Terminate thread manager (posts workers for shutdown) */
+    ftpd_log_wto("FTPD095I terminate: stopping thread manager");
     if (server->mgr) {
         cthread_manager_term(&server->mgr);
         server->mgr = NULL;
+        ftpd_log_wto("FTPD095I terminate: thread manager stopped");
     }
 
     /* Free trace buffer */
