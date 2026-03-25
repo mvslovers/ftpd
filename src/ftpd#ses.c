@@ -206,8 +206,13 @@ ftpd_session_run(void *udata, CTHDWORK *work)
     char *p;
     int i;
 
+    ftpd_log_wto("FTPD074I worker: entering wait loop");
+
     for (;;) {
         rc = cthread_worker_wait(work, &data);
+
+        ftpd_log_wto("FTPD075I worker: woke up rc=%d data=%08X",
+                     rc, (unsigned)data);
 
         if (rc == CTHDWORK_POST_SHUTDOWN)
             break;
@@ -226,8 +231,8 @@ ftpd_session_run(void *udata, CTHDWORK *work)
         server->num_sessions++;
         server->total_sessions++;
 
-        ftpd_log(LOG_INFO, "%s: session started, socket %d", __func__,
-                 sess->ctrl_sock);
+        ftpd_log_wto("FTPD076I worker: session sock=%d, sending 220",
+                     sess->ctrl_sock);
 
         /* Send 220 greeting */
         ftpd_session_reply(sess, FTP_220, "%s", server->config.banner);

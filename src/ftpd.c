@@ -306,8 +306,10 @@ socket_thread(void *arg1, void *arg2)
             continue;
 
         /* Accept new connection */
+        ftpd_log_wto("FTPD070I accept: selectex returned rc=%d", rc);
         len = sizeof(caddr);
         rc = accept(sock, (struct sockaddr *)&caddr, &len);
+        ftpd_log_wto("FTPD071I accept: returned sock=%d", rc);
         if (rc < 0) {
             ftpd_log(LOG_WARN, "%s: accept() failed, errno=%d", __func__,
                      errno);
@@ -329,14 +331,12 @@ socket_thread(void *arg1, void *arg2)
             continue;
         }
 
-        ftpd_log(LOG_INFO, "%s: connection from %u.%u.%u.%u:%d", __func__,
-                 (ntohl(caddr.sin_addr.s_addr) >> 24) & 0xFF,
-                 (ntohl(caddr.sin_addr.s_addr) >> 16) & 0xFF,
-                 (ntohl(caddr.sin_addr.s_addr) >> 8) & 0xFF,
-                 ntohl(caddr.sin_addr.s_addr) & 0xFF,
-                 ntohs(caddr.sin_port));
-
+        ftpd_log_wto("FTPD072I queuing session sock=%d to mgr "
+                     "(state=%d workers=%d)",
+                     sess->ctrl_sock, server->mgr->state,
+                     arraycount(&server->mgr->worker));
         cthread_queue_add(server->mgr, sess);
+        ftpd_log_wto("FTPD073I queue_add done");
     }
 
     } /* end selectex ecblist scope */
