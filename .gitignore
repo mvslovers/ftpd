@@ -2,6 +2,7 @@
 *.o
 *.d
 *.jcl
+!samplib/*.jcl
 .build-warnings
 compile_commands.json
 
