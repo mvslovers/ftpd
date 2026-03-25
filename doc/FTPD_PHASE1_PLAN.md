@@ -32,23 +32,23 @@ Initialize the repository structure, build configuration, and basic infrastructu
 | `.env.example` | Example MVS connection config |
 | `.gitignore` | Ignore `.env`, `asm/*.s`, `contrib/`, `dist/`, `.mbt/` |
 | `.gitmodules` | mbt submodule reference |
-| `src/ftpdcfg.c` | Configuration file parser |
-| `src/ftpdlog.c` | Logging module (WTO + STDOUT + trace ring buffer) |
-| `include/ftpd.h` | Main header: shared constants, structures, forward declarations |
-| `include/ftpdcfg.h` | Config structures and function prototypes |
-| `include/ftpdlog.h` | Logging macros and prototypes |
+| `src/ftpd#cfg.c` | Configuration file parser |
+| `src/ftpd#log.c` | Logging module (WTO + STDOUT + trace ring buffer) |
+| `include/ftpd.h` | Main header: shared constants, structures, server state |
+| `include/ftpd#cfg.h` | Config structures and function prototypes |
+| `include/ftpd#log.h` | Logging levels and prototypes |
 | `jcl/FTPD.jcl` | STC procedure |
 
 ### Implementation Details
 
-**ftpdcfg.c — Configuration Parser:**
+**ftpd#cfg.c — Configuration Parser:**
 - Read `SYS1.PARMLIB(FTPDPM00)` (or PARM-specified dataset)
 - Parse key=value format, `#` comments, DASD volume lines
 - Populate `ftpd_config_t` structure (see concept §3.5)
 - Default values for all parameters
 - Validation: port range, IP format, PASV port range
 
-**ftpdlog.c — Logging:**
+**ftpd#log.c — Logging:**
 - `ftpd_log_wto(msg)` — Write to operator (WTO macro) for important events
 - `ftpd_log(level, fmt, ...)` — Write to STDOUT with timestamp and level
 - Trace ring buffer: fixed-size circular buffer in memory
@@ -58,7 +58,7 @@ Initialize the repository structure, build configuration, and basic infrastructu
 
 **ftpd.h — Main Header:**
 - `ftpd_config_t` structure
-- `ftpd_session_t` structure (forward declare, full definition in ftpdses.h)
+- `ftpd_session_t` structure (forward declare in ftpd.h, full definition in ftpd#ses.h)
 - Constants: `FT_SEQ`, `FT_JES`, `FS_MVS`, `FS_UFS`
 - Session states: `SESS_GREETING`, `SESS_AUTH_USER`, etc.
 - FTP reply code constants
@@ -69,12 +69,12 @@ Initialize the repository structure, build configuration, and basic infrastructu
 - crent370 must be resolvable via `make bootstrap`
 
 ### Acceptance Criteria
-- [ ] `make doctor` passes — c2asm370 found, MVS reachable
-- [ ] `make bootstrap` completes — crent370 + ufsd resolved, datasets allocated on MVS
-- [ ] `make build` compiles `ftpdcfg.c` and `ftpdlog.c` without errors
-- [ ] Config parser correctly reads the example FTPDPM00 config (unit test or manual verification)
-- [ ] Logging produces WTO messages and STDOUT output
-- [ ] Trace ring buffer can be enabled, written to, and dumped
+- [x] `make doctor` passes — c2asm370 found, MVS reachable
+- [x] `make bootstrap` completes — crent370 + ufsd resolved, datasets allocated on MVS
+- [x] `make build` compiles `ftpd#cfg.c` and `ftpd#log.c` without errors
+- [x] Config parser correctly reads the example FTPDPM00 config (unit test or manual verification)
+- [x] Logging produces WTO messages and STDOUT output
+- [x] Trace ring buffer can be enabled, written to, and dumped
 
 ---
 
@@ -87,12 +87,15 @@ Main listener loop, session lifecycle management, data connection handling, and 
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd.c` | Main entry: socket listener, accept loop, console command handler, shutdown |
-| `src/ftpdses.c` | Session state machine, thread lifecycle via thdmgr |
-| `src/ftpddata.c` | Data connection management (PORT/PASV) |
-| `src/ftpdxlat.c` | EBCDIC ↔ ASCII translation tables (IBM-1047) |
-| `include/ftpdses.h` | Session state definitions, session structure |
-| `include/ftpdxlat.h` | Translation table declarations |
+| `src/ftpd.c` | Main entry: socket listener, event loop, shutdown |
+| `src/ftpd#con.c` | Console command handler (CIB processing, MODIFY dispatch) |
+| `src/ftpd#ses.c` | Session state machine, thread lifecycle via thdmgr |
+| `src/ftpd#dat.c` | Data connection management (PORT/PASV) |
+| `src/ftpd#xlt.c` | EBCDIC ↔ ASCII translation tables (IBM-1047) |
+| `include/ftpd#ses.h` | Session state definitions, session structure |
+| `include/ftpd#cmd.h` | Command dispatch prototype |
+| `include/ftpd#dat.h` | Data connection prototypes |
+| `include/ftpd#xlt.h` | Translation table declarations |
 
 ### Implementation Details
 
@@ -103,28 +106,29 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - Create listening socket (crent370 socket API)
 - Bind to configured address:port
 - Accept loop: for each connection, spawn session thread via thdmgr
-- Console command handler (MODIFY commands via crent370 COMM interface):
-  - `D SESSIONS` — list active sessions (WTO response)
-  - `D STATS` — show transfer statistics (WTO response)
-  - `D VERSION` — show version string (WTO response)
-  - `D CONFIG` — show active config (WTO response)
-  - `KILL sessid` — force-close a session
+- Console command handling delegated to `ftpd#con.c` (UFSD pattern):
+  - `STATS` — display server statistics (WTO response)
+  - `SESSIONS` — display active session count (WTO response)
+  - `CONFIG` — display active config (WTO response)
+  - `VERSION` — display version string (WTO response)
   - `TRACE ON|OFF|DUMP` — control trace ring buffer
-- Graceful shutdown on STOP command: close listener, wait for sessions, exit
+  - `HELP` — list available commands
+  - `SHUTDOWN` — graceful shutdown (also `/P FTPD`)
+- Flag-based shutdown: clear FTPD_ACTIVE, set FTPD_QUIESCE
 
-**ftpdses.c — Session Handler:**
+**ftpd#ses.c — Session Handler:**
 - `ftpd_session_new(sock)` — Allocate and initialize session context
 - `ftpd_session_run(sess)` — Main session loop (thread entry point):
   1. Send 220 greeting
   2. Read command line from control socket
   3. Translate ASCII → EBCDIC
-  4. Parse and dispatch (calls into ftpdcmd.c — Step 1.3)
+  4. Parse and dispatch (calls into ftpd#cmd.c — Step 1.3)
   5. Loop until QUIT or error
 - `ftpd_session_free(sess)` — Cleanup: close sockets, free memory
 - `ftpd_session_reply(sess, code, msg)` — Send FTP reply (EBCDIC → ASCII)
 - Track active sessions in a linked list or array for console display
 
-**ftpddata.c — Data Connections:**
+**ftpd#dat.c — Data Connections:**
 - `ftpd_data_port(sess, h1,h2,h3,h4,p1,p2)` — Parse PORT command, store target
 - `ftpd_data_pasv(sess)` — Open passive listener on port from configured range, return 227 response
 - `ftpd_data_open(sess)` — Establish data connection (connect for active, accept for passive)
@@ -132,7 +136,7 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - `ftpd_data_send(sess, buf, len)` — Write to data connection
 - `ftpd_data_recv(sess, buf, len)` — Read from data connection
 
-**ftpdxlat.c — Translation:**
+**ftpd#xlt.c — Translation:**
 - `ascii_to_ebcdic[256]` — Static lookup table (IBM-1047 ↔ ISO-8859-1)
 - `ebcdic_to_ascii[256]` — Static lookup table
 - `ftpd_xlat_a2e(buf, len)` — In-place ASCII → EBCDIC
@@ -148,7 +152,7 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - [ ] Server shuts down cleanly on `/P FTPD`
 - [ ] FTP client can connect and receives `220` greeting
 - [ ] Multiple concurrent connections are handled (each in own thdmgr thread)
-- [ ] `/F FTPD,D VERSION` responds with version string on console
+- [ ] `/F FTPD,VERSION` responds with version string on console
 - [ ] `/F FTPD,TRACE ON` / `TRACE OFF` / `TRACE DUMP` work
 - [ ] PASV mode: client can establish passive data connection
 - [ ] PORT mode: server can connect back to client for data transfer
@@ -165,12 +169,12 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 
 | File | Purpose |
 |------|---------|
-| `src/ftpdcmd.c` | Command parser: read line, tokenize, dispatch to handler |
-| `src/ftpdauth.c` | Authentication: USER/PASS via crent370 racf module |
+| `src/ftpd#cmd.c` | Command parser: read line, tokenize, dispatch to handler |
+| `src/ftpd#aut.c` | Authentication: USER/PASS via crent370 racf module |
 
 ### Implementation Details
 
-**ftpdcmd.c — Command Parser & Dispatcher:**
+**ftpd#cmd.c — Command Parser & Dispatcher:**
 - `ftpd_cmd_parse(line, cmd, arg)` — Split input line into command + argument
 - Command dispatch table: array of `{ "XXXX", handler_func }` entries
 - Case-insensitive command matching (FTP commands are case-insensitive)
@@ -191,7 +195,7 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 - `PORT` → delegate to `ftpd_data_port()`
 - `PASV` → delegate to `ftpd_data_pasv()`
 
-**ftpdauth.c — Authentication:**
+**ftpd#aut.c — Authentication:**
 - `USER name` → Save username in session, respond `331 User name okay, need password`
 - `PASS password` → Verify via crent370 `racf/` module (RAKF SVC 244)
   - Check FACILITY class resource `FTPAUTH`
@@ -227,13 +231,12 @@ VTOC scanning, dataset catalog provider, dataset I/O (read/write), and LIST form
 
 | File | Purpose |
 |------|---------|
-| `src/ftpdmvs.c` | MVS dataset operations: catalog provider, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE |
-| `src/ftpdlist.c` | LIST/NLST formatting for MVS datasets and PDS members |
-| `include/ftpdmvs.h` | Catalog provider interface, dataset info structures |
+| `src/ftpd#mvs.c` | MVS dataset operations: catalog provider, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE |
+| `src/ftpd#lst.c` | LIST/NLST formatting for MVS datasets and PDS members |
 
 ### Implementation Details
 
-**Catalog Provider Interface (ftpdmvs.h):**
+**Catalog Provider Interface (ftpd.h):**
 ```c
 /* Dataset info returned by catalog operations */
 typedef struct ftpd_dsinfo {
@@ -258,7 +261,7 @@ typedef struct ftpd_catprov {
 } ftpd_catprov_t;
 ```
 
-**ftpdmvs.c — Dataset Operations:**
+**ftpd#mvs.c — Dataset Operations:**
 
 *Catalog provider (VTOC scan implementation):*
 - `ftpd_vtoc_list(pattern, results, max)` — Scan VTOC on all configured volumes, filter by pattern. Supports `*` (any chars within qualifier) and `%` (single char).
@@ -286,7 +289,7 @@ typedef struct ftpd_catprov {
 - Use crent370's `os/` module (dynamic allocation, OPEN/CLOSE) and `emfile/` where available
 - Reference: check existing FTPD source at `../FTPD/source/` for VTOC scanning and I/O patterns
 
-*FTP command handlers in ftpdmvs.c:*
+*FTP command handlers in ftpd#mvs.c:*
 - `CWD dsname` → Set `sess->mvs_cwd` prefix (no I/O)
 - `CDUP` → Remove last qualifier from prefix
 - `PWD` → Return `257 "'prefix'" is working directory`
@@ -298,7 +301,7 @@ typedef struct ftpd_catprov {
 - `SIZE dsname` → Return dataset size (from OBTAIN)
 - `APPE dsname` → Append to sequential dataset
 
-**ftpdlist.c — LIST Formatting:**
+**ftpd#lst.c — LIST Formatting:**
 
 *MVS dataset list (z/OS compatible):*
 ```
@@ -360,11 +363,11 @@ SITE command dispatcher and dataset allocation parameter handling. Also 502 resp
 
 | File | Purpose |
 |------|---------|
-| `src/ftpdsite.c` | SITE command parser and handlers |
+| `src/ftpd#sit.c` | SITE command parser and handlers |
 
 ### Implementation Details
 
-**ftpdsite.c — SITE Commands:**
+**ftpd#sit.c — SITE Commands:**
 
 *Parser:*
 - `ftpd_site_dispatch(sess, args)` — Parse SITE subcommand, dispatch to handler

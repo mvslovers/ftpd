@@ -26,25 +26,28 @@ z/OS-compatible SITE commands and dataset name handling.
 - **Dataset catalog:** Abstract provider interface; initial impl = per-session filtered VTOC scan
 - **Auth:** RAKF via crent370 `racf` module (FACILITY class FTPAUTH)
 - **Config:** Key=value file in `SYS1.PARMLIB(FTPDPM00)`
-- **Console:** `/S FTPD`, `/P FTPD`, `/F FTPD,D SESSIONS|STATS|VERSION|CONFIG`, `/F FTPD,TRACE ON|OFF|DUMP`
+- **Console:** `/S FTPD`, `/P FTPD`, `/F FTPD,STATS|SESSIONS|CONFIG|VERSION|HELP|SHUTDOWN`, `/F FTPD,TRACE ON|OFF|DUMP`
 
 ### Source Module Map
 
+Naming convention follows UFSD: `ftpd#xxx.c` / `ftpd#xxx.h` with 3-letter domain codes.
+
 | File | Role |
 |------|------|
-| `ftpd.c` | Main: listener, console commands, shutdown |
-| `ftpdses.c` | Session state machine + thread lifecycle |
-| `ftpdcmd.c` | Command parser & dispatcher |
-| `ftpdmvs.c` | MVS dataset ops (VTOC, OBTAIN, dynalloc, OPEN/CLOSE) |
-| `ftpdufs.c` | UFS ops via UFSD client library |
-| `ftpdjes.c` | JES interface (submit, list, retrieve spool) |
-| `ftpddata.c` | Data connection management (PORT/PASV) |
-| `ftpdxlat.c` | EBCDIC ↔ ASCII translation tables |
-| `ftpdauth.c` | Authentication (RAKF via crent370 racf) |
-| `ftpdsite.c` | SITE command processing |
-| `ftpdlist.c` | LIST/NLST formatting (MVS + UFS + JES) |
-| `ftpdlog.c` | Logging (WTO + STDOUT) + trace ring buffer |
-| `ftpdcfg.c` | Configuration file parsing |
+| `ftpd.c` | Main: listener, event loop, shutdown |
+| `ftpd#con.c` | Console command handler (CIB processing, MODIFY dispatch) |
+| `ftpd#ses.c` | Session state machine + thread lifecycle |
+| `ftpd#cmd.c` | FTP command parser & dispatcher |
+| `ftpd#mvs.c` | MVS dataset ops (VTOC, OBTAIN, dynalloc, OPEN/CLOSE) |
+| `ftpd#ufs.c` | UFS ops via UFSD client library |
+| `ftpd#jes.c` | JES interface (submit, list, retrieve spool) |
+| `ftpd#dat.c` | Data connection management (PORT/PASV) |
+| `ftpd#xlt.c` | EBCDIC ↔ ASCII translation tables |
+| `ftpd#aut.c` | Authentication (RAKF via crent370 racf) |
+| `ftpd#sit.c` | SITE command processing |
+| `ftpd#lst.c` | LIST/NLST formatting (MVS + UFS + JES) |
+| `ftpd#log.c` | Logging (WTO + STDOUT) + trace ring buffer |
+| `ftpd#cfg.c` | Configuration file parsing |
 
 ### Implementation Phases
 

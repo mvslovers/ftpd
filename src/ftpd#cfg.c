@@ -4,12 +4,19 @@
 ** Reads key=value configuration from SYS1.PARMLIB(FTPDPM00) or a
 ** PARM-specified dataset. Supports comments (#) and DASD volume lines.
 */
-#include "ftpd.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#include "ftpd#cfg.h"
+#include "ftpd#log.h"
 
 /* --------------------------------------------------------------------
 ** Default configuration values
 ** ----------------------------------------------------------------- */
-void ftpdcfg_defaults(ftpd_config_t *cfg)
+void
+ftpdcfg_defaults(ftpd_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
 
@@ -47,7 +54,8 @@ void ftpdcfg_defaults(ftpd_config_t *cfg)
 ** Trim leading and trailing whitespace in place.
 ** Returns pointer to the trimmed string (within the original buffer).
 ** ----------------------------------------------------------------- */
-static char *trim(char *s)
+static char *
+trim(char *s)
 {
     char *end;
 
@@ -68,20 +76,20 @@ static char *trim(char *s)
 ** Try to parse a DASD volume line: "VOLSER,UNIT  comment"
 ** Returns 1 if parsed successfully, 0 if not a DASD line.
 ** ----------------------------------------------------------------- */
-static int parse_dasd_line(ftpd_config_t *cfg, const char *line)
+static int
+parse_dasd_line(ftpd_config_t *cfg, const char *line)
 {
     char volser[7];
     char unit[5];
     const char *p;
     int i;
 
-    /* DASD lines start with a letter (volume serial) and contain a comma */
-    if (!((line[0] >= 'A' && line[0] <= 'Z') ||
-          (line[0] >= 'a' && line[0] <= 'z')))
+    /* DASD lines start with a letter and contain a comma */
+    if (!isalpha((unsigned char)line[0]))
         return 0;
 
     p = strchr(line, ',');
-    if (p == NULL)
+    if (!p)
         return 0;
 
     /* Extract volser (before comma) */
@@ -104,7 +112,8 @@ static int parse_dasd_line(ftpd_config_t *cfg, const char *line)
 
     /* Add to DASD table */
     if (cfg->num_dasd >= FTPD_MAX_DASD) {
-        ftpd_log(LOG_WARN, "DASD table full, ignoring volume %s", volser);
+        ftpd_log(LOG_WARN, "%s: DASD table full, ignoring volume %s",
+                 __func__, volser);
         return 1;
     }
 
@@ -118,14 +127,14 @@ static int parse_dasd_line(ftpd_config_t *cfg, const char *line)
 /* --------------------------------------------------------------------
 ** Parse a key=value line.
 ** ----------------------------------------------------------------- */
-static void parse_keyvalue(ftpd_config_t *cfg, const char *key,
-                           const char *value)
+static void
+parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
 {
     if (strcmp(key, "SRVPORT") == 0) {
         cfg->port = atoi(value);
         if (cfg->port < 1 || cfg->port > 65535) {
-            ftpd_log(LOG_WARN, "Invalid SRVPORT %s, using default 21",
-                     value);
+            ftpd_log(LOG_WARN, "%s: invalid SRVPORT %s, using default 21",
+                     __func__, value);
             cfg->port = 21;
         }
     }
@@ -191,14 +200,15 @@ static void parse_keyvalue(ftpd_config_t *cfg, const char *key,
                 sizeof(cfg->defaults.volume) - 1);
     }
     else {
-        ftpd_log(LOG_WARN, "Unknown config key: %s", key);
+        ftpd_log(LOG_WARN, "%s: unknown config key: %s", __func__, key);
     }
 }
 
 /* --------------------------------------------------------------------
 ** Parse a single line from the config file.
 ** ----------------------------------------------------------------- */
-static void parse_line(ftpd_config_t *cfg, char *line)
+static void
+parse_line(ftpd_config_t *cfg, char *line)
 {
     char *p;
     char *key;
@@ -217,8 +227,8 @@ static void parse_line(ftpd_config_t *cfg, char *line)
     /* Look for key=value */
     key = p;
     value = strchr(p, '=');
-    if (value == NULL) {
-        ftpd_log(LOG_WARN, "Unrecognized config line: %.40s", p);
+    if (!value) {
+        ftpd_log(LOG_WARN, "%s: unrecognized config line: %.40s", __func__, p);
         return;
     }
 
@@ -229,10 +239,8 @@ static void parse_line(ftpd_config_t *cfg, char *line)
     value = trim(value);
 
     /* Convert key to uppercase for case-insensitive matching */
-    for (p = key; *p; p++) {
-        if (*p >= 'a' && *p <= 'z')
-            *p = *p - ('a' - 'A');
-    }
+    for (p = key; *p; p++)
+        *p = (char)toupper((unsigned char)*p);
 
     parse_keyvalue(cfg, key, value);
 }
@@ -240,7 +248,8 @@ static void parse_line(ftpd_config_t *cfg, char *line)
 /* --------------------------------------------------------------------
 ** Load configuration from a dataset.
 ** ----------------------------------------------------------------- */
-int ftpdcfg_load(ftpd_config_t *cfg, const char *dsname)
+int
+ftpdcfg_load(ftpd_config_t *cfg, const char *dsname)
 {
     FILE *fp;
     char line[256];
@@ -250,49 +259,51 @@ int ftpdcfg_load(ftpd_config_t *cfg, const char *dsname)
 
     name = dsname ? dsname : "SYS1.PARMLIB(FTPDPM00)";
 
-    ftpd_log(LOG_INFO, "Loading configuration from %s", name);
+    ftpd_log(LOG_INFO, "%s: loading configuration from %s", __func__, name);
 
     fp = fopen(name, "r");
-    if (fp == NULL) {
-        ftpd_log(LOG_WARN, "Cannot open config %s, using defaults", name);
+    if (!fp) {
+        ftpd_log(LOG_WARN, "%s: cannot open config %s, using defaults",
+                 __func__, name);
         return 0;
     }
 
-    while (fgets(line, sizeof(line), fp) != NULL) {
+    while (fgets(line, sizeof(line), fp)) {
         parse_line(cfg, line);
     }
 
     fclose(fp);
 
-    ftpd_log(LOG_INFO, "Configuration loaded: port=%d, max_sessions=%d, "
-             "DASD volumes=%d",
+    ftpd_log(LOG_INFO, "%s: loaded, port=%d, max_sessions=%d, "
+             "DASD volumes=%d", __func__,
              cfg->port, cfg->max_sessions, cfg->num_dasd);
 
     return 0;
 }
 
 /* --------------------------------------------------------------------
-** Dump configuration (for D CONFIG console command).
+** Dump configuration (for CONFIG console command).
 ** ----------------------------------------------------------------- */
-void ftpdcfg_dump(const ftpd_config_t *cfg)
+void
+ftpdcfg_dump(const ftpd_config_t *cfg)
 {
     int i;
 
-    ftpd_log_wto("FTP001I Configuration:");
-    ftpd_log_wto("FTP001I   SRVPORT=%d SRVIP=%s", cfg->port, cfg->bind_ip);
-    ftpd_log_wto("FTP001I   PASVADR=%s PASVPORTS=%d-%d",
+    ftpd_log_wto("FTPD040I Configuration:");
+    ftpd_log_wto("FTPD041I   SRVPORT=%d SRVIP=%s", cfg->port, cfg->bind_ip);
+    ftpd_log_wto("FTPD042I   PASVADR=%s PASVPORTS=%d-%d",
                  cfg->pasv_addr, cfg->pasv_lo, cfg->pasv_hi);
-    ftpd_log_wto("FTP001I   MAXSESSIONS=%d IDLETIMEOUT=%d",
+    ftpd_log_wto("FTPD043I   MAXSESSIONS=%d IDLETIMEOUT=%d",
                  cfg->max_sessions, cfg->idle_timeout);
-    ftpd_log_wto("FTP001I   BANNER=%s", cfg->banner);
-    ftpd_log_wto("FTP001I   DEFRECFM=%s DEFLRECL=%d DEFBLKSIZE=%d",
+    ftpd_log_wto("FTPD044I   BANNER=%s", cfg->banner);
+    ftpd_log_wto("FTPD045I   DEFRECFM=%s DEFLRECL=%d DEFBLKSIZE=%d",
                  cfg->defaults.recfm, cfg->defaults.lrecl,
                  cfg->defaults.blksize);
-    ftpd_log_wto("FTP001I   DEFUNIT=%s DEFVOLUME=%s",
+    ftpd_log_wto("FTPD046I   DEFUNIT=%s DEFVOLUME=%s",
                  cfg->defaults.unit, cfg->defaults.volume);
-    ftpd_log_wto("FTP001I   DASD volumes=%d:", cfg->num_dasd);
+    ftpd_log_wto("FTPD047I   DASD volumes=%d:", cfg->num_dasd);
     for (i = 0; i < cfg->num_dasd; i++) {
-        ftpd_log_wto("FTP001I     %s,%s",
+        ftpd_log_wto("FTPD048I     %s,%s",
                      cfg->dasd[i].volser, cfg->dasd[i].unit);
     }
 }

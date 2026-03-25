@@ -1,5 +1,5 @@
-#ifndef FTPDCFG_H
-#define FTPDCFG_H
+#ifndef FTPD_CFG_H
+#define FTPD_CFG_H
 /*
 ** FTPD Configuration
 */
@@ -52,16 +52,16 @@ typedef struct ftpd_config {
 ** If dsname is NULL, uses SYS1.PARMLIB(FTPDPM00).
 ** Returns 0 on success, -1 on error.
 */
-int ftpdcfg_load(ftpd_config_t *cfg, const char *dsname);
+int ftpdcfg_load(ftpd_config_t *cfg, const char *dsname)    asm("FTPCFGLD");
 
 /*
 ** Set default values in config structure.
 */
-void ftpdcfg_defaults(ftpd_config_t *cfg);
+void ftpdcfg_defaults(ftpd_config_t *cfg)                   asm("FTPCFGDF");
 
 /*
-** Dump configuration to log (for D CONFIG console command).
+** Dump configuration to log (for CONFIG console command).
 */
-void ftpdcfg_dump(const ftpd_config_t *cfg);
+void ftpdcfg_dump(const ftpd_config_t *cfg)                 asm("FTPCFGDP");
 
-#endif /* FTPDCFG_H */
+#endif /* FTPD_CFG_H */

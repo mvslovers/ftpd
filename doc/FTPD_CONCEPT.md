@@ -285,26 +285,28 @@ ftpd/
 ├── .env                     # Local MVS connection (gitignored)
 ├── mbt/                     # mbt submodule
 ├── src/
-│   ├── ftpd.c              # Main: listener loop, console commands, shutdown
-│   ├── ftpdses.c           # Session handler (per-connection state machine)
-│   ├── ftpdcmd.c           # FTP command parser & dispatcher
-│   ├── ftpdmvs.c           # MVS dataset operations (VTOC, OBTAIN, OPEN/CLOSE)
-│   ├── ftpdufs.c           # UFS operations (via UFSD client library)
-│   ├── ftpdjes.c           # JES interface (submit, list, retrieve spool)
-│   ├── ftpddata.c          # Data connection management (PORT/PASV)
-│   ├── ftpdxlat.c          # EBCDIC ↔ ASCII translation tables
-│   ├── ftpdauth.c          # Authentication (RAKF via crent370 racf module)
-│   ├── ftpdsite.c          # SITE command processing
-│   ├── ftpdlist.c          # LIST/NLST formatting (MVS + UFS + JES formats)
-│   ├── ftpdlog.c           # Logging (WTO messages, STDOUT)
-│   └── ftpdcfg.c           # Configuration file parsing
+│   ├── ftpd.c              # Main: listener loop, event loop, shutdown
+│   ├── ftpd#con.c          # Console command handler (CIB processing)
+│   ├── ftpd#ses.c          # Session handler (per-connection state machine)
+│   ├── ftpd#cmd.c          # FTP command parser & dispatcher
+│   ├── ftpd#mvs.c          # MVS dataset operations (VTOC, OBTAIN, OPEN/CLOSE)
+│   ├── ftpd#ufs.c          # UFS operations (via UFSD client library)
+│   ├── ftpd#jes.c          # JES interface (submit, list, retrieve spool)
+│   ├── ftpd#dat.c          # Data connection management (PORT/PASV)
+│   ├── ftpd#xlt.c          # EBCDIC ↔ ASCII translation tables
+│   ├── ftpd#aut.c          # Authentication (RAKF via crent370 racf module)
+│   ├── ftpd#sit.c          # SITE command processing
+│   ├── ftpd#lst.c          # LIST/NLST formatting (MVS + UFS + JES formats)
+│   ├── ftpd#log.c          # Logging (WTO messages, STDOUT)
+│   └── ftpd#cfg.c          # Configuration file parsing
 ├── include/
-│   ├── ftpd.h              # Main header, shared structures & constants
-│   ├── ftpdses.h           # Session state definitions
-│   ├── ftpdmvs.h           # MVS dataset structures
-│   ├── ftpdufs.h           # UFS interface prototypes
-│   ├── ftpdjes.h           # JES interface definitions
-│   └── ftpdxlat.h          # Translation table declarations
+│   ├── ftpd.h              # Main header: constants, server state, core types
+│   ├── ftpd#cfg.h          # Configuration structures and prototypes
+│   ├── ftpd#log.h          # Logging levels and prototypes
+│   ├── ftpd#ses.h          # Session structure and prototypes
+│   ├── ftpd#cmd.h          # FTP command dispatch prototype
+│   ├── ftpd#dat.h          # Data connection prototypes
+│   └── ftpd#xlt.h          # Translation table declarations
 ├── asm/                     # Generated .s files (from c2asm370)
 ├── contrib/                 # Extracted dependency headers (gitignored)
 └── jcl/
@@ -517,7 +519,7 @@ Passive mode is preferred by modern clients (firewalls, NAT). The configurable P
 All internal processing is in **EBCDIC** (native MVS). Translation at the network boundary:
 
 ```
-  Network (ASCII) ←→ [ftpdxlat] ←→ Internal (EBCDIC) ←→ MVS I/O / UFSD
+  Network (ASCII) ←→ [ftpd#xlt] ←→ Internal (EBCDIC) ←→ MVS I/O / UFSD
 ```
 
 - `TYPE A`: Full translation (IBM-1047 ↔ ISO-8859-1)
@@ -754,27 +756,28 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 **Step 1.1 — Project scaffolding**
 - Initialize repo with mbt submodule, `project.toml`, `.env.example`
 - `make doctor` + `make bootstrap` work
-- Implement `ftpdcfg.c` (parse FTPDPM00 config file)
-- Implement `ftpdlog.c` (WTO messages + STDOUT logging)
+- Implement `ftpd#cfg.c` (parse FTPDPM00 config file)
+- Implement `ftpd#log.c` (WTO messages + STDOUT logging)
 
 **Step 1.2 — Network layer**
 - `ftpd.c` — Main listener: socket, bind, listen, accept loop via crent370 socket API
-- `ftpdses.c` — Session state machine + thread lifecycle (thdmgr)
-- `ftpddata.c` — PORT/PASV data connection setup and teardown
-- `ftpdxlat.c` — EBCDIC ↔ ASCII translation tables (IBM-1047)
+- `ftpd#con.c` — Console command handler (CIB processing, MODIFY dispatch)
+- `ftpd#ses.c` — Session state machine + thread lifecycle (thdmgr)
+- `ftpd#dat.c` — PORT/PASV data connection setup and teardown
+- `ftpd#xlt.c` — EBCDIC ↔ ASCII translation tables (IBM-1047)
 
 **Step 1.3 — Command processing**
-- `ftpdcmd.c` — Command parser: read line from control socket, tokenize, dispatch
-- `ftpdauth.c` — USER/PASS via crent370 racf module
+- `ftpd#cmd.c` — Command parser: read line from control socket, tokenize, dispatch
+- `ftpd#aut.c` — USER/PASS via crent370 racf module
 - Basic commands: SYST, TYPE, MODE, STRU, NOOP, QUIT, HELP, FEAT, STAT
 
 **Step 1.4 — MVS dataset access**
-- `ftpdmvs.c` — VTOC scanning, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE
-- `ftpdlist.c` — z/OS-compatible LIST formatting for datasets + PDS members
+- `ftpd#mvs.c` — VTOC scanning, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE
+- `ftpd#lst.c` — z/OS-compatible LIST formatting for datasets + PDS members
 - CWD/PWD for MVS, LIST/NLST, RETR, STOR, DELE, RNFR/RNTO
 
 **Step 1.5 — SITE command framework**
-- `ftpdsite.c` — SITE command dispatcher
+- `ftpd#sit.c` — SITE command dispatcher
 - Dataset allocation parameters (RECFM, LRECL, BLKSIZE, etc.)
 - 502 responses for unimplemented z/OS SITE subcommands
 
@@ -785,8 +788,8 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 **Goal:** Submit jobs and retrieve spool output via FTP.
 
 **Step 2.1 — Job submission**
-- `SITE FILETYPE=JES` mode switch in ftpdsite.c
-- `ftpdjes.c` — STOR writes to internal reader DD, extracts job number
+- `SITE FILETYPE=JES` mode switch in ftpd#sit.c
+- `ftpd#jes.c` — STOR writes to internal reader DD, extracts job number
 
 **Step 2.2 — Job query**
 - LIST in JES mode → job queue listing
@@ -803,7 +806,7 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 **Goal:** Seamless UFS file access alongside MVS datasets.
 
 **Step 3.1 — UFSD client integration**
-- `ftpdufs.c` — Wrapper around UFSD client library
+- `ftpd#ufs.c` — Wrapper around UFSD client library
 - Auto-detect UFSD availability at session start
 - `550 UFS service not available` if UFSD not running
 
@@ -883,7 +886,7 @@ Some z/OS FTP features cannot exist on MVS 3.8j:
 ## 9. Testing Strategy
 
 ### Unit Testing
-- Command parser tests (ftpdcmd)
+- Command parser tests (ftpd#cmd)
 - EBCDIC ↔ ASCII translation verification
 - Dataset name parsing (qualified, unqualified, PDS members, wildcards)
 - SITE parameter parsing

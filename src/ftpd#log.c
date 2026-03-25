@@ -2,11 +2,17 @@
 ** FTPD Logging
 **
 ** Three output channels:
-**   1. WTO (Write To Operator) — important events only
-**   2. STDOUT — general logging with timestamp and level
-**   3. Trace ring buffer — diagnostic capture, enabled via console
+**   1. WTO (Write To Operator) -- important events only
+**   2. STDOUT -- general logging with timestamp and level
+**   3. Trace ring buffer -- diagnostic capture, enabled via console
 */
-#include "ftpd.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+
+#include "clibwto.h"
+#include "ftpd#log.h"
 
 /* --- Log level names --- */
 static const char *level_names[] = { "ERROR", "WARN ", "INFO ", "DEBUG" };
@@ -26,7 +32,8 @@ static int      trace_on = 0;       /* tracing enabled flag           */
 /* ====================================================================
 ** WTO logging
 ** ================================================================= */
-void ftpd_log_wto(const char *fmt, ...)
+void
+ftpd_log_wto(const char *fmt, ...)
 {
     char buf[128];
     va_list ap;
@@ -41,7 +48,8 @@ void ftpd_log_wto(const char *fmt, ...)
 /* ====================================================================
 ** General logging to STDOUT
 ** ================================================================= */
-void ftpd_log(int level, const char *fmt, ...)
+void
+ftpd_log(int level, const char *fmt, ...)
 {
     char buf[256];
     va_list ap;
@@ -59,13 +67,15 @@ void ftpd_log(int level, const char *fmt, ...)
     printf("[%s] %s\n", lvl, buf);
 }
 
-void ftpd_log_set_level(int level)
+void
+ftpd_log_set_level(int level)
 {
     if (level >= LOG_ERROR && level <= LOG_DEBUG)
         log_level = level;
 }
 
-int ftpd_log_get_level(void)
+int
+ftpd_log_get_level(void)
 {
     return log_level;
 }
@@ -73,13 +83,14 @@ int ftpd_log_get_level(void)
 /* ====================================================================
 ** Trace ring buffer
 ** ================================================================= */
-int ftpd_trace_init(int size)
+int
+ftpd_trace_init(int size)
 {
     if (size < 1)
         size = 256;
 
     trace_buf = calloc(size, TRACE_ENTRY_LEN);
-    if (trace_buf == NULL)
+    if (!trace_buf)
         return -1;
 
     trace_size = size;
@@ -90,7 +101,8 @@ int ftpd_trace_init(int size)
     return 0;
 }
 
-void ftpd_trace_free(void)
+void
+ftpd_trace_free(void)
 {
     if (trace_buf) {
         free(trace_buf);
@@ -102,12 +114,13 @@ void ftpd_trace_free(void)
     trace_on = 0;
 }
 
-void ftpd_trace(const char *fmt, ...)
+void
+ftpd_trace(const char *fmt, ...)
 {
     char *entry;
     va_list ap;
 
-    if (!trace_on || trace_buf == NULL)
+    if (!trace_on || !trace_buf)
         return;
 
     entry = trace_buf + (trace_head * TRACE_ENTRY_LEN);
@@ -120,19 +133,21 @@ void ftpd_trace(const char *fmt, ...)
     trace_count++;
 }
 
-void ftpd_trace_enable(int on)
+void
+ftpd_trace_enable(int on)
 {
     trace_on = on;
-    if (on && trace_buf == NULL) {
+    if (on && !trace_buf) {
         ftpd_trace_init(256);
     }
 }
 
-int ftpd_trace_dump(void)
+int
+ftpd_trace_dump(void)
 {
     int i, idx, count;
 
-    if (trace_buf == NULL) {
+    if (!trace_buf) {
         printf("Trace buffer not initialized\n");
         return 0;
     }
@@ -166,7 +181,8 @@ int ftpd_trace_dump(void)
     return count;
 }
 
-int ftpd_trace_enabled(void)
+int
+ftpd_trace_enabled(void)
 {
     return trace_on;
 }

@@ -2,6 +2,9 @@
 #define FTPD_H
 /*
 ** FTPD - Standalone FTP Server for MVS 3.8j
+**
+** Main header: system includes, crent370 includes, shared constants,
+** core types, and server state.  Per-module headers in ftpd#xxx.h.
 */
 #include <stddef.h>
 #include <stdio.h>
@@ -16,20 +19,17 @@
 #include "clibwto.h"                /* write to operator            */
 #include "clibthrd.h"               /* basic threads                */
 #include "clibthdi.h"               /* thread management            */
+#include "clibcib.h"                /* console information blocks   */
 #include "socket.h"                 /* sockets via DYN75            */
 #include "racf.h"                   /* security environment         */
 
-#include "ftpdcfg.h"                /* configuration                */
-#include "ftpdlog.h"                /* logging                      */
+#include "ftpd#cfg.h"               /* configuration                */
+#include "ftpd#log.h"               /* logging & trace              */
 
 typedef unsigned char   UCHAR;
 
-/* --- Translation tables (ftpdxlat.c) --- */
-extern UCHAR *asc2ebc;
-extern UCHAR *ebc2asc;
-
 /* --- Version --- */
-#define FTPD_VERSION        "0.1.0"
+#define FTPD_VERSION        "1.0.0"
 #define FTPD_VERSION_STR    "MVS 3.8j FTPD Server " FTPD_VERSION
 
 /* --- Filesystem / filetype modes --- */
@@ -123,10 +123,15 @@ typedef struct ftpd_server  ftpd_server_t;
 struct ftpd_server {
     char            eye[8];         /* eye catcher                   */
 #define FTPD_EYE    "*FTPD*"
+
+    /* Server flags */
+    unsigned        flags;
+#define FTPD_ACTIVE         0x01    /* server is running             */
+#define FTPD_QUIESCE        0x02    /* shutdown in progress          */
+
     ftpd_config_t   config;         /* server configuration          */
     int             listen_sock;    /* listening socket fd            */
     CTHDMGR         *mgr;          /* thread manager                */
-    int             shutdown;       /* shutdown flag                  */
     int             num_sessions;   /* active session count           */
     long            total_sessions; /* total sessions since start     */
     long            total_bytes_in; /* total bytes received           */
@@ -134,5 +139,11 @@ struct ftpd_server {
 };
 
 extern ftpd_server_t *ftpd_server;
+
+/*
+** Process a Console Information Block (operator command).
+** Called from the main event loop for each CIB.
+*/
+int ftpd_process_cib(ftpd_server_t *server, CIB *cib)      asm("FTPCONPC");
 
 #endif /* FTPD_H */
