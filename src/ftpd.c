@@ -54,6 +54,8 @@ main(int argc, char **argv)
     }
     __cibset(5);
 
+    ftpd_log_wto("FTPD000I FTPD Server %s starting", FTPD_VERSION);
+
     /* Initialize server (config, trace, socket thread, worker pool) */
     rc = initialize(&server, argc, argv);
     if (rc != 0) {
@@ -61,15 +63,14 @@ main(int argc, char **argv)
         return rc;
     }
 
-    ftpd_log_wto("FTPD001I FTPD %s started on port %d",
-                 FTPD_VERSION, server.config.port);
-
     /* Kick the thread manager so workers start accepting sessions.
     ** This must happen AFTER __cibset and FTPD_ACTIVE are set.
     */
     if (server.mgr) {
         cthread_post(&server.mgr->wait, CTHDMGR_POST_DATA);
     }
+
+    ftpd_log_wto("FTPD001I Server is READY");
 
     /* ----------------------------------------------------------------
     ** Main event loop
@@ -188,14 +189,11 @@ socket_thread(void *arg1, void *arg2)
     ** signal_shutdown.  The main event loop stays running so the
     ** operator can see the error and /P the server.
     */
-    ftpd_log_wto("FTPD060I socket_thread: started");
-
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         ftpd_log_wto("FTPD050E socket() failed, errno=%d", errno);
         return 8;
     }
-    ftpd_log_wto("FTPD060I socket_thread: socket=%d", sock);
 
     memset(&saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
@@ -265,8 +263,8 @@ socket_thread(void *arg1, void *arg2)
     }
 
     server->listen_sock = sock;
-    ftpd_log_wto("FTPD060I socket_thread: listening on port %d sock=%d",
-                 server->config.port, sock);
+    ftpd_log_wto("FTPD054I Listening for FTP connections on port %d",
+                 server->config.port);
 
     /* Accept loop — non-blocking socket + ecb_timed_wait.
     **
@@ -285,18 +283,13 @@ socket_thread(void *arg1, void *arg2)
         ioctlsocket(sock, FIONBIO, &nb);
     }
 
-    ftpd_log_wto("FTPD060I socket_thread: entering accept loop");
-
     while (server->flags & FTPD_ACTIVE) {
         /* Wait 1 second or until wakeup_ecb is posted */
         server->wakeup_ecb = 0;
         ecb_timed_wait(&server->wakeup_ecb, 100, 0);
 
-        if (!(server->flags & FTPD_ACTIVE)) {
-            ftpd_log_wto("FTPD061I socket_thread: ACTIVE cleared, "
-                         "exiting");
+        if (!(server->flags & FTPD_ACTIVE))
             break;
-        }
 
         /* Try accept — non-blocking, returns <0 if no connection */
         len = sizeof(caddr);
@@ -329,10 +322,8 @@ socket_thread(void *arg1, void *arg2)
         cthread_queue_add(server->mgr, sess);
     }
 
-    ftpd_log_wto("FTPD062I socket_thread: closing socket %d", sock);
     closesocket(sock);
     server->listen_sock = -1;
-    ftpd_log_wto("FTPD063I socket_thread: returning");
 
     return 0;
 }
@@ -371,31 +362,25 @@ terminate(ftpd_server_t *server)
         server->listen_sock = -1;
     }
 
-    ftpd_log_wto("FTPD095I terminate: sock_task=%08X listen=%d",
-                 (unsigned)server->sock_task, server->listen_sock);
-
     if (server->sock_task) {
         int i;
-        ftpd_log_wto("FTPD095I terminate: entering poll loop");
-        for (i = 0; i < 50; i++) {
-            if (server->sock_task->termecb & 0x40000000U)
-                break;
-            __asm__("STIMER WAIT,BINTVL==F'10'");
+        for (i = 0; (i < 10) && (!(server->sock_task->termecb & 0x40000000U)); i++) {
+            if (i) {
+                ftpd_log_wto("FTPD095I Waiting for socket thread "
+                             "to terminate (%d)", i);
+            }
+            __asm__("STIMER WAIT,BINTVL==F'100'");
         }
-        ftpd_log_wto("FTPD095I terminate: poll done i=%d termecb=%08X",
-                     i, server->sock_task->termecb);
+        if (!(server->sock_task->termecb & 0x40000000U)) {
+            ftpd_log_wto("FTPD095W socket thread did not terminate");
+        }
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
-        ftpd_log_wto("FTPD095I terminate: cthread_delete done");
-    } else {
-        ftpd_log_wto("FTPD095I terminate: no sock_task");
     }
 
-    ftpd_log_wto("FTPD095I terminate: stopping thread manager");
     if (server->mgr) {
         cthread_manager_term(&server->mgr);
         server->mgr = NULL;
-        ftpd_log_wto("FTPD095I terminate: thread manager stopped");
     }
 
     /* Free trace buffer */
