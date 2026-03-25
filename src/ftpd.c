@@ -267,30 +267,19 @@ socket_thread(void *arg1, void *arg2)
     ftpd_log(LOG_INFO, "%s: listening on port %d", __func__,
              server->config.port);
 
-    /* Accept loop — use selectex() with wakeup_ecb so that
-    ** cmd_shutdown() can break the select immediately by posting
-    ** the ECB.  Plain select() on MVS DYN75 may not honour the
-    ** timeout on a listening socket with no pending connections.
+    /* Accept loop — selectex() with NULL ecblist and 1-second timeout,
+    ** matching the HTTPD pattern.  On each timeout, check FTPD_ACTIVE.
+    ** terminate() closes the listener socket to force selectex() to
+    ** return immediately on shutdown (the fd becomes invalid).
     */
-    {
-    unsigned *ecblist[2];
-    ecblist[0] = (unsigned *)((unsigned)&server->wakeup_ecb | 0x80000000U);
-    ecblist[1] = NULL;
-
     while (server->flags & FTPD_ACTIVE) {
         FD_ZERO(&rfds);
         FD_SET(sock, &rfds);
         tv.tv_sec = 1;
         tv.tv_usec = 0;
 
-        rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, ecblist);
+        rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, NULL);
 
-        /* Check shutdown BEFORE touching the socket — selectex may
-        ** have returned because wakeup_ecb was posted, not because
-        ** of a real connection.  Without this guard accept() blocks
-        ** on a false-positive FD_ISSET.  (HTTPD does the same check
-        ** after selectex, before accept.)
-        */
         if (!(server->flags & FTPD_ACTIVE))
             break;
 
@@ -338,8 +327,6 @@ socket_thread(void *arg1, void *arg2)
 
         cthread_queue_add(server->mgr, sess);
     }
-
-    } /* end selectex ecblist scope */
 
     closesocket(sock);
     server->listen_sock = -1;
