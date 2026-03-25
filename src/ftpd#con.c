@@ -202,5 +202,5 @@ cmd_shutdown(ftpd_server_t *server)
     ftpd_log_wto("FTPD097I FTPD shutting down...");
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
-    server->wakeup_ecb = 0x40000000U;
+    ecb_post(&server->wakeup_ecb, 0);
 }

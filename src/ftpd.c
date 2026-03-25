@@ -227,18 +227,27 @@ socket_thread(void *arg1, void *arg2)
     ftpd_log(LOG_INFO, "%s: listening on port %d", __func__,
              server->config.port);
 
-    /* Accept loop */
+    /* Accept loop — use selectex() with wakeup_ecb so that
+    ** cmd_shutdown() can break the select immediately by posting
+    ** the ECB.  Plain select() on MVS DYN75 may not honour the
+    ** timeout on a listening socket with no pending connections.
+    */
+    {
+    unsigned *ecblist[2];
+    ecblist[0] = (unsigned *)((unsigned)&server->wakeup_ecb | 0x80000000U);
+    ecblist[1] = NULL;
+
     while (server->flags & FTPD_ACTIVE) {
         FD_ZERO(&rfds);
         FD_SET(sock, &rfds);
         tv.tv_sec = 1;
         tv.tv_usec = 0;
 
-        rc = select(sock + 1, &rfds, NULL, NULL, &tv);
+        rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, ecblist);
         if (rc < 0) {
             if (!(server->flags & FTPD_ACTIVE))
                 break;
-            ftpd_log(LOG_ERROR, "%s: select() failed, errno=%d", __func__,
+            ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
                      errno);
             continue;
         }
@@ -282,6 +291,8 @@ socket_thread(void *arg1, void *arg2)
         cthread_queue_add(server->mgr, sess);
     }
 
+    } /* end selectex ecblist scope */
+
     closesocket(sock);
     server->listen_sock = -1;
 
@@ -323,15 +334,19 @@ terminate(ftpd_server_t *server)
     */
     if (server->sock_task) {
         int i;
+        ftpd_log_wto("FTPD095I terminate: waiting for socket thread");
         for (i = 0; i < 50; i++) {
             if (server->sock_task->termecb & 0x40000000U)
                 break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
-        if (!(server->sock_task->termecb & 0x40000000U)) {
+        if (server->sock_task->termecb & 0x40000000U) {
+            ftpd_log_wto("FTPD095I terminate: socket thread ended");
+        } else {
             ftpd_log_wto("FTPD095W socket thread did not terminate "
                          "in 5 seconds, force cleanup");
         }
+        ftpd_log_wto("FTPD095I terminate: deleting socket thread");
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
         ftpd_log_wto("FTPD095I terminate: socket thread cleaned up");
