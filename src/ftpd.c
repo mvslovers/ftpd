@@ -35,6 +35,7 @@ main(int argc, char **argv)
 
     memset(&server, 0, sizeof(server));
     strcpy(server.eye, FTPD_EYE);
+    server.flags |= FTPD_ACTIVE;
     ftpd_server = &server;
 
     /* Get COM area and set CIB limit BEFORE creating any threads.
@@ -60,8 +61,6 @@ main(int argc, char **argv)
         return rc;
     }
 
-    server.flags |= FTPD_ACTIVE;
-
     ftpd_log_wto("FTPD001I FTPD %s started on port %d",
                  FTPD_VERSION, server.config.port);
 
@@ -73,48 +72,37 @@ main(int argc, char **argv)
     }
 
     /* ----------------------------------------------------------------
-    ** Main event loop (UFSD pattern)
+    ** Main event loop
     **
     ** 1. Drain ALL pending CIBs unconditionally
-    ** 2. Check shutdown flag before WAIT
-    ** 3. WAIT on ECBLIST: console ECB + wakeup ECB
+    ** 2. Check shutdown flag before sleep
+    ** 3. STIMER WAIT 1 second, then loop
     **
     ** CIBs are drained unconditionally because MVS may queue a
     ** CIBSTART at startup without posting the ECB.
-    ** Do NOT write to com->comecbpt — it is in system storage (key 0).
+    **
+    ** We use STIMER polling (1 second) instead of WAIT ECBLIST
+    ** because the console ECB (com->comecbpt) is in key-0 storage
+    ** and the wakeup ECB (stack) is in key-8 storage.  Mixing
+    ** storage keys in a single ECBLIST causes S0A3 on MVS 3.8j
+    ** (OS/VS2 SPLS GC28-0683 §WAIT).  UFSD avoids this because
+    ** both its ECBs (console + server_ecb) are in key-0 (CSA).
+    ** 1-second polling gives acceptable latency for console
+    ** commands and shutdown responsiveness.
     ** ---------------------------------------------------------------- */
-    {
-        unsigned *ecblist[3];
+    while (server.flags & FTPD_ACTIVE) {
 
-        while (server.flags & FTPD_ACTIVE) {
-
-            /* Drain all pending CIBs unconditionally */
-            while ((cib = __cibget()) != NULL) {
-                ftpd_process_cib(&server, cib);
-                __cibdel(cib);
-                if (!(server.flags & FTPD_ACTIVE)) break;
-            }
-
+        /* Drain all pending CIBs unconditionally */
+        while ((cib = __cibget()) != NULL) {
+            ftpd_process_cib(&server, cib);
+            __cibdel(cib);
             if (!(server.flags & FTPD_ACTIVE)) break;
-
-            /* WAIT on console ECB + wakeup ECB.
-            ** The console ECB (com->comecbpt) is in system storage
-            ** (key 0).  The WAIT SVC writes the "waiting" bit into the
-            ** ECB, so we must be in supervisor state for this to work.
-            ** (UFSD pattern — OS/VS2 SPLS GC28-0683 §WAIT)
-            */
-            server.wakeup_ecb = 0;
-            ecblist[0] = (unsigned *)com->comecbpt;
-            ecblist[1] = (unsigned *)
-                ((unsigned)&server.wakeup_ecb | 0x80000000U);
-            {
-                unsigned char savekey;
-                if (!__super(PSWKEY0, &savekey)) {
-                    __asm__("WAIT ECBLIST=(%0)" : : "r"(ecblist));
-                    __prob(savekey, NULL);
-                }
-            }
         }
+
+        if (!(server.flags & FTPD_ACTIVE)) break;
+
+        /* Sleep 1 second (100 centiseconds), then check again */
+        __asm__("STIMER WAIT,BINTVL==F'100'");
     }
 
     terminate(&server);
@@ -159,7 +147,8 @@ initialize(ftpd_server_t *server, int argc, char **argv)
 
     /* Create socket thread (handles listener + accept loop) */
     server->listen_sock = -1;
-    cthread_create_ex(socket_thread, server, NULL, 32 * 1024);
+    server->sock_task = cthread_create_ex(socket_thread, server, NULL,
+                                          32 * 1024);
 
     /* Create worker thread pool */
     server->mgr = cthread_manager_init(
@@ -175,17 +164,6 @@ initialize(ftpd_server_t *server, int argc, char **argv)
     }
 
     return 0;
-}
-
-/* ====================================================================
-** Signal main thread to shut down.
-** Called from the socket thread on fatal errors.
-** ================================================================= */
-static void
-signal_shutdown(ftpd_server_t *server)
-{
-    server->flags &= ~FTPD_ACTIVE;
-    server->wakeup_ecb = 0x40000000U;  /* post the ECB */
 }
 
 /* ====================================================================
@@ -207,11 +185,14 @@ socket_thread(void *arg1, void *arg2)
 
     (void)arg2;
 
-    /* Create listening socket */
+    /* Create listening socket.
+    ** On failure, log the error via WTO and return — do NOT call
+    ** signal_shutdown.  The main event loop stays running so the
+    ** operator can see the error and /P the server.
+    */
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
-        ftpd_log(LOG_ERROR, "%s: socket() failed, errno=%d", __func__, errno);
-        signal_shutdown(server);
+        ftpd_log_wto("FTPD050E socket() failed, errno=%d", errno);
         return 8;
     }
 
@@ -230,17 +211,15 @@ socket_thread(void *arg1, void *arg2)
     }
 
     if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-        ftpd_log(LOG_ERROR, "%s: bind() failed on port %d, errno=%d",
-                 __func__, server->config.port, errno);
+        ftpd_log_wto("FTPD051E bind() failed on port %d, errno=%d",
+                     server->config.port, errno);
         closesocket(sock);
-        signal_shutdown(server);
         return 8;
     }
 
     if (listen(sock, 10) < 0) {
-        ftpd_log(LOG_ERROR, "%s: listen() failed, errno=%d", __func__, errno);
+        ftpd_log_wto("FTPD052E listen() failed, errno=%d", errno);
         closesocket(sock);
-        signal_shutdown(server);
         return 8;
     }
 
@@ -325,11 +304,28 @@ terminate(ftpd_server_t *server)
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
-    /* Close listener socket to unblock accept */
+    /* Close listener socket to unblock select() in socket thread */
     if (server->listen_sock >= 0) {
         closesocket(server->listen_sock);
         server->listen_sock = -1;
         ftpd_log(LOG_INFO, "%s: listener closed", __func__);
+    }
+
+    /* Wait for socket thread to exit, then DETACH + free.
+    ** Without this, MVS finds an un-DETACHed subtask TCB on the
+    ** parent's subtask queue at task termination and ABENDs S0A3.
+    */
+    if (server->sock_task) {
+        int i;
+        for (i = 0; i < 50; i++) {
+            if (server->sock_task->termecb & 0x40000000U)
+                break;
+            __asm__("STIMER WAIT,BINTVL==F'10'");
+        }
+        cthread_detach(server->sock_task);
+        cthread_delete(&server->sock_task);
+        server->sock_task = NULL;
+        ftpd_log(LOG_INFO, "%s: socket thread terminated", __func__);
     }
 
     /* Terminate thread manager (waits for workers to finish) */
