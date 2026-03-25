@@ -177,8 +177,6 @@ socket_thread(void *arg1, void *arg2)
     struct sockaddr_in caddr;
     int len;
     int sock;
-    fd_set rfds;
-    struct timeval tv;
     int rc;
     unsigned a1, a2, a3, a4;
     ftpd_session_t *sess;
@@ -267,41 +265,36 @@ socket_thread(void *arg1, void *arg2)
     ftpd_log(LOG_INFO, "%s: listening on port %d", __func__,
              server->config.port);
 
-    /* Accept loop — selectex() with NULL ecblist and 1-second timeout,
-    ** matching the HTTPD pattern.  On each timeout, check FTPD_ACTIVE.
-    ** terminate() closes the listener socket to force selectex() to
-    ** return immediately on shutdown (the fd becomes invalid).
+    /* Accept loop — non-blocking socket + ecb_timed_wait.
+    **
+    ** DYN75 selectex() does not reliably honour its timeout on a
+    ** listening socket (SVC 75 uses its own internal wait, not MVS
+    ** WAIT).  Closing the fd from another thread also fails to
+    ** interrupt selectex.
+    **
+    ** Instead: set the socket non-blocking, then poll with
+    ** ecb_timed_wait on wakeup_ecb (1 second).  accept() returns
+    ** EWOULDBLOCK when no connection is pending.  cmd_shutdown()
+    ** posts wakeup_ecb which breaks the timed_wait immediately.
     */
-    while (server->flags & FTPD_ACTIVE) {
-        FD_ZERO(&rfds);
-        FD_SET(sock, &rfds);
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
+    {
+        int nb = 1;
+        ioctlsocket(sock, FIONBIO, &nb);
+    }
 
-        rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, NULL);
+    while (server->flags & FTPD_ACTIVE) {
+        /* Wait 1 second or until wakeup_ecb is posted */
+        server->wakeup_ecb = 0;
+        ecb_timed_wait(&server->wakeup_ecb, 100, 0);
 
         if (!(server->flags & FTPD_ACTIVE))
             break;
 
-        if (rc < 0) {
-            ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
-                     errno);
-            continue;
-        }
-        if (rc == 0)
-            continue;
-
-        if (!FD_ISSET(sock, &rfds))
-            continue;
-
-        /* Accept new connection */
+        /* Try accept — non-blocking, returns <0 if no connection */
         len = sizeof(caddr);
         rc = accept(sock, (struct sockaddr *)&caddr, &len);
-        if (rc < 0) {
-            ftpd_log(LOG_WARN, "%s: accept() failed, errno=%d", __func__,
-                     errno);
-            continue;
-        }
+        if (rc < 0)
+            continue;   /* EWOULDBLOCK — no pending connection */
 
         /* Check session limit */
         if (server->num_sessions >= server->config.max_sessions) {
