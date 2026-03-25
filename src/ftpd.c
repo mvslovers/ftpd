@@ -289,31 +289,37 @@ socket_thread(void *arg1, void *arg2)
 }
 
 /* ====================================================================
-** Shutdown -- close listener, terminate threads, cleanup
+** Shutdown -- terminate threads, close listener, cleanup
 **
-** Resource cleanup follows UFSD order:
-**   1. Close listener socket
-**   2. Terminate thread manager (waits for workers)
-**   3. Free trace buffer
+** Shutdown sequence (modelled after HTTPD terminate):
+**   1. Set QUIESCE flag (FTPD_ACTIVE already cleared by cmd_shutdown)
+**   2. Wait for socket thread to notice FTPD_ACTIVE==0 and exit
+**   3. Close listener socket (fallback if socket thread didn't)
+**   4. Terminate thread manager (posts workers for shutdown)
+**   5. Free trace buffer
+**
+** IMPORTANT: Do NOT closesocket the listener before the socket
+** thread exits.  On MVS 3.8j closing a socket while another TCB
+** has it in select() leaves the TCP/IP control block in an
+** undefined state and can hang select() indefinitely.  The socket
+** thread checks FTPD_ACTIVE on every select() timeout (1 s) and
+** closes its own socket on exit.
 ** ================================================================= */
 static void
 terminate(ftpd_server_t *server)
 {
-    ftpd_log(LOG_INFO, "%s: shutting down...", __func__);
+    ftpd_log_wto("FTPD095I terminate: starting shutdown sequence");
 
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
-    /* Close listener socket to unblock select() in socket thread */
-    if (server->listen_sock >= 0) {
-        closesocket(server->listen_sock);
-        server->listen_sock = -1;
-        ftpd_log(LOG_INFO, "%s: listener closed", __func__);
-    }
-
-    /* Wait for socket thread to exit, then DETACH + free.
-    ** Without this, MVS finds an un-DETACHed subtask TCB on the
-    ** parent's subtask queue at task termination and ABENDs S0A3.
+    /* Wait for socket thread to exit.
+    ** The socket thread checks FTPD_ACTIVE on every select() timeout
+    ** (1 second) and exits when the flag is cleared.
+    ** Use cthread_delete (like HTTPD) — it handles DETACH internally.
+    ** Do NOT call cthread_detach separately: MVS DETACH blocks until
+    ** the subtask ends, and if the thread is still in select() the
+    ** main task hangs here.
     */
     if (server->sock_task) {
         int i;
@@ -322,20 +328,30 @@ terminate(ftpd_server_t *server)
                 break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
-        cthread_detach(server->sock_task);
+        if (!(server->sock_task->termecb & 0x40000000U)) {
+            ftpd_log_wto("FTPD095W socket thread did not terminate "
+                         "in 5 seconds, force cleanup");
+        }
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
-        ftpd_log(LOG_INFO, "%s: socket thread terminated", __func__);
+        ftpd_log_wto("FTPD095I terminate: socket thread cleaned up");
     }
 
-    /* Terminate thread manager (waits for workers to finish) */
+    /* Close listener socket (fallback — socket thread normally closes
+    ** its own copy, but guard against the case where it didn't). */
+    if (server->listen_sock >= 0) {
+        closesocket(server->listen_sock);
+        server->listen_sock = -1;
+    }
+
+    /* Terminate thread manager (posts workers for shutdown) */
+    ftpd_log_wto("FTPD095I terminate: stopping thread manager");
     if (server->mgr) {
         cthread_manager_term(&server->mgr);
         server->mgr = NULL;
-        ftpd_log(LOG_INFO, "%s: thread manager terminated", __func__);
+        ftpd_log_wto("FTPD095I terminate: thread manager stopped");
     }
 
     /* Free trace buffer */
     ftpd_trace_free();
-    ftpd_log(LOG_INFO, "%s: trace buffer freed", __func__);
 }
