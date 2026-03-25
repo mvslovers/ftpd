@@ -244,9 +244,17 @@ socket_thread(void *arg1, void *arg2)
         tv.tv_usec = 0;
 
         rc = selectex(sock + 1, &rfds, NULL, NULL, &tv, ecblist);
+
+        /* Check shutdown BEFORE touching the socket — selectex may
+        ** have returned because wakeup_ecb was posted, not because
+        ** of a real connection.  Without this guard accept() blocks
+        ** on a false-positive FD_ISSET.  (HTTPD does the same check
+        ** after selectex, before accept.)
+        */
+        if (!(server->flags & FTPD_ACTIVE))
+            break;
+
         if (rc < 0) {
-            if (!(server->flags & FTPD_ACTIVE))
-                break;
             ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
                      errno);
             continue;
