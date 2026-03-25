@@ -210,11 +210,51 @@ socket_thread(void *arg1, void *arg2)
         }
     }
 
+    /* Close any stale socket left over from a previous instance that
+    ** did not shut down cleanly.  On MVS the socket fd table is
+    ** per-address-space, so a new STC inherits fds from a prior run
+    ** of the same jobname.  Iterate all fds, check with getsockname
+    ** whether any is bound to our port, and close it.  This avoids
+    ** EADDRINUSE on bind() (same technique as HTTPD).
+    */
+    {
+        int si;
+        int salen;
+        struct sockaddr sa;
+        struct sockaddr_in *sin;
+        for (si = 1; si < FD_SETSIZE; si++) {
+            salen = sizeof(sa);
+            if (getsockname(si, &sa, &salen) == 0) {
+                sin = (struct sockaddr_in *)&sa;
+                if (sin->sin_port == htons(server->config.port)) {
+                    ftpd_log_wto("FTPD053I Closing stale socket %d "
+                                 "on port %d", si, server->config.port);
+                    closesocket(si);
+                    __asm__("STIMER WAIT,BINTVL==F'200'");
+                    break;
+                }
+            }
+        }
+    }
+
     if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+        int err = errno;
         ftpd_log_wto("FTPD051E bind() failed on port %d, errno=%d",
-                     server->config.port, errno);
-        closesocket(sock);
-        return 8;
+                     server->config.port, err);
+        if (err == EADDRINUSE) {
+            ftpd_log_wto("FTPD051I EADDRINUSE, retrying in 10s");
+            __asm__("STIMER WAIT,BINTVL==F'1000'");
+            if (bind(sock, (struct sockaddr *)&saddr,
+                     sizeof(saddr)) < 0) {
+                ftpd_log_wto("FTPD051E bind() retry failed, errno=%d",
+                             errno);
+                closesocket(sock);
+                return 8;
+            }
+        } else {
+            closesocket(sock);
+            return 8;
+        }
     }
 
     if (listen(sock, 10) < 0) {
