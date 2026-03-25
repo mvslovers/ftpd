@@ -188,11 +188,14 @@ socket_thread(void *arg1, void *arg2)
     ** signal_shutdown.  The main event loop stays running so the
     ** operator can see the error and /P the server.
     */
+    ftpd_log_wto("FTPD060I socket_thread: started");
+
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         ftpd_log_wto("FTPD050E socket() failed, errno=%d", errno);
         return 8;
     }
+    ftpd_log_wto("FTPD060I socket_thread: socket=%d", sock);
 
     memset(&saddr, 0, sizeof(saddr));
     saddr.sin_family = AF_INET;
@@ -262,8 +265,8 @@ socket_thread(void *arg1, void *arg2)
     }
 
     server->listen_sock = sock;
-    ftpd_log(LOG_INFO, "%s: listening on port %d", __func__,
-             server->config.port);
+    ftpd_log_wto("FTPD060I socket_thread: listening on port %d sock=%d",
+                 server->config.port, sock);
 
     /* Accept loop — non-blocking socket + ecb_timed_wait.
     **
@@ -282,13 +285,18 @@ socket_thread(void *arg1, void *arg2)
         ioctlsocket(sock, FIONBIO, &nb);
     }
 
+    ftpd_log_wto("FTPD060I socket_thread: entering accept loop");
+
     while (server->flags & FTPD_ACTIVE) {
         /* Wait 1 second or until wakeup_ecb is posted */
         server->wakeup_ecb = 0;
         ecb_timed_wait(&server->wakeup_ecb, 100, 0);
 
-        if (!(server->flags & FTPD_ACTIVE))
+        if (!(server->flags & FTPD_ACTIVE)) {
+            ftpd_log_wto("FTPD061I socket_thread: ACTIVE cleared, "
+                         "exiting");
             break;
+        }
 
         /* Try accept — non-blocking, returns <0 if no connection */
         len = sizeof(caddr);
@@ -321,8 +329,10 @@ socket_thread(void *arg1, void *arg2)
         cthread_queue_add(server->mgr, sess);
     }
 
+    ftpd_log_wto("FTPD062I socket_thread: closing socket %d", sock);
     closesocket(sock);
     server->listen_sock = -1;
+    ftpd_log_wto("FTPD063I socket_thread: returning");
 
     return 0;
 }
