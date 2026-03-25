@@ -25,6 +25,7 @@
 
 #include "ftpd#cfg.h"               /* configuration                */
 #include "ftpd#log.h"               /* logging & trace              */
+#include "ftpd#xlt.h"               /* EBCDIC/ASCII translation     */
 
 typedef unsigned char   UCHAR;
 
