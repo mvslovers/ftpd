@@ -70,6 +70,16 @@ main(int argc, char **argv)
         cthread_post(&server.mgr->wait, CTHDMGR_POST_DATA);
     }
 
+    /* Wait for socket thread to finish bind/listen before
+    ** announcing READY.  listen_sock is set by the socket thread
+    ** after successful listen().  Poll with short STIMER.
+    */
+    {
+        int w;
+        for (w = 0; w < 50 && server.listen_sock < 0; w++)
+            __asm__("STIMER WAIT,BINTVL==F'10'");
+    }
+
     ftpd_log_wto("FTPD001I Server is READY");
 
     /* ----------------------------------------------------------------
@@ -128,7 +138,8 @@ initialize(ftpd_server_t *server, int argc, char **argv)
     if (rc) {
         ftpd_log_wto("FTPD003W APF setup failed RC=%d", rc);
     } else {
-        ftpd_log_wto("FTPD003I STEPLIB APF authorized");
+        ftpd_log_wto("FTPD000I FTPD was APF authorized via SVC 244");
+        ftpd_log_wto("FTPD003I STEPLIB is now APF authorized");
     }
 
     /* Parse PARM for config override: CONFIG=dsname */
