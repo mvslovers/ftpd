@@ -95,17 +95,13 @@ ftpd_session_reply(ftpd_session_t *sess, int code, const char *fmt, ...)
     len += vsnprintf(buf + len, sizeof(buf) - len - 2, fmt, ap);
     va_end(ap);
 
-    /* EBCDIC -> ASCII (message text only, not the CRLF) */
+    /* Ensure CRLF termination */
+    buf[len++] = '\r';
+    buf[len++] = '\n';
+
+    /* EBCDIC -> ASCII */
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
-
-    /* Append ASCII CRLF directly — do NOT use '\r'/'\n' through the
-    ** translation table: c2asm370 maps '\n' to EBCDIC 0x15 (NEL),
-    ** and ebc2asc[0x15] = 0x85 (ASCII NEL), not 0x0A (LF).
-    ** FTP requires ASCII CR LF (0x0D 0x0A).
-    */
-    buf[len++] = 0x0D;     /* ASCII CR */
-    buf[len++] = 0x0A;     /* ASCII LF */
 
     send(sess->ctrl_sock, buf, len, 0);
 
@@ -123,20 +119,16 @@ ftpd_session_reply_multi(ftpd_session_t *sess, int code,
     int len;
     int i;
 
-    /* First line: "code-text" + ASCII CRLF */
-    len = snprintf(buf, sizeof(buf) - 2, "%d-%s", code, first);
+    /* First line: "code-text\r\n" */
+    len = snprintf(buf, sizeof(buf) - 2, "%d-%s\r\n", code, first);
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
-    buf[len++] = 0x0D;
-    buf[len++] = 0x0A;
     send(sess->ctrl_sock, buf, len, 0);
 
-    /* Last line: "code text" + ASCII CRLF */
-    len = snprintf(buf, sizeof(buf) - 2, "%d %s", code, last);
+    /* Last line: "code text\r\n" */
+    len = snprintf(buf, sizeof(buf) - 2, "%d %s\r\n", code, last);
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
-    buf[len++] = 0x0D;
-    buf[len++] = 0x0A;
     send(sess->ctrl_sock, buf, len, 0);
 }
 
