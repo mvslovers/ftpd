@@ -50,30 +50,38 @@ Enforce connection limits, implement idle timeout, and improve session lifecycle
 ## Step 4.2 — Transfer Restart (REST)
 
 ### What
-Implement the REST command for resuming interrupted transfers (RFC 3659).
+Implement the REST command for resuming interrupted transfers.
+
+**Important z/OS finding:** z/OS requires MODE B (Block) or MODE C (Compressed) for REST. In MODE S (Stream), z/OS rejects REST with `504 Restart requires Block or Compressed transfer mode.`
 
 ### Implementation Details
 
-**REST command:**
+**Two possible approaches:**
+
+**Option A — Match z/OS behavior (recommended for Phase 4):**
+- `REST nnn` in MODE S → `504 Restart requires Block or Compressed transfer mode.`
+- Implement MODE B (Block transfer mode) alongside REST
+- This is the compatible approach — existing z/OS clients expect this behavior
+
+**Option B — REST in Stream mode (simpler, but non-z/OS):**
+- Allow REST in MODE S as a pragmatic extension
+- Many non-z/OS FTP servers support REST STREAM
+- Would need to advertise `REST STREAM` in FEAT
+- UFS files: standard byte offset, straightforward
+- MVS datasets: byte offset must align to record boundary for FB
+
+**REST command (whichever approach is chosen):**
 - `REST nnn` → Store restart offset in `sess->rest_offset`, reply `350 Restart position accepted`
 - On next `RETR`: seek to offset before sending data
-- On next `STOR`: seek to offset before writing data (append from position)
-- REST offset is cleared after the next transfer command (whether it succeeds or fails)
-- Only supported for `MODE S` (Stream) — `REST STREAM` is advertised in FEAT
-
-**Constraints:**
-- For MVS sequential datasets: REST offset is a byte offset. For FB datasets, must align to record boundary (offset % lrecl == 0)
-- For PDS members: REST works like sequential
-- For UFS files: standard byte offset, no alignment requirement
+- On next `STOR`: seek to offset before writing data
+- REST offset is cleared after the next transfer command (success or failure)
 - For JES mode: REST not supported → `502`
 
 ### Acceptance Criteria
-- [ ] `REST 1000` + `RETR file` starts transfer from byte 1000
-- [ ] `REST 0` resets to beginning
+- [ ] REST behavior matches chosen approach (Option A or B)
 - [ ] REST offset is cleared after transfer
 - [ ] REST in JES mode → `502`
-- [ ] Interrupted download can be resumed with REST (test with curl `--continue-at`)
-- [ ] `FEAT` response includes `REST STREAM`
+- [ ] `FEAT` response correctly reflects REST capability (or lack thereof)
 
 ---
 

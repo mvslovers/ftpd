@@ -37,7 +37,23 @@ main(int argc, char **argv)
     strcpy(server.eye, FTPD_EYE);
     ftpd_server = &server;
 
-    /* Initialize server */
+    /* Get COM area and set CIB limit BEFORE creating any threads.
+    **
+    ** __gtcom() and __cibset() acquire the CRT PPA lock internally.
+    ** Thread startup (@@CRTSET) takes an EXCLUSIVE lock on the same PPA.
+    ** If a thread is running when main calls __cibset, the shared lock
+    ** request collides with the exclusive holder and the PPA chain is
+    ** corrupted.  Performing all CRT-dependent console setup while main
+    ** is the only TCB eliminates the race (UFSD pattern).
+    */
+    com = __gtcom();
+    if (!com) {
+        ftpd_log_wto("FTPD099E COM area not available");
+        return 8;
+    }
+    __cibset(5);
+
+    /* Initialize server (config, trace, socket thread, worker pool) */
     rc = initialize(&server, argc, argv);
     if (rc != 0) {
         ftpd_log_wto("FTPD099E Initialization failed, rc=%d", rc);
@@ -49,31 +65,23 @@ main(int argc, char **argv)
     ftpd_log_wto("FTPD001I FTPD %s started on port %d",
                  FTPD_VERSION, server.config.port);
 
-    /* Get COM area for console interface */
-    com = __gtcom();
-    if (!com) {
-        ftpd_log(LOG_ERROR, "%s: COM area not available", __func__);
-        terminate(&server);
-        return 8;
-    }
-
-    /* Accept and delete the start CIB */
-    cib = __cibget();
-    if (cib) {
-        if (cib->cibverb == CIBSTART)
-            __cibdel(cib);
+    /* Kick the thread manager so workers start accepting sessions.
+    ** This must happen AFTER __cibset and FTPD_ACTIVE are set.
+    */
+    if (server.mgr) {
+        cthread_post(&server.mgr->wait, CTHDMGR_POST_DATA);
     }
 
     /* ----------------------------------------------------------------
     ** Main event loop (UFSD pattern)
     **
     ** 1. Drain ALL pending CIBs unconditionally
-    ** 2. WAIT on ECBLIST: console ECB + wakeup ECB
+    ** 2. Check shutdown flag before WAIT
+    ** 3. WAIT on ECBLIST: console ECB + wakeup ECB
     **
-    ** The WAIT on the console ECB is critical — STIMER WAIT causes
-    ** IEE342I TASK BUSY because MVS cannot deliver CIBs to a task
-    ** that is in a timed wait.  WAIT on com->comecbpt tells MVS
-    ** the task is ready to accept MODIFY commands.
+    ** CIBs are drained unconditionally because MVS may queue a
+    ** CIBSTART at startup without posting the ECB.
+    ** Do NOT write to com->comecbpt — it is in system storage (key 0).
     ** ---------------------------------------------------------------- */
     {
         unsigned *ecblist[3];
@@ -84,19 +92,27 @@ main(int argc, char **argv)
             while ((cib = __cibget()) != NULL) {
                 ftpd_process_cib(&server, cib);
                 __cibdel(cib);
+                if (!(server.flags & FTPD_ACTIVE)) break;
             }
 
-            /* WAIT on console ECB + wakeup ECB */
-            if (com->comecbpt) {
-                *(com->comecbpt) = 0;       /* reset console ECB */
-                server.wakeup_ecb = 0;      /* reset wakeup ECB  */
-                ecblist[0] = (unsigned *)com->comecbpt;
-                ecblist[1] = (unsigned *)
-                    ((unsigned)&server.wakeup_ecb | 0x80000000U);
-                __asm__("WAIT 1,ECBLIST=(%0)" : : "r"(ecblist));
-            } else {
-                /* Fallback if no COM ECB (should not happen for STCs) */
-                __asm__("STIMER WAIT,BINTVL==F'100'   1 second");
+            if (!(server.flags & FTPD_ACTIVE)) break;
+
+            /* WAIT on console ECB + wakeup ECB.
+            ** The console ECB (com->comecbpt) is in system storage
+            ** (key 0).  The WAIT SVC writes the "waiting" bit into the
+            ** ECB, so we must be in supervisor state for this to work.
+            ** (UFSD pattern — OS/VS2 SPLS GC28-0683 §WAIT)
+            */
+            server.wakeup_ecb = 0;
+            ecblist[0] = (unsigned *)com->comecbpt;
+            ecblist[1] = (unsigned *)
+                ((unsigned)&server.wakeup_ecb | 0x80000000U);
+            {
+                unsigned char savekey;
+                if (!__super(PSWKEY0, &savekey)) {
+                    __asm__("WAIT ECBLIST=(%0)" : : "r"(ecblist));
+                    __prob(savekey, NULL);
+                }
             }
         }
     }
@@ -157,9 +173,6 @@ initialize(ftpd_server_t *server, int argc, char **argv)
         ftpd_log(LOG_ERROR, "%s: failed to create thread manager", __func__);
         return 8;
     }
-
-    /* Post to manager to start dispatcher */
-    cthread_post(&server->mgr->wait, CTHDMGR_POST_DATA);
 
     return 0;
 }

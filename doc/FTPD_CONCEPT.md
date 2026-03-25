@@ -63,6 +63,7 @@ The z/OS FTP server is our primary inspiration for feature selection. Key refere
 - IBM z/OS basic skills: FTP server overview
 - IBM z/OS Communications Server: IP User's Guide (SITE command, JES interface)
 - Colin Paice's blog: Setting up FTP server on z/OS
+- **`ZOS_FTP_REFERENCE.md`** — Protocol captures from z/OS 3.1 FTP server (IBM FTP CS 3.2). Contains exact response strings, error codes, LIST formats, transfer behavior, and SITE command semantics. This is the authoritative reference for our z/OS compatibility implementation.
 
 We cherry-pick the features that make sense for MVS 3.8j. Features requiring USS, RACF (not RAKF), SMS, PDSE, or other z/OS-only infrastructure are excluded.
 
@@ -77,8 +78,8 @@ Standard FTP commands that MUST be supported:
 | Command | Description |
 |---------|-------------|
 | `USER` / `PASS` | Authentication |
-| `SYST` | System type (responds: `215 MVS is the operating system`) |
-| `TYPE` | Transfer type (A=ASCII, I=Image/Binary, E=EBCDIC) |
+| `SYST` | System type (mode-aware: `215 MVS` in dataset mode, `215 UNIX` in UFS mode) |
+| `TYPE` | Transfer type (A=ASCII, I=Image/Binary, E=EBCDIC, L 8=synonym for I) |
 | `MODE` | Transfer mode (S=Stream) |
 | `STRU` | File structure (F=File, R=Record) |
 | `PORT` | Active mode data connection |
@@ -86,10 +87,10 @@ Standard FTP commands that MUST be supported:
 | `LIST` / `NLST` | Directory listing / name list |
 | `RETR` | Retrieve/download file |
 | `STOR` | Store/upload file |
-| `APPE` | Append to file |
+| `APPE` | Append to file (creates dataset if nonexistent) |
 | `DELE` | Delete file |
 | `RNFR` / `RNTO` | Rename file |
-| `MKD` / `RMD` | Make/remove directory (UFS only) |
+| `MKD` / `RMD` | Make/remove directory (UFS) or allocate/scratch PDS (MVS) |
 | `CWD` / `CDUP` | Change working directory |
 | `PWD` | Print working directory |
 | `STAT` | Server status |
@@ -106,6 +107,10 @@ Standard FTP commands that MUST be supported:
 
 The SITE command is the key differentiator. We implement the subset that makes sense on MVS 3.8j:
 
+**Bare SITE (no arguments):**
+- Returns `202 SITE not necessary; you may proceed` (matches z/OS behavior)
+- Current settings are displayed via `STAT`, not via bare SITE
+
 **Filesystem Mode Switching:**
 - `SITE FILETYPE=SEQ` — Normal dataset/file mode (default)
 - `SITE FILETYPE=JES` — JES interface mode (job submission/retrieval)
@@ -113,7 +118,7 @@ The SITE command is the key differentiator. We implement the subset that makes s
 **Dataset Allocation Parameters (for STOR on new datasets):**
 - `SITE RECFM=xx` — Record format (FB, VB, F, V, U, FBA, VBA)
 - `SITE LRECL=nnn` — Logical record length
-- `SITE BLKSIZE=nnn` — Block size
+- `SITE BLKSIZE=nnn` — Block size (auto-adjusted to valid LRECL multiple for FB)
 - `SITE PRIMARY=nnn` — Primary space allocation
 - `SITE SECONDARY=nnn` — Secondary space allocation
 - `SITE TRACKS` / `SITE CYLINDERS` — Space allocation unit
@@ -121,20 +126,34 @@ The SITE command is the key differentiator. We implement the subset that makes s
 - `SITE UNIT=xxxx` — Device type (3350, 3380, 3390)
 - `SITE DIRECTORY=nn` — PDS directory blocks
 
+All allocation parameters are **sticky** — they persist for the entire session until explicitly changed.
+
+**BLKSIZE auto-adjustment:** If BLKSIZE is not a valid multiple of LRECL for FB datasets, the server rounds down to the nearest valid multiple and warns:
+```
+200-BLOCKSIZE must be a multiple of LRECL for RECFM FB
+200-BLOCKSIZE being set to 6120
+200 SITE command was accepted
+```
+
 **JES Interface Parameters:**
 - `SITE JESINTERFACELEVEL=n` — JES interface level (1 or 2)
 - `SITE JESJOBNAME=name` — Filter jobs by name
 - `SITE JESOWNER=owner` — Filter jobs by owner (`*` for all own jobs)
 - `SITE JESSTATUS=status` — Filter by status (INPUT, ACTIVE, OUTPUT, ALL)
 
-**Transfer Control:**
-- `SITE TRAILING` — Append trailing blanks in downloads
-- `SITE TRUNCATE` — Truncate records on upload if too long
-- `SITE RDW` — Include Record Descriptor Words (for VB datasets)
+**Transfer Control (toggle semantics — send once to enable, again to disable):**
+- `SITE TRAILING` — Toggle trailing blank inclusion (default: blanks NOT removed, matching z/OS)
+- `SITE TRUNCATE` — Toggle overlong record truncation (default: OFF)
+- `SITE RDW` — Toggle Record Descriptor Words for VB datasets (default: OFF)
 - `SITE SBSENDEOL=CRLF|LF` — End-of-line for submitted jobs
 
-**z/OS commands recognized but returning 502 (Not Implemented):**
-All other z/OS SITE subcommands (DATACLAS, STORCLAS, MGMTCLAS, EATTR, etc.) are recognized and return a clean `502 SITE subcommand not implemented on this system` so that automated clients don't break.
+**Unknown/unrecognized SITE parameters:**
+Per z/OS behavior, unknown parameters return `200` with a warning (not `502`):
+```
+200-Unrecognized parameter 'FOOBAR=123' on SITE command.
+200 SITE command was accepted
+```
+This is lenient behavior for forward compatibility — clients that send z/OS-specific parameters (DATACLAS, STORCLAS, etc.) will not break.
 
 ### 2.3 MVS Dataset Support
 
@@ -142,8 +161,14 @@ All other z/OS SITE subcommands (DATACLAS, STORCLAS, MGMTCLAS, EATTR, etc.) are 
 - Unqualified names are prefixed with the user's HLQ (userid): `MYDATA` → `'USERID.MYDATA'`
 - Fully qualified names enclosed in single quotes: `'SYS1.PARMLIB(IEASYS00)'`
 - PDS member access: `DATASET.NAME(MEMBER)`
-- PDS directory listing: `LIST DATASET.NAME` returns member list
-- Wildcard support in LIST: `USER1.*.COBOL`, `USER1.SOURCE(*)`
+- Wildcard support in LIST: `USER1.*.COBOL`, `USER1.SOURCE(MEM*)`
+
+**CWD behavior (z/OS compatible):**
+- `CWD` sets the dataset name prefix only — **no I/O, no existence check**. Always returns `250`.
+- Exception: when the resolved name is an actual PDS, response text changes to indicate "partitioned data set"
+- `CWD 'NONEXISTENT.'` → `250 "NONEXISTENT." is the working directory name prefix.` (succeeds)
+- `CWD ..` / `CDUP` → removes last qualifier. At empty prefix, returns `250` with empty prefix (no error)
+- The trailing dot is significant: prefix `IBMUSER.` means `RETR FOO` resolves to `IBMUSER.FOO`
 
 **Supported Dataset Organizations:**
 - PS (Physical Sequential)
@@ -151,12 +176,15 @@ All other z/OS SITE subcommands (DATACLAS, STORCLAS, MGMTCLAS, EATTR, etc.) are 
 - DA (Direct Access) — read-only listing
 
 **Dataset Operations:**
-- `LIST` — Datasets matching pattern with attributes (RECFM, LRECL, BLKSIZE, DSORG, volume)
-- `LIST` on PDS — Members (with ISPF stats if available)
+- `LIST` — Datasets matching current prefix with attributes (RECFM, LRECL, BLKSIZE, DSORG, volume). In DATASETMODE, `LIST 'PDS.NAME'` shows catalog entry, not members. Members listed via `LIST 'PDS(MEM*)'` or after CWD into the PDS.
+- `LIST` on PDS — Members (with ISPF stats if available; blanks for members without stats)
 - `RETR` — Read sequential dataset or PDS member
-- `STOR` — Write sequential dataset or PDS member (create new or replace)
-- `DELE` — Delete dataset or PDS member
-- `RNFR`/`RNTO` — Rename dataset or PDS member
+- `STOR` — Write sequential dataset or PDS member (replaces content if existing)
+- `APPE` — Append to dataset; **creates the dataset** if nonexistent (uses current SITE allocation params)
+- `DELE` — Delete dataset (including entire PDS with members) or PDS member
+- `MKD` — Allocate a new PDS (using current SITE allocation params, DSORG=PO)
+- `RMD` — Scratch a PDS (same as DELE for datasets)
+- `RNFR`/`RNTO` — Rename dataset or PDS member. RNFR state is cleared on any command other than RNTO (stricter than z/OS which has a stale-RNFR bug). MVS mode rejects rename to existing target with `550`.
 
 **z/OS-compatible LIST format for MVS datasets:**
 ```
@@ -188,9 +216,10 @@ When the working directory starts with `/`, the server switches to UFS mode:
 - `SIZE` / `MDTM` — File metadata
 
 **Mode Switching:**
-- `CWD /` or `CWD /path` — Switch to UFS mode
-- `CWD 'HLQ.DATASET'` or `CWD dataset` — Switch back to MVS mode
-- `PWD` reflects current context: `257 "'USER1.'" is working directory` (MVS) or `257 "/home/user1" is working directory` (UFS)
+- `CWD /` or `CWD /path` — Switch to UFS mode. `SYST` returns `215 UNIX` in this mode.
+- `CWD 'HLQ.DATASET'` or `CWD dataset` — Switch back to MVS mode. `SYST` returns `215 MVS`.
+- `PWD` reflects current context: `257 "'USER1.'" is working directory.` (MVS) or `257 "/home/user1" is the HFS working directory.` (UFS)
+- UFS rename (`RNTO`) to existing target **overwrites** (Unix semantics), unlike MVS mode which rejects with `550`
 
 ### 2.5 JES Interface (SITE FILETYPE=JES)
 
@@ -206,38 +235,52 @@ When `SITE FILETYPE=JES` is active, FTP commands change meaning:
 - Format: `JOBNAME  JOBID   OWNER   STATUS  CLASS  RC`
 
 **Job Output Retrieval:**
-- `RETR JOBnnnnn` — Retrieve all spool output
-- `RETR JOBnnnnn.n` — Retrieve specific spool file (DD) number n
+- `RETR JOBnnnnn` — Retrieve all spool output, DDs separated by ` !! END OF JES SPOOL FILE !!` (space-prefixed, exact z/OS convention)
+- `RETR JOBnnnnn.n` — Retrieve specific spool file (DD) number n (numbering starts at **1**, not 0)
 
 **Job Management:**
-- `DELE JOBnnnnn` — Purge job from JES queues
+- `DELE JOBnnnnn` — Purge job from JES queues. Response: `250 Cancel successful` (matches z/OS)
 
 **JES Interface Levels:**
 - Level 1: Job name must match userid (or userid + 1 char). Simple, secure.
 - Level 2: Any job name. `SITE JESOWNER=*` required to list all own jobs. More flexible.
 
-Implementation uses crent370's `jes/` module for JES2 interaction and the AAINTRDR DD for job submission via internal reader.
+Implementation uses crent370's `jes/` module for JES2 interaction (internal reader opened programmatically).
 
 ### 2.6 Transfer Mode Details
 
 **ASCII Mode (TYPE A):**
-- EBCDIC ↔ ASCII translation at transfer boundary
-- Record delimiters: CRLF in stream, dataset records on disk
-- Trailing blank trimming for FB datasets
+- EBCDIC ↔ ASCII translation at transfer boundary (IBM-1047 ↔ ISO-8859-1)
+- Record delimiters: CRLF (ASCII 0x0D 0x0A) in stream, dataset records on disk
+- With STRU F (default): trailing blanks trimmed from FB records before CRLF
+- With STRU R: trailing blanks preserved, RFC 959 record markers used
 
 **EBCDIC Mode (TYPE E):**
 - No translation — raw EBCDIC transfer
+- Record separator: **EBCDIC NL (X'15')** after each record (not CRLF, not X'25')
 - Useful for mainframe-to-mainframe transfers
 
 **Binary/Image Mode (TYPE I):**
-- No translation, no record processing
-- Byte-for-byte transfer
+- No translation, no record processing, no record separators
+- Byte-for-byte transfer: FB 80 dataset with 10 records = exactly 800 bytes
 - Required for load modules, object decks, XMI files
+- `TYPE L 8` accepted as synonym for TYPE I
 
 **Record Structure (STRU R):**
-- Preserves record boundaries in transfer
-- Each record preceded by 2-byte length prefix
+- Preserves record boundaries in transfer using RFC 959 markers:
+  - `X'FF01'` = EOR (End of Record) after each record
+  - `X'FF02'` = EOF (End of File) at end of transfer
+- Trailing blanks are **preserved** (unlike TYPE A + STRU F)
+- Data content is translated per current TYPE (A → ASCII, E → EBCDIC, I → raw)
 - Essential for VB (variable-length blocked) datasets
+
+**SITE RDW (Record Descriptor Word):**
+- Only meaningful for VB datasets. No effect on FB.
+- Prepends 4-byte LLBB (LL = record length including RDW, BB = 0) per record
+- Used with TYPE I for binary transfer with record length preservation
+
+**Pre-authentication commands:**
+Per z/OS behavior, the following commands are allowed before USER/PASS: SYST, FEAT, HELP, NOOP, STAT, SITE, QUIT. All data transfer and navigation commands require authentication (`530 Not logged in.`).
 
 ---
 
@@ -285,28 +328,26 @@ ftpd/
 ├── .env                     # Local MVS connection (gitignored)
 ├── mbt/                     # mbt submodule
 ├── src/
-│   ├── ftpd.c              # Main: listener loop, event loop, shutdown
-│   ├── ftpd#con.c          # Console command handler (CIB processing)
-│   ├── ftpd#ses.c          # Session handler (per-connection state machine)
-│   ├── ftpd#cmd.c          # FTP command parser & dispatcher
-│   ├── ftpd#mvs.c          # MVS dataset operations (VTOC, OBTAIN, OPEN/CLOSE)
-│   ├── ftpd#ufs.c          # UFS operations (via UFSD client library)
-│   ├── ftpd#jes.c          # JES interface (submit, list, retrieve spool)
-│   ├── ftpd#dat.c          # Data connection management (PORT/PASV)
-│   ├── ftpd#xlt.c          # EBCDIC ↔ ASCII translation tables
-│   ├── ftpd#aut.c          # Authentication (RAKF via crent370 racf module)
-│   ├── ftpd#sit.c          # SITE command processing
-│   ├── ftpd#lst.c          # LIST/NLST formatting (MVS + UFS + JES formats)
-│   ├── ftpd#log.c          # Logging (WTO messages, STDOUT)
-│   └── ftpd#cfg.c          # Configuration file parsing
+│   ├── ftpd.c              # Main: listener loop, console commands, shutdown
+│   ├── ftpdses.c           # Session handler (per-connection state machine)
+│   ├── ftpdcmd.c           # FTP command parser & dispatcher
+│   ├── ftpdmvs.c           # MVS dataset operations (VTOC, OBTAIN, OPEN/CLOSE)
+│   ├── ftpdufs.c           # UFS operations (via UFSD client library)
+│   ├── ftpdjes.c           # JES interface (submit, list, retrieve spool)
+│   ├── ftpddata.c          # Data connection management (PORT/PASV)
+│   ├── ftpdxlat.c          # EBCDIC ↔ ASCII translation tables
+│   ├── ftpdauth.c          # Authentication (RAKF via crent370 racf module)
+│   ├── ftpdsite.c          # SITE command processing
+│   ├── ftpdlist.c          # LIST/NLST formatting (MVS + UFS + JES formats)
+│   ├── ftpdlog.c           # Logging (WTO messages, STDOUT)
+│   └── ftpdcfg.c           # Configuration file parsing
 ├── include/
-│   ├── ftpd.h              # Main header: constants, server state, core types
-│   ├── ftpd#cfg.h          # Configuration structures and prototypes
-│   ├── ftpd#log.h          # Logging levels and prototypes
-│   ├── ftpd#ses.h          # Session structure and prototypes
-│   ├── ftpd#cmd.h          # FTP command dispatch prototype
-│   ├── ftpd#dat.h          # Data connection prototypes
-│   └── ftpd#xlt.h          # Translation table declarations
+│   ├── ftpd.h              # Main header, shared structures & constants
+│   ├── ftpdses.h           # Session state definitions
+│   ├── ftpdmvs.h           # MVS dataset structures
+│   ├── ftpdufs.h           # UFS interface prototypes
+│   ├── ftpdjes.h           # JES interface definitions
+│   └── ftpdxlat.h          # Translation table declarations
 ├── asm/                     # Generated .s files (from c2asm370)
 ├── contrib/                 # Extracted dependency headers (gitignored)
 └── jcl/
@@ -519,7 +560,7 @@ Passive mode is preferred by modern clients (firewalls, NAT). The configurable P
 All internal processing is in **EBCDIC** (native MVS). Translation at the network boundary:
 
 ```
-  Network (ASCII) ←→ [ftpd#xlt] ←→ Internal (EBCDIC) ←→ MVS I/O / UFSD
+  Network (ASCII) ←→ [ftpdxlat] ←→ Internal (EBCDIC) ←→ MVS I/O / UFSD
 ```
 
 - `TYPE A`: Full translation (IBM-1047 ↔ ISO-8859-1)
@@ -756,28 +797,27 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 **Step 1.1 — Project scaffolding**
 - Initialize repo with mbt submodule, `project.toml`, `.env.example`
 - `make doctor` + `make bootstrap` work
-- Implement `ftpd#cfg.c` (parse FTPDPM00 config file)
-- Implement `ftpd#log.c` (WTO messages + STDOUT logging)
+- Implement `ftpdcfg.c` (parse FTPDPM00 config file)
+- Implement `ftpdlog.c` (WTO messages + STDOUT logging)
 
 **Step 1.2 — Network layer**
 - `ftpd.c` — Main listener: socket, bind, listen, accept loop via crent370 socket API
-- `ftpd#con.c` — Console command handler (CIB processing, MODIFY dispatch)
-- `ftpd#ses.c` — Session state machine + thread lifecycle (thdmgr)
-- `ftpd#dat.c` — PORT/PASV data connection setup and teardown
-- `ftpd#xlt.c` — EBCDIC ↔ ASCII translation tables (IBM-1047)
+- `ftpdses.c` — Session state machine + thread lifecycle (thdmgr)
+- `ftpddata.c` — PORT/PASV data connection setup and teardown
+- `ftpdxlat.c` — EBCDIC ↔ ASCII translation tables (IBM-1047)
 
 **Step 1.3 — Command processing**
-- `ftpd#cmd.c` — Command parser: read line from control socket, tokenize, dispatch
-- `ftpd#aut.c` — USER/PASS via crent370 racf module
+- `ftpdcmd.c` — Command parser: read line from control socket, tokenize, dispatch
+- `ftpdauth.c` — USER/PASS via crent370 racf module
 - Basic commands: SYST, TYPE, MODE, STRU, NOOP, QUIT, HELP, FEAT, STAT
 
 **Step 1.4 — MVS dataset access**
-- `ftpd#mvs.c` — VTOC scanning, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE
-- `ftpd#lst.c` — z/OS-compatible LIST formatting for datasets + PDS members
+- `ftpdmvs.c` — VTOC scanning, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE
+- `ftpdlist.c` — z/OS-compatible LIST formatting for datasets + PDS members
 - CWD/PWD for MVS, LIST/NLST, RETR, STOR, DELE, RNFR/RNTO
 
 **Step 1.5 — SITE command framework**
-- `ftpd#sit.c` — SITE command dispatcher
+- `ftpdsite.c` — SITE command dispatcher
 - Dataset allocation parameters (RECFM, LRECL, BLKSIZE, etc.)
 - 502 responses for unimplemented z/OS SITE subcommands
 
@@ -788,8 +828,8 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 **Goal:** Submit jobs and retrieve spool output via FTP.
 
 **Step 2.1 — Job submission**
-- `SITE FILETYPE=JES` mode switch in ftpd#sit.c
-- `ftpd#jes.c` — STOR writes to internal reader DD, extracts job number
+- `SITE FILETYPE=JES` mode switch in ftpdsite.c
+- `ftpdjes.c` — STOR writes to internal reader DD, extracts job number
 
 **Step 2.2 — Job query**
 - LIST in JES mode → job queue listing
@@ -806,7 +846,7 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 **Goal:** Seamless UFS file access alongside MVS datasets.
 
 **Step 3.1 — UFSD client integration**
-- `ftpd#ufs.c` — Wrapper around UFSD client library
+- `ftpdufs.c` — Wrapper around UFSD client library
 - Auto-detect UFSD availability at session start
 - `550 UFS service not available` if UFSD not running
 
@@ -886,7 +926,7 @@ Some z/OS FTP features cannot exist on MVS 3.8j:
 ## 9. Testing Strategy
 
 ### Unit Testing
-- Command parser tests (ftpd#cmd)
+- Command parser tests (ftpdcmd)
 - EBCDIC ↔ ASCII translation verification
 - Dataset name parsing (qualified, unqualified, PDS members, wildcards)
 - SITE parameter parsing
@@ -925,6 +965,24 @@ All major design questions have been resolved:
 
 7. ~~**Logging verbosity**~~ → **Decided:** WTO for important events (start, stop, auth failures, errors) and operator command responses (`/F FTPD,D ...`). STDOUT for everything else (transfer details, debug, session activity). Additionally: **trace ring buffer** (like UFSD) — enabled/disabled/dumped via `/F FTPD,TRACE ON|OFF|DUMP`. Dump writes to STDOUT, WTO only confirms with entry count.
 
+### z/OS Protocol Reference Findings (from `ZOS_FTP_REFERENCE.md`)
+
+The following behaviors were confirmed from z/OS 3.1 FTP server protocol captures and incorporated into the concept:
+
+8. **SYST is mode-aware:** Returns `215 MVS` in dataset mode, `215 UNIX` in UFS mode. See §2.1.
+9. **CWD does not verify datasets:** CWD is a pure prefix manipulation — always returns `250`, even for nonexistent datasets. See §2.3.
+10. **Bare SITE returns `202`:** Not a settings dump. Use `STAT` for session settings. See §2.2.
+11. **Unknown SITE params return `200` with warning:** Not `502`. Lenient for forward compatibility. See §2.2.
+12. **TYPE E record separator is X'15' (NL):** Not CRLF, not X'25'. See §2.6.
+13. **TRAILING default: blanks NOT removed.** Matches z/OS default. See §2.2.
+14. **REST requires MODE B or C:** `504` in MODE S (Stream). REST STREAM removed from FEAT. See Appendix C.
+15. **Pre-auth commands allowed:** SYST, FEAT, HELP, NOOP, STAT, SITE, QUIT work before USER/PASS. See §2.6.
+16. **APPE creates nonexistent datasets.** See §2.3.
+17. **MKD in MVS mode allocates PDS.** RMD scratches PDS (same as DELE). See §2.3.
+18. **RNFR state cleared on any non-RNTO command.** Stricter than z/OS (which has a stale-RNFR bug). See §2.3.
+19. **Spool DD separator:** ` !! END OF JES SPOOL FILE !!` (space-prefixed, exact string). DD numbering starts at 1. See §2.5.
+20. **DELE JOB response:** `250 Cancel successful` (matches z/OS). See §2.5.
+
 ---
 
 ## Appendix A: FTP Reply Codes
@@ -934,13 +992,14 @@ All major design questions have been resolved:
 | 125 | Data connection already open, transfer starting |
 | 150 | File status okay, about to open data connection |
 | 200 | Command okay |
+| 202 | Command superfluous (bare SITE) |
 | 211 | System status / FEAT response |
 | 213 | File status (SIZE response) |
 | 214 | Help message |
 | 215 | NAME system type |
 | 220 | Service ready for new user |
 | 221 | Service closing control connection |
-| 226 | Closing data connection, transfer complete |
+| 226 | Closing data connection, transfer complete / Abort successful |
 | 227 | Entering Passive Mode |
 | 230 | User logged in |
 | 250 | Requested file action okay |
@@ -956,7 +1015,7 @@ All major design questions have been resolved:
 | 500 | Syntax error, unrecognized command |
 | 501 | Syntax error in parameters |
 | 502 | Command not implemented |
-| 504 | Command not implemented for that parameter |
+| 504 | Command/parameter not implemented (MODE B/C, REST in stream mode) |
 | 530 | Not logged in |
 | 550 | File unavailable (not found, no access) |
 | 552 | Exceeded storage allocation |
@@ -964,28 +1023,32 @@ All major design questions have been resolved:
 
 ## Appendix B: z/OS SITE Subcommands Reference
 
-For z/OS compatibility, these SITE subcommands are **recognized** (even if they return 502):
-
-**Implemented:**
+**Implemented (return `200 SITE command was accepted`):**
 BLKSIZE, CYLINDERS, DIRECTORY, FILETYPE, JESINTERFACELEVEL,
 JESJOBNAME, JESOWNER, JESSTATUS, LRECL, PRIMARY, RECFM,
 RDW, SBSENDEOL, SECONDARY, TRACKS, TRAILING, TRUNCATE, UNIT, VOLUME,
 XMIT (Phase 5)
 
-**Recognized (502 Not Implemented):**
-BLOCKS, CONDDISP, DATACLAS, EATTR, ISPFSTATS, MGMTCLAS, NCP,
-QUOTESOVERRIDE, RETPD, SBDATACONN, SBSUB, SPACETYPE, STORCLAS,
-UCSMSG, WRAPAROUND
+**Accepted silently (return `200` — no effect on MVS 3.8j):**
+DATACLAS, STORCLAS, MGMTCLAS (SMS classes — accepted for client compatibility)
+
+**Unrecognized parameters (return `200` with warning):**
+All other z/OS SITE subcommands are accepted with:
+`200-Unrecognized parameter 'XXX' on SITE command.` / `200 SITE command was accepted`
+This matches z/OS behavior and prevents client errors.
 
 ## Appendix C: FEAT Response
+
+Note: The z/OS 3.1 test server returned `211 no Extensions supported` (with SIZE/MDTM disabled). We choose to advertise features per RFC 2389 for better client compatibility:
 
 ```
 211-Features supported
  SIZE
  MDTM
- REST STREAM
  SITE FILETYPE
  SITE JES
  UTF8
 211 End
 ```
+
+`REST STREAM` is **not** advertised because z/OS requires MODE B or C for REST (returns `504 Restart requires Block or Compressed transfer mode` in MODE S). Since we only support MODE S in Phase 1, REST is not available. REST support may be added when MODE B is implemented.

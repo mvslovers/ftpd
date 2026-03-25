@@ -44,7 +44,7 @@ Implement the SITE XMIT switch and the infrastructure for XMIT-mode transfers.
 
 ### Implementation Details
 
-**SITE command additions in ftpd#sit.c:**
+**SITE command additions in ftpdsite.c:**
 - `SITE XMIT` → Enable XMIT mode: `sess->xmit_mode = 1`, reply `200 XMIT mode enabled`
 - `SITE NOXMIT` → Disable XMIT mode: `sess->xmit_mode = 0`, reply `200 XMIT mode disabled`
 - XMIT mode is orthogonal to FILETYPE — it affects RETR/STOR behavior in SEQ mode only
@@ -75,7 +75,7 @@ When XMIT mode is active, `RETR` produces the dataset in XMIT format instead of 
 
 ### Implementation Details
 
-**ftpd#mvs.c — XMIT RETR flow:**
+**ftpdmvs.c — XMIT RETR flow:**
 1. Client sends `RETR 'USER1.SOURCE'` (with XMIT mode active)
 2. Server calls TRANSMIT to convert the dataset to XMIT format:
    - **Option A (NJE38):** Invoke TRANSMIT program, output to temp sequential dataset, then stream temp dataset to client
@@ -110,7 +110,7 @@ When XMIT mode is active, `STOR` accepts XMIT-format input and restores the data
 
 ### Implementation Details
 
-**ftpd#mvs.c — XMIT STOR flow:**
+**ftpdmvs.c — XMIT STOR flow:**
 1. Client sends `STOR 'USER1.RESTORED.DATA'` (with XMIT mode active)
 2. Server receives XMIT data from data connection
 3. Write to temp sequential dataset

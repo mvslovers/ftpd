@@ -25,11 +25,12 @@ Integrate UFSD client library, detect availability, and provide a clean wrapper 
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd#ufs.c` | UFS operations wrapper around UFSD client library |
+| `src/ftpdufs.c` | UFS operations wrapper around UFSD client library |
+| `include/ftpdufs.h` | UFS interface prototypes |
 
 ### Implementation Details
 
-**ftpd#ufs.c — UFSD Client Wrapper:**
+**ftpdufs.c — UFSD Client Wrapper:**
 
 *Availability detection:*
 - `ftpd_ufs_available()` — Check if UFSD subsystem is running (try connecting via client library). Cache result per session with periodic re-check.
@@ -84,7 +85,7 @@ Implement FTP commands for UFS file operations: LIST, RETR, STOR, DELE, MKD, RMD
 
 ### Implementation Details
 
-**FTP command handlers in ftpd#ufs.c:**
+**FTP command handlers in ftpdufs.c:**
 
 *Directory navigation:*
 - `CWD /path` → Set `sess->ufs_cwd`, switch `sess->fsmode = FS_UFS`
@@ -122,9 +123,9 @@ Implement FTP commands for UFS file operations: LIST, RETR, STOR, DELE, MKD, RMD
 - `SIZE path` → `ftpd_ufs_stat()`, reply `213 size_in_bytes`
 - `MDTM path` → `ftpd_ufs_stat()`, reply `213 YYYYMMDDHHMMSS`
 
-**Command routing in ftpd#cmd.c:**
-- Check `sess->fsmode`: if `FS_UFS`, route to `ftpd#ufs.c` handlers
-- If `FS_MVS`, route to `ftpd#mvs.c` handlers (existing Phase 1 code)
+**Command routing in ftpdcmd.c:**
+- Check `sess->fsmode`: if `FS_UFS`, route to `ftpdufs.c` handlers
+- If `FS_MVS`, route to `ftpdmvs.c` handlers (existing Phase 1 code)
 - `SITE FILETYPE=JES` overrides both (Phase 2)
 
 ### Dependencies

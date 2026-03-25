@@ -42,7 +42,7 @@ ftpd_log_wto(const char *fmt, ...)
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    wtof("%s", buf);
+    wto(buf);
 }
 
 /* ====================================================================

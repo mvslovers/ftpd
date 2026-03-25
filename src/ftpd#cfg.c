@@ -21,7 +21,7 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     memset(cfg, 0, sizeof(*cfg));
 
     /* Network */
-    cfg->port = 21;
+    cfg->port = 2121;
     strcpy(cfg->bind_ip, "ANY");
     strcpy(cfg->pasv_addr, "127.0.0.1");
     cfg->pasv_lo = 22000;

@@ -39,13 +39,23 @@ blksize = 19069
 space = ["TRK", 10, 5, 5]
 
 [dependencies]
-"mvslovers/crent370" = ">=1.0.6"
+"mvslovers/crent370" = ">=1.0.7"
 
 [[link.module]]
 name = "FTPD"
 entry = "@@CRT0"
 options = ["SIZE=(4000K,40K)", "LIST", "MAP", "XREF", "RENT"]
-include = ["@@CRT1", "FTPD", "FTPD#CFG", "FTPD#CMD", "FTPD#CON", "FTPD#DAT", "FTPD#LOG", "FTPD#SES", "FTPD#XLT"]
+include = [
+  "@@CRT1",
+  "FTPD",
+  "FTPD#CFG",
+  "FTPD#CMD",
+  "FTPD#CON",
+  "FTPD#DAT",
+  "FTPD#LOG",
+  "FTPD#SES",
+  "FTPD#XLT",
+]
 setcode = "AC(1)"
 
 [release]

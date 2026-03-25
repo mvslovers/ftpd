@@ -32,23 +32,23 @@ Initialize the repository structure, build configuration, and basic infrastructu
 | `.env.example` | Example MVS connection config |
 | `.gitignore` | Ignore `.env`, `asm/*.s`, `contrib/`, `dist/`, `.mbt/` |
 | `.gitmodules` | mbt submodule reference |
-| `src/ftpd#cfg.c` | Configuration file parser |
-| `src/ftpd#log.c` | Logging module (WTO + STDOUT + trace ring buffer) |
-| `include/ftpd.h` | Main header: shared constants, structures, server state |
-| `include/ftpd#cfg.h` | Config structures and function prototypes |
-| `include/ftpd#log.h` | Logging levels and prototypes |
+| `src/ftpdcfg.c` | Configuration file parser |
+| `src/ftpdlog.c` | Logging module (WTO + STDOUT + trace ring buffer) |
+| `include/ftpd.h` | Main header: shared constants, structures, forward declarations |
+| `include/ftpdcfg.h` | Config structures and function prototypes |
+| `include/ftpdlog.h` | Logging macros and prototypes |
 | `jcl/FTPD.jcl` | STC procedure |
 
 ### Implementation Details
 
-**ftpd#cfg.c — Configuration Parser:**
+**ftpdcfg.c — Configuration Parser:**
 - Read `SYS1.PARMLIB(FTPDPM00)` (or PARM-specified dataset)
 - Parse key=value format, `#` comments, DASD volume lines
 - Populate `ftpd_config_t` structure (see concept §3.5)
 - Default values for all parameters
 - Validation: port range, IP format, PASV port range
 
-**ftpd#log.c — Logging:**
+**ftpdlog.c — Logging:**
 - `ftpd_log_wto(msg)` — Write to operator (WTO macro) for important events
 - `ftpd_log(level, fmt, ...)` — Write to STDOUT with timestamp and level
 - Trace ring buffer: fixed-size circular buffer in memory
@@ -58,7 +58,7 @@ Initialize the repository structure, build configuration, and basic infrastructu
 
 **ftpd.h — Main Header:**
 - `ftpd_config_t` structure
-- `ftpd_session_t` structure (forward declare in ftpd.h, full definition in ftpd#ses.h)
+- `ftpd_session_t` structure (forward declare, full definition in ftpdses.h)
 - Constants: `FT_SEQ`, `FT_JES`, `FS_MVS`, `FS_UFS`
 - Session states: `SESS_GREETING`, `SESS_AUTH_USER`, etc.
 - FTP reply code constants
@@ -69,12 +69,12 @@ Initialize the repository structure, build configuration, and basic infrastructu
 - crent370 must be resolvable via `make bootstrap`
 
 ### Acceptance Criteria
-- [x] `make doctor` passes — c2asm370 found, MVS reachable
-- [x] `make bootstrap` completes — crent370 + ufsd resolved, datasets allocated on MVS
-- [x] `make build` compiles `ftpd#cfg.c` and `ftpd#log.c` without errors
-- [x] Config parser correctly reads the example FTPDPM00 config (unit test or manual verification)
-- [x] Logging produces WTO messages and STDOUT output
-- [x] Trace ring buffer can be enabled, written to, and dumped
+- [ ] `make doctor` passes — c2asm370 found, MVS reachable
+- [ ] `make bootstrap` completes — crent370 + ufsd resolved, datasets allocated on MVS
+- [ ] `make build` compiles `ftpdcfg.c` and `ftpdlog.c` without errors
+- [ ] Config parser correctly reads the example FTPDPM00 config (unit test or manual verification)
+- [ ] Logging produces WTO messages and STDOUT output
+- [ ] Trace ring buffer can be enabled, written to, and dumped
 
 ---
 
@@ -87,15 +87,12 @@ Main listener loop, session lifecycle management, data connection handling, and 
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd.c` | Main entry: socket listener, event loop, shutdown |
-| `src/ftpd#con.c` | Console command handler (CIB processing, MODIFY dispatch) |
-| `src/ftpd#ses.c` | Session state machine, thread lifecycle via thdmgr |
-| `src/ftpd#dat.c` | Data connection management (PORT/PASV) |
-| `src/ftpd#xlt.c` | EBCDIC ↔ ASCII translation tables (IBM-1047) |
-| `include/ftpd#ses.h` | Session state definitions, session structure |
-| `include/ftpd#cmd.h` | Command dispatch prototype |
-| `include/ftpd#dat.h` | Data connection prototypes |
-| `include/ftpd#xlt.h` | Translation table declarations |
+| `src/ftpd.c` | Main entry: socket listener, accept loop, console command handler, shutdown |
+| `src/ftpdses.c` | Session state machine, thread lifecycle via thdmgr |
+| `src/ftpddata.c` | Data connection management (PORT/PASV) |
+| `src/ftpdxlat.c` | EBCDIC ↔ ASCII translation tables (IBM-1047) |
+| `include/ftpdses.h` | Session state definitions, session structure |
+| `include/ftpdxlat.h` | Translation table declarations |
 
 ### Implementation Details
 
@@ -106,29 +103,28 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - Create listening socket (crent370 socket API)
 - Bind to configured address:port
 - Accept loop: for each connection, spawn session thread via thdmgr
-- Console command handling delegated to `ftpd#con.c` (UFSD pattern):
-  - `STATS` — display server statistics (WTO response)
-  - `SESSIONS` — display active session count (WTO response)
-  - `CONFIG` — display active config (WTO response)
-  - `VERSION` — display version string (WTO response)
+- Console command handler (MODIFY commands via crent370 COMM interface):
+  - `D SESSIONS` — list active sessions (WTO response)
+  - `D STATS` — show transfer statistics (WTO response)
+  - `D VERSION` — show version string (WTO response)
+  - `D CONFIG` — show active config (WTO response)
+  - `KILL sessid` — force-close a session
   - `TRACE ON|OFF|DUMP` — control trace ring buffer
-  - `HELP` — list available commands
-  - `SHUTDOWN` — graceful shutdown (also `/P FTPD`)
-- Flag-based shutdown: clear FTPD_ACTIVE, set FTPD_QUIESCE
+- Graceful shutdown on STOP command: close listener, wait for sessions, exit
 
-**ftpd#ses.c — Session Handler:**
+**ftpdses.c — Session Handler:**
 - `ftpd_session_new(sock)` — Allocate and initialize session context
 - `ftpd_session_run(sess)` — Main session loop (thread entry point):
   1. Send 220 greeting
   2. Read command line from control socket
   3. Translate ASCII → EBCDIC
-  4. Parse and dispatch (calls into ftpd#cmd.c — Step 1.3)
+  4. Parse and dispatch (calls into ftpdcmd.c — Step 1.3)
   5. Loop until QUIT or error
 - `ftpd_session_free(sess)` — Cleanup: close sockets, free memory
 - `ftpd_session_reply(sess, code, msg)` — Send FTP reply (EBCDIC → ASCII)
 - Track active sessions in a linked list or array for console display
 
-**ftpd#dat.c — Data Connections:**
+**ftpddata.c — Data Connections:**
 - `ftpd_data_port(sess, h1,h2,h3,h4,p1,p2)` — Parse PORT command, store target
 - `ftpd_data_pasv(sess)` — Open passive listener on port from configured range, return 227 response
 - `ftpd_data_open(sess)` — Establish data connection (connect for active, accept for passive)
@@ -136,7 +132,7 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - `ftpd_data_send(sess, buf, len)` — Write to data connection
 - `ftpd_data_recv(sess, buf, len)` — Read from data connection
 
-**ftpd#xlt.c — Translation:**
+**ftpdxlat.c — Translation:**
 - `ascii_to_ebcdic[256]` — Static lookup table (IBM-1047 ↔ ISO-8859-1)
 - `ebcdic_to_ascii[256]` — Static lookup table
 - `ftpd_xlat_a2e(buf, len)` — In-place ASCII → EBCDIC
@@ -152,7 +148,7 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - [ ] Server shuts down cleanly on `/P FTPD`
 - [ ] FTP client can connect and receives `220` greeting
 - [ ] Multiple concurrent connections are handled (each in own thdmgr thread)
-- [ ] `/F FTPD,VERSION` responds with version string on console
+- [ ] `/F FTPD,D VERSION` responds with version string on console
 - [ ] `/F FTPD,TRACE ON` / `TRACE OFF` / `TRACE DUMP` work
 - [ ] PASV mode: client can establish passive data connection
 - [ ] PORT mode: server can connect back to client for data transfer
@@ -169,37 +165,43 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd#cmd.c` | Command parser: read line, tokenize, dispatch to handler |
-| `src/ftpd#aut.c` | Authentication: USER/PASS via crent370 racf module |
+| `src/ftpdcmd.c` | Command parser: read line, tokenize, dispatch to handler |
+| `src/ftpdauth.c` | Authentication: USER/PASS via crent370 racf module |
 
 ### Implementation Details
 
-**ftpd#cmd.c — Command Parser & Dispatcher:**
+**ftpdcmd.c — Command Parser & Dispatcher:**
 - `ftpd_cmd_parse(line, cmd, arg)` — Split input line into command + argument
 - Command dispatch table: array of `{ "XXXX", handler_func }` entries
 - Case-insensitive command matching (FTP commands are case-insensitive)
-- Unknown commands → `500 Syntax error, unrecognized command`
-- Commands requiring authentication check `sess->authenticated` first → `530 Not logged in`
+- Unknown commands → `500 unknown command XXXX`
+- Commands requiring authentication check `sess->authenticated` first → `530 Not logged in.`
+- **Pre-auth allowlist:** SYST, FEAT, HELP, NOOP, STAT, SITE, QUIT, USER, PASS are allowed before login. All others require authentication.
 
 **Basic commands (no dataset I/O):**
-- `SYST` → `215 MVS is the operating system`
-- `TYPE A|E|I` → Set transfer type, `200 Type set to X`
-- `MODE S` → `200 Mode set to S` (only Stream supported)
-- `STRU F|R` → Set structure, `200 Structure set to X`
-- `NOOP` → `200 Command okay`
-- `QUIT` → `221 Goodbye`, close session
-- `HELP` → `214-` multi-line help text listing available commands
-- `FEAT` → `211-Features supported` / `SIZE` / `MDTM` / `REST STREAM` / `SITE FILETYPE` / `SITE JES` / `UTF8` / `211 End`
-- `STAT` → `211-` server status (version, session info)
-- `ABOR` → `226 Abort successful` (close any pending data connection)
+- `SYST` → Mode-aware: `215 MVS is the operating system of this server. FTP Server is running on MVS.` (dataset mode) or `215 UNIX is the operating system of this server. FTP Server is running on MVS.` (UFS mode)
+- `TYPE A|E|I` → Set transfer type, `200 Representation type is Ascii NonPrint` / `Image` / `Ebcdic NonPrint`
+- `TYPE A N` / `TYPE E N` → Explicit NonPrint format, same response
+- `TYPE L 8` → Accept as synonym for TYPE I: `200 Local byte 8, representation type is Image`
+- `TYPE X` (unknown) → `501-unknown type  X` / `501 Type remains <current>` (multiline)
+- `MODE S` → `200 Data transfer mode is Stream` (only Stream supported)
+- `MODE B|C` → `504 MODE B/C not implemented` (z/OS accepts both, we don't for Phase 1)
+- `STRU F|R` → `250 Data structure is File` / `Record`
+- `STRU P` → `504-Page structure not implemented` / `504 Data structure remains <current>`
+- `NOOP` → `200 OK`
+- `QUIT` → `221 Quit command received. Goodbye.`
+- `HELP` → `214-` multi-line listing of all supported commands (mark unimplemented with `*`)
+- `FEAT` → `211-Features supported` / `SIZE` / `MDTM` / `SITE FILETYPE` / `SITE JES` / `UTF8` / `211 End`
+- `STAT` → `211-` server status (connection info, current TYPE/MODE/STRU, SITE settings, JES config)
+- `ABOR` → `226 Abort successful.` (even when no transfer is active)
 - `PORT` → delegate to `ftpd_data_port()`
 - `PASV` → delegate to `ftpd_data_pasv()`
 
-**ftpd#aut.c — Authentication:**
-- `USER name` → Save username in session, respond `331 User name okay, need password`
+**ftpdauth.c — Authentication:**
+- `USER name` → Save username in session, respond `331 Send password please.` (same response regardless of whether userid exists — no user enumeration)
 - `PASS password` → Verify via crent370 `racf/` module (RAKF SVC 244)
   - Check FACILITY class resource `FTPAUTH`
-  - On success: set `sess->authenticated = 1`, `sess->hlq = userid`, respond `230 User logged in`
+  - On success: set `sess->authenticated = 1`, `sess->hlq = userid`, respond `230-<userid> is logged on.  Working directory is "<userid>.".` / `230 <userid> is logged on.  Working directory is "<userid>.".`
   - On failure: increment attempt counter, respond `530 Login incorrect`
   - After 3 failures: close connection
 - Reference: check `../httpd/src/` and `../httpd/credentials/` for how HTTPD handles auth
@@ -212,13 +214,16 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 - [ ] FTP client can complete `USER` / `PASS` login handshake
 - [ ] Invalid credentials are rejected with `530`
 - [ ] After 3 failed attempts, connection is closed
-- [ ] `SYST` returns `215 MVS is the operating system`
-- [ ] `TYPE A`, `TYPE I`, `TYPE E` all work and are reflected in session state
-- [ ] `FEAT` returns the correct feature list
+- [ ] `SYST` returns `215 MVS is the operating system of this server. FTP Server is running on MVS.`
+- [ ] `TYPE A`, `TYPE I`, `TYPE E`, `TYPE L 8` all work and are reflected in session state
+- [ ] `TYPE X` returns multiline 501 error with current type
+- [ ] `FEAT` returns the correct feature list (no REST STREAM)
+- [ ] `STAT` shows current session settings
 - [ ] `PASV` + `LIST` sequence works (LIST will return empty for now — dataset access is Step 1.4)
 - [ ] `QUIT` cleanly closes the connection
 - [ ] Unknown commands return `500`
-- [ ] Commands before authentication return `530`
+- [ ] Pre-auth commands (SYST, FEAT, HELP, NOOP, STAT, SITE, QUIT) work before login
+- [ ] Data/navigation commands before authentication return `530 Not logged in.`
 
 ---
 
@@ -231,12 +236,13 @@ VTOC scanning, dataset catalog provider, dataset I/O (read/write), and LIST form
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd#mvs.c` | MVS dataset operations: catalog provider, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE |
-| `src/ftpd#lst.c` | LIST/NLST formatting for MVS datasets and PDS members |
+| `src/ftpdmvs.c` | MVS dataset operations: catalog provider, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE |
+| `src/ftpdlist.c` | LIST/NLST formatting for MVS datasets and PDS members |
+| `include/ftpdmvs.h` | Catalog provider interface, dataset info structures |
 
 ### Implementation Details
 
-**Catalog Provider Interface (ftpd.h):**
+**Catalog Provider Interface (ftpdmvs.h):**
 ```c
 /* Dataset info returned by catalog operations */
 typedef struct ftpd_dsinfo {
@@ -261,7 +267,7 @@ typedef struct ftpd_catprov {
 } ftpd_catprov_t;
 ```
 
-**ftpd#mvs.c — Dataset Operations:**
+**ftpdmvs.c — Dataset Operations:**
 
 *Catalog provider (VTOC scan implementation):*
 - `ftpd_vtoc_list(pattern, results, max)` — Scan VTOC on all configured volumes, filter by pattern. Supports `*` (any chars within qualifier) and `%` (single char).
@@ -289,19 +295,22 @@ typedef struct ftpd_catprov {
 - Use crent370's `os/` module (dynamic allocation, OPEN/CLOSE) and `emfile/` where available
 - Reference: check existing FTPD source at `../FTPD/source/` for VTOC scanning and I/O patterns
 
-*FTP command handlers in ftpd#mvs.c:*
-- `CWD dsname` → Set `sess->mvs_cwd` prefix (no I/O)
-- `CDUP` → Remove last qualifier from prefix
-- `PWD` → Return `257 "'prefix'" is working directory`
-- `RETR dsname` → Read dataset/member, send on data connection
-- `STOR dsname` → Receive on data connection, write dataset/member
-- `DELE dsname` → Delete dataset or member
-- `RNFR dsname` → Store source name in `sess->rnfr_path`
-- `RNTO dsname` → Rename from `rnfr_path` to new name
+*FTP command handlers in ftpdmvs.c:*
+- `CWD dsname` → Set `sess->mvs_cwd` prefix (**no I/O, no existence check** — always returns `250`). Add trailing dot. Exception: if resolved name is an actual PDS, response says "partitioned data set".
+- `CWD ..` → Equivalent to CDUP
+- `CDUP` → Remove last qualifier from prefix. At empty prefix, returns `250` with empty prefix (no error).
+- `PWD` → Return `257 "'prefix'" is working directory.`
+- `RETR dsname` → Read dataset/member, send on data connection. Response: `125 Sending data set DSN FIXrecfm 80` (include RECFM/LRECL info)
+- `STOR dsname` → Receive on data connection, write dataset/member (replaces content if existing)
+- `APPE dsname` → Append to dataset. **Creates the dataset** if nonexistent (uses current SITE allocation params)
+- `DELE dsname` → Delete dataset or member. Deleting an entire PDS (with members) is allowed.
+- `MKD dsname` → Allocate new PDS (dynalloc with DSORG=PO, uses current SITE params). Response: `257 "'DSN'" created.`
+- `RMD dsname` → Scratch PDS (same as DELE for datasets). Response: `250 DSN deleted.`
+- `RNFR dsname` → Store source name in `sess->rnfr_path`, respond `350 RNFR accepted. Please supply new name for RNTO.`. **Clear RNFR state on any command other than RNTO** (don't persist stale RNFR like z/OS).
+- `RNTO dsname` → Rename from `rnfr_path` to new name. Reject if target exists: `550 Rename fails: TARGET already exists.`
 - `SIZE dsname` → Return dataset size (from OBTAIN)
-- `APPE dsname` → Append to sequential dataset
 
-**ftpd#lst.c — LIST Formatting:**
+**ftpdlist.c — LIST Formatting:**
 
 *MVS dataset list (z/OS compatible):*
 ```
@@ -332,19 +341,30 @@ PUB001 3390   2026/03/12  1   15  FB      80 27920  PO  SYS1.PARMLIB
 - crent370: `os/` module (dynamic allocation, dataset I/O), `emfile/` module
 
 ### Acceptance Criteria
-- [ ] `CWD` sets the working prefix; `PWD` returns it in z/OS format: `257 "'IBMUSER.'" is working directory`
+- [ ] `CWD` sets the working prefix; `PWD` returns it in z/OS format: `257 "'IBMUSER.'" is working directory.`
+- [ ] `CWD 'NONEXISTENT.'` succeeds with `250` (no existence check)
+- [ ] `CWD` into an actual PDS changes response text to "partitioned data set"
+- [ ] `CDUP` at empty prefix returns `250` with empty prefix (no error)
 - [ ] `LIST` returns z/OS-compatible dataset listing for the current prefix
 - [ ] `LIST` with wildcard pattern works: `LIST *.LOAD` filters correctly
-- [ ] `LIST` on a PDS returns member listing with ISPF stats
-- [ ] `RETR` downloads a sequential dataset (ASCII mode: EBCDIC→ASCII, correct line endings)
+- [ ] `LIST` on a PDS (after CWD into it) returns member listing with ISPF stats
+- [ ] `LIST 'PDS.NAME'` in DATASETMODE shows catalog entry, not members
+- [ ] `RETR` downloads a sequential dataset (ASCII mode: EBCDIC→ASCII, CRLF line endings, trailing blanks trimmed)
 - [ ] `RETR` downloads a PDS member
 - [ ] `RETR` in binary mode (TYPE I) transfers bytes unchanged
-- [ ] `STOR` uploads to an existing sequential dataset
+- [ ] `RETR` 125 response includes RECFM and LRECL info
+- [ ] `STOR` uploads to an existing sequential dataset (replaces content)
 - [ ] `STOR` creates a new dataset using default SITE allocation parameters
 - [ ] `STOR` writes a PDS member
+- [ ] `APPE` appends to existing dataset
+- [ ] `APPE` creates dataset if nonexistent
 - [ ] `DELE` deletes a sequential dataset
 - [ ] `DELE` deletes a PDS member
-- [ ] `RNFR`/`RNTO` renames a dataset
+- [ ] `DELE` deletes an entire PDS (with members)
+- [ ] `MKD` allocates a new PDS
+- [ ] `RMD` scratches a PDS
+- [ ] `RNFR`/`RNTO` renames a dataset; reject if target exists with `550`
+- [ ] `RNFR` state cleared on any non-RNTO command
 - [ ] Unqualified names are correctly prefixed with user HLQ
 - [ ] Quoted names (`'SYS1.MACLIB'`) are treated as fully qualified
 - [ ] `%` wildcard matches exactly one character in LIST
@@ -357,29 +377,32 @@ PUB001 3390   2026/03/12  1   15  FB      80 27920  PO  SYS1.PARMLIB
 ## Step 1.5 — SITE Command Framework
 
 ### What
-SITE command dispatcher and dataset allocation parameter handling. Also 502 responses for unimplemented z/OS SITE subcommands.
+SITE command dispatcher and dataset allocation parameter handling. Unknown z/OS SITE subcommands return `200` with warning (not `502`), matching z/OS behavior.
 
 ### Files to Create
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd#sit.c` | SITE command parser and handlers |
+| `src/ftpdsite.c` | SITE command parser and handlers |
 
 ### Implementation Details
 
-**ftpd#sit.c — SITE Commands:**
+**ftpdsite.c — SITE Commands:**
 
 *Parser:*
 - `ftpd_site_dispatch(sess, args)` — Parse SITE subcommand, dispatch to handler
 - Case-insensitive subcommand matching
-- Unrecognized subcommands → `500 SITE subcommand not recognized`
+- Unrecognized subcommands → `200-Unrecognized parameter 'XXX' on SITE command.` / `200 SITE command was accepted` (matches z/OS lenient behavior)
+
+*Bare SITE (no arguments):*
+- Return `202 SITE not necessary; you may proceed` (matches z/OS). Use STAT for settings display.
 
 *Implemented subcommands (set session state):*
 - `SITE FILETYPE=SEQ` → `sess->filetype = FT_SEQ` (default)
 - `SITE FILETYPE=JES` → `sess->filetype = FT_JES` (Phase 2 — for now return `200` but JES commands are not yet available)
 - `SITE RECFM=xx` → `sess->alloc.recfm = xx`
 - `SITE LRECL=nnn` → `sess->alloc.lrecl = nnn`
-- `SITE BLKSIZE=nnn` → `sess->alloc.blksize = nnn`
+- `SITE BLKSIZE=nnn` → `sess->alloc.blksize = nnn` (validate: for FB, must be multiple of LRECL — auto-adjust downward if not, warn in response)
 - `SITE PRIMARY=nnn` → `sess->alloc.primary = nnn`
 - `SITE SECONDARY=nnn` → `sess->alloc.secondary = nnn`
 - `SITE TRACKS` → `sess->alloc.spacetype = "TRK"`
@@ -387,11 +410,12 @@ SITE command dispatcher and dataset allocation parameter handling. Also 502 resp
 - `SITE VOLUME=xxxxxx` → `sess->alloc.volume = xxxxxx`
 - `SITE UNIT=xxxx` → `sess->alloc.unit = xxxx`
 - `SITE DIRECTORY=nn` → `sess->alloc.dirblks = nn`
-- `SITE TRAILING` → Set trailing blanks flag
-- `SITE TRUNCATE` → Set truncate flag
-- `SITE RDW` → Set RDW flag
+- `SITE TRAILING` → **Toggle** trailing blanks flag (default: OFF = blanks NOT removed, matching z/OS)
+- `SITE TRUNCATE` → **Toggle** truncate flag (default: OFF)
+- `SITE RDW` → **Toggle** RDW flag (default: OFF)
 - `SITE SBSENDEOL=CRLF|LF` → Set EOL mode
 - All respond `200 SITE command was accepted`
+- All parameters are **sticky** — persist for entire session
 
 *JES parameters (accepted, stored for Phase 2):*
 - `SITE JESINTERFACELEVEL=n` → `sess->jes_level = n`
@@ -399,25 +423,28 @@ SITE command dispatcher and dataset allocation parameter handling. Also 502 resp
 - `SITE JESOWNER=owner` → `sess->jes_owner = owner`
 - `SITE JESSTATUS=status` → `sess->jes_status = status`
 
-*Recognized but not implemented (502):*
-- BLOCKS, CONDDISP, DATACLAS, EATTR, ISPFSTATS, MGMTCLAS, NCP, QUOTESOVERRIDE, RETPD, SBDATACONN, SBSUB, SPACETYPE, STORCLAS, UCSMSG, WRAPAROUND
-- All respond `502 SITE subcommand not implemented on this system`
+*Accepted silently (return `200`, no effect — for client compatibility):*
+- DATACLAS, STORCLAS, MGMTCLAS (SMS classes — MVS 3.8j has no SMS)
 
-*SITE with no arguments:*
-- Return current SITE settings: RECFM, LRECL, BLKSIZE, etc.
+*All other unknown parameters:*
+- `200-Unrecognized parameter 'XXX' on SITE command.` / `200 SITE command was accepted`
 
 ### Dependencies
 - Step 1.3 (command dispatcher)
 - Step 1.4 (allocation parameters used by STOR)
 
 ### Acceptance Criteria
-- [ ] `SITE RECFM=VB` sets the session allocation RECFM; confirmed by `SITE` (no args) displaying it
+- [ ] `SITE RECFM=VB` sets the session allocation RECFM
 - [ ] `SITE LRECL=255` + `SITE BLKSIZE=6233` + `SITE RECFM=VB` → subsequent `STOR` creates dataset with these attributes
+- [ ] `SITE BLKSIZE=6000` with `SITE RECFM=FB` + `SITE LRECL=80` → auto-adjusts to 5920 with warning
 - [ ] `SITE FILETYPE=JES` returns `200` (JES mode set, but no JES commands available yet)
 - [ ] `SITE FILETYPE=SEQ` switches back to sequential mode
-- [ ] `SITE DATACLAS=xxx` returns `502 SITE subcommand not implemented on this system`
-- [ ] Unknown `SITE FOOBAR` returns `500 SITE subcommand not recognized`
-- [ ] `SITE` with no arguments displays current settings
+- [ ] `SITE DATACLAS=xxx` returns `200` silently (no error)
+- [ ] `SITE FOOBAR=123` returns `200` with `Unrecognized parameter` warning
+- [ ] `SITE` with no arguments returns `202 SITE not necessary; you may proceed`
+- [ ] `SITE TRAILING` toggles: first call enables, second call disables
+- [ ] SITE parameters persist across multiple STOR operations within session
+- [ ] `STAT` displays current SITE settings
 - [ ] Zowe CLI `zowe zftp` can set SITE parameters without errors (manual test)
 
 ---

@@ -24,11 +24,12 @@ When `SITE FILETYPE=JES` is active, `STOR` submits JCL to JES via the internal r
 
 | File | Purpose |
 |------|---------|
-| `src/ftpd#jes.c` | JES interface: submit, list, retrieve, delete |
+| `src/ftpdjes.c` | JES interface: submit, list, retrieve, delete |
+| `include/ftpdjes.h` | JES structures, prototypes |
 
 ### Implementation Details
 
-**ftpd#jes.c — Job Submission:**
+**ftpdjes.c — Job Submission:**
 - `ftpd_jes_submit(sess)` — Called when STOR is issued in JES mode:
   1. Open internal reader programmatically via crent370's `jes/` module
   2. Read JCL records from data connection
@@ -39,7 +40,7 @@ When `SITE FILETYPE=JES` is active, `STOR` submits JCL to JES via the internal r
   7. Reply: `250-It is known to JES as JOBnnnnn` / `250 Transfer completed successfully.`
 - Handle submission errors: malformed JCL, reader failure → `451 Requested action aborted`
 
-**Command routing in ftpd#cmd.c:**
+**Command routing in ftpdcmd.c:**
 - When `sess->filetype == FT_JES`, route `STOR` to `ftpd_jes_submit()` instead of `ftpd_mvs_write_seq()`
 
 ### Dependencies
@@ -63,7 +64,7 @@ When `SITE FILETYPE=JES` is active, `STOR` submits JCL to JES via the internal r
 
 ### Implementation Details
 
-**ftpd#jes.c — Job Listing:**
+**ftpdjes.c — Job Listing:**
 - `ftpd_jes_list(sess)` — Called when LIST is issued in JES mode:
   1. Query JES2 via crent370's `jes/` module
   2. Apply filters: `sess->jes_owner`, `sess->jes_jobname`, `sess->jes_status`
@@ -103,7 +104,7 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 - `SITE JESSTATUS=ALL` → jobs in any state
 
 ### Dependencies
-- Step 2.1 (ftpd#jes.c base)
+- Step 2.1 (ftpdjes.c base)
 - crent370: `jes/` module (job status query)
 
 ### Acceptance Criteria
@@ -126,26 +127,26 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 
 ### Implementation Details
 
-**ftpd#jes.c — Spool Retrieval:**
+**ftpdjes.c — Spool Retrieval:**
 - `ftpd_jes_retrieve(sess, jobspec)` — Called when RETR is issued in JES mode:
-  - Parse jobspec: `JOBnnnnn` (all spool) or `JOBnnnnn.n` (specific spool file number)
+  - Parse jobspec: `JOBnnnnn` (all spool) or `JOBnnnnn.n` (specific spool file, numbering starts at **1**)
   - Access spool data via crent370's `jes/` module
-  - For all-spool retrieval: concatenate spool files, separated by `!! END OF JES SPOOL FILE !!` (z/OS convention)
+  - For all-spool retrieval: concatenate spool files, separated by ` !! END OF JES SPOOL FILE !!` (space-prefixed, exact z/OS string)
   - Translate EBCDIC → ASCII for TYPE A
   - Send on data connection
 - Error handling:
-  - Job not found → `550 JOBnnnnn not found`
+  - Job not found → `550 Jobid JOBnnnnn not found for JESJOBNAME=..., JESSTATUS=..., JESOWNER=...`
   - Spool file number out of range → `550 Spool file n not found for JOBnnnnn`
   - Job not owned by user → `550 Access denied`
 
-**ftpd#jes.c — Job Purge:**
+**ftpdjes.c — Job Purge:**
 - `ftpd_jes_delete(sess, jobspec)` — Called when DELE is issued in JES mode:
   - Parse job ID from `JOBnnnnn`
   - Purge job via crent370's `jes/` module
-  - Reply: `250 JOBnnnnn purged`
+  - Reply: `250 Cancel successful` (matches z/OS response text)
 - Security: only allow purge of own jobs (or jobs matching JESINTERFACELEVEL rules)
 
-**Command routing in ftpd#cmd.c:**
+**Command routing in ftpdcmd.c:**
 - When `sess->filetype == FT_JES`:
   - `RETR` → `ftpd_jes_retrieve()`
   - `DELE` → `ftpd_jes_delete()`
@@ -161,8 +162,8 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 - [ ] `RETR JOBnnnnn` retrieves all spool output for the job
 - [ ] `RETR JOBnnnnn.1` retrieves only the first spool file
 - [ ] `RETR JOBnnnnn.3` retrieves the third spool file
-- [ ] Multiple spool files separated by `!! END OF JES SPOOL FILE !!`
-- [ ] `DELE JOBnnnnn` purges the job from JES queues
+- [ ] Multiple spool files separated by ` !! END OF JES SPOOL FILE !!` (space-prefixed)
+- [ ] `DELE JOBnnnnn` purges the job, response: `250 Cancel successful`
 - [ ] Cannot retrieve/delete jobs owned by other users → `550`
 - [ ] Non-existent job → `550 JOBnnnnn not found`
 - [ ] CWD/MKD/RMD in JES mode → `502`
@@ -183,5 +184,5 @@ The overall test for JES interface:
 6. `LIST JOB00042` → spool file listing (JESMSGLG, JESJCL, SYSPRINT, etc.)
 7. `GET JOB00042.1` → JESMSGLG content
 8. `GET JOB00042` → all spool files concatenated
-9. `DELE JOB00042` → `250 JOB00042 purged`
+9. `DELE JOB00042` → `250 Cancel successful`
 10. `SITE FILETYPE=SEQ` → back to dataset mode, `LIST` shows datasets
