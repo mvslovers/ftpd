@@ -311,9 +311,10 @@ socket_thread(void *arg1, void *arg2)
     } /* end selectex ecblist scope */
 
     ftpd_log_wto("FTPD063I socket_thread: exited accept loop, "
-                 "closing socket");
+                 "closing socket %d", sock);
     closesocket(sock);
     server->listen_sock = -1;
+    ftpd_log_wto("FTPD064I socket_thread: socket closed, returning");
 
     return 0;
 }
@@ -353,19 +354,26 @@ terminate(ftpd_server_t *server)
     */
     if (server->sock_task) {
         int i;
-        ftpd_log_wto("FTPD095I terminate: waiting for socket thread");
+        ftpd_log_wto("FTPD095I terminate: waiting for socket thread "
+                     "(termecb=%08X)", server->sock_task->termecb);
         for (i = 0; i < 50; i++) {
             if (server->sock_task->termecb & 0x40000000U)
                 break;
+            if (i == 10 || i == 30)
+                ftpd_log_wto("FTPD095I terminate: still waiting "
+                             "i=%d termecb=%08X",
+                             i, server->sock_task->termecb);
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
         if (server->sock_task->termecb & 0x40000000U) {
-            ftpd_log_wto("FTPD095I terminate: socket thread ended");
+            ftpd_log_wto("FTPD095I terminate: socket thread ended "
+                         "(i=%d)", i);
         } else {
             ftpd_log_wto("FTPD095W socket thread did not terminate "
-                         "in 5 seconds, force cleanup");
+                         "in 5s termecb=%08X",
+                         server->sock_task->termecb);
         }
-        ftpd_log_wto("FTPD095I terminate: deleting socket thread");
+        ftpd_log_wto("FTPD095I terminate: calling cthread_delete");
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
         ftpd_log_wto("FTPD095I terminate: socket thread cleaned up");
