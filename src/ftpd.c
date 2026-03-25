@@ -370,6 +370,17 @@ terminate(ftpd_server_t *server)
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
+    /* Close listener socket to force selectex() to return.
+    ** ecb_post alone does NOT reliably wake DYN75 selectex —
+    ** SVC 75 uses its own internal wait, not MVS WAIT on the ECB.
+    ** Closing the fd makes selectex return with rc<0 or rc>0.
+    ** The FTPD_ACTIVE check after selectex catches the shutdown.
+    */
+    if (server->listen_sock >= 0) {
+        closesocket(server->listen_sock);
+        server->listen_sock = -1;
+    }
+
     ftpd_log_wto("FTPD095I terminate: waiting for socket thread");
 
     if (server->sock_task) {
@@ -388,11 +399,6 @@ terminate(ftpd_server_t *server)
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
         ftpd_log_wto("FTPD095I terminate: socket thread deleted");
-    }
-
-    if (server->listen_sock >= 0) {
-        closesocket(server->listen_sock);
-        server->listen_sock = -1;
     }
 
     ftpd_log_wto("FTPD095I terminate: stopping thread manager");
