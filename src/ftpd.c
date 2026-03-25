@@ -277,9 +277,6 @@ socket_thread(void *arg1, void *arg2)
     ecblist[0] = (unsigned *)((unsigned)&server->wakeup_ecb | 0x80000000U);
     ecblist[1] = NULL;
 
-    ftpd_log_wto("FTPD060I socket_thread: entering accept loop, "
-                 "ecb@%08X", (unsigned)&server->wakeup_ecb);
-
     while (server->flags & FTPD_ACTIVE) {
         FD_ZERO(&rfds);
         FD_SET(sock, &rfds);
@@ -294,12 +291,8 @@ socket_thread(void *arg1, void *arg2)
         ** on a false-positive FD_ISSET.  (HTTPD does the same check
         ** after selectex, before accept.)
         */
-        if (!(server->flags & FTPD_ACTIVE)) {
-            ftpd_log_wto("FTPD061I socket_thread: shutdown detected "
-                         "after selectex rc=%d ecb=%08X",
-                         rc, server->wakeup_ecb);
+        if (!(server->flags & FTPD_ACTIVE))
             break;
-        }
 
         if (rc < 0) {
             ftpd_log(LOG_ERROR, "%s: selectex() failed, errno=%d", __func__,
@@ -311,8 +304,6 @@ socket_thread(void *arg1, void *arg2)
 
         if (!FD_ISSET(sock, &rfds))
             continue;
-
-        ftpd_log_wto("FTPD062I socket_thread: accepting connection");
 
         /* Accept new connection */
         len = sizeof(caddr);
@@ -350,11 +341,8 @@ socket_thread(void *arg1, void *arg2)
 
     } /* end selectex ecblist scope */
 
-    ftpd_log_wto("FTPD063I socket_thread: exited accept loop, "
-                 "closing socket %d", sock);
     closesocket(sock);
     server->listen_sock = -1;
-    ftpd_log_wto("FTPD064I socket_thread: socket closed, returning");
 
     return 0;
 }
@@ -379,44 +367,29 @@ socket_thread(void *arg1, void *arg2)
 static void
 terminate(ftpd_server_t *server)
 {
-    ftpd_log_wto("FTPD095I terminate: starting shutdown sequence");
-
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
 
     /* Wait for socket thread to exit.
-    ** The socket thread checks FTPD_ACTIVE on every select() timeout
-    ** (1 second) and exits when the flag is cleared.
+    ** The socket thread checks FTPD_ACTIVE after every selectex()
+    ** (woken immediately by wakeup_ecb) and exits when cleared.
     ** Use cthread_delete (like HTTPD) — it handles DETACH internally.
     ** Do NOT call cthread_detach separately: MVS DETACH blocks until
-    ** the subtask ends, and if the thread is still in select() the
-    ** main task hangs here.
+    ** the subtask ends.
     */
     if (server->sock_task) {
         int i;
-        ftpd_log_wto("FTPD095I terminate: waiting for socket thread "
-                     "(termecb=%08X)", server->sock_task->termecb);
         for (i = 0; i < 50; i++) {
             if (server->sock_task->termecb & 0x40000000U)
                 break;
-            if (i == 10 || i == 30)
-                ftpd_log_wto("FTPD095I terminate: still waiting "
-                             "i=%d termecb=%08X",
-                             i, server->sock_task->termecb);
             __asm__("STIMER WAIT,BINTVL==F'10'");
         }
-        if (server->sock_task->termecb & 0x40000000U) {
-            ftpd_log_wto("FTPD095I terminate: socket thread ended "
-                         "(i=%d)", i);
-        } else {
+        if (!(server->sock_task->termecb & 0x40000000U)) {
             ftpd_log_wto("FTPD095W socket thread did not terminate "
-                         "in 5s termecb=%08X",
-                         server->sock_task->termecb);
+                         "in 5 seconds");
         }
-        ftpd_log_wto("FTPD095I terminate: calling cthread_delete");
         cthread_delete(&server->sock_task);
         server->sock_task = NULL;
-        ftpd_log_wto("FTPD095I terminate: socket thread cleaned up");
     }
 
     /* Close listener socket (fallback — socket thread normally closes
@@ -427,11 +400,9 @@ terminate(ftpd_server_t *server)
     }
 
     /* Terminate thread manager (posts workers for shutdown) */
-    ftpd_log_wto("FTPD095I terminate: stopping thread manager");
     if (server->mgr) {
         cthread_manager_term(&server->mgr);
         server->mgr = NULL;
-        ftpd_log_wto("FTPD095I terminate: thread manager stopped");
     }
 
     /* Free trace buffer */
