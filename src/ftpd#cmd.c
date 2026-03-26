@@ -10,6 +10,7 @@
 #include "ftpd#cmd.h"
 #include "ftpd#dat.h"
 #include "ftpd#aut.h"
+#include "ftpd#mvs.h"
 
 /* --------------------------------------------------------------------
 ** Helper: return human-readable name for the current TYPE setting.
@@ -318,18 +319,58 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         ftpd_session_reply(sess, FTP_226, "Abort successful");
         return 0;
     }
-    if (strcmp(cmd, "LIST") == 0 || strcmp(cmd, "NLST") == 0) {
-        /* Stub: return empty listing */
-        ftpd_session_reply(sess, FTP_150,
-                           "Opening data connection for file list");
-        if (ftpd_data_open(sess) == 0) {
-            ftpd_data_close(sess);
-            ftpd_session_reply(sess, FTP_226,
-                               "Transfer complete");
-        } else {
-            ftpd_session_reply(sess, FTP_425,
-                               "Cannot open data connection");
+    if (strcmp(cmd, "CWD") == 0 || strcmp(cmd, "XCWD") == 0) {
+        if (sess->fsmode == FS_MVS) {
+            return ftpd_mvs_cwd(sess, arg);
         }
+        ftpd_session_reply(sess, FTP_502, "CWD not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "LIST") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_list(sess, arg, 0);
+        ftpd_session_reply(sess, FTP_502, "LIST not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "NLST") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_list(sess, arg, 1);
+        ftpd_session_reply(sess, FTP_502, "NLST not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "SIZE") == 0) {
+        if (sess->fsmode == FS_MVS) {
+            long sz = ftpd_mvs_size(sess, arg);
+            if (sz >= 0) {
+                ftpd_session_reply(sess, FTP_213, "%ld", sz);
+            } else {
+                ftpd_session_reply(sess, FTP_550, "Dataset not found");
+            }
+            return 0;
+        }
+        ftpd_session_reply(sess, FTP_502, "SIZE not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "CDUP") == 0 || strcmp(cmd, "XCUP") == 0) {
+        if (sess->fsmode == FS_MVS) {
+            /* Remove last qualifier from CWD */
+            char *dot;
+            int len = strlen(sess->mvs_cwd);
+            if (len > 0 && sess->mvs_cwd[len - 1] == '.')
+                sess->mvs_cwd[len - 1] = '\0';
+            dot = strrchr(sess->mvs_cwd, '.');
+            if (dot) {
+                dot[1] = '\0';
+            } else {
+                /* Already at top level — reset to HLQ */
+                strcpy(sess->mvs_cwd, sess->hlq);
+            }
+            ftpd_session_reply(sess, FTP_250,
+                "\"'%s'\" is the working directory name prefix.",
+                sess->mvs_cwd);
+            return 0;
+        }
+        ftpd_session_reply(sess, FTP_502, "CDUP not implemented for UFS");
         return 0;
     }
 
