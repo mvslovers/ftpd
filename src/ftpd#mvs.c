@@ -395,14 +395,71 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
     if (nlst) {
         ftpd_data_printf(sess, "%s\r\n", name);
     } else if (recfm[0] == 'U') {
-        /* Load module — use __fmtloa() */
-        LOADSTAT lst;
-        if (__fmtloa(pd, &lst) == 0) {
+        /* Load module — parse LOADDATA directly from PDS user data.
+        ** __fmtloa() maps wrong fields for SIZE/TTR.
+        */
+        int udata_hw = pd->idc & PDSLIST_IDC_UDATA;
+        if (udata_hw >= 7) {
+            /* Enough user data for basic LOADDATA fields */
+            LOADDATA *ld = (LOADDATA *)pd->udata;
+            char attr[48];
+            char *ap = attr;
+            unsigned long sz;
+            int ac = 0;
+
+            /* SIZE = loadstor (3 bytes, big-endian) */
+            sz = ((unsigned long)ld->loadstor[0] << 16) |
+                 ((unsigned long)ld->loadstor[1] << 8) |
+                  (unsigned long)ld->loadstor[2];
+
+            /* Attributes from loadatr1 */
+            if (ld->loadatr2 & LOADFLVL)
+                { strcpy(ap, "FO "); ap += 3; }
+            if (ld->loadatr1 & LOADSCTR)
+                { strcpy(ap, "SC "); ap += 3; }
+            if (ld->loadatr1 & LOADRENT)
+                { strcpy(ap, "RN "); ap += 3; }
+            if (ld->loadatr1 & LOADREUS)
+                { strcpy(ap, "RU "); ap += 3; }
+            if (ld->loadatr1 & LOADOVLY)
+                { strcpy(ap, "OV "); ap += 3; }
+            if (ld->loadatr1 & LOADTEST)
+                { strcpy(ap, "TS "); ap += 3; }
+            if (ld->loadatr1 & LOADLOAD)
+                { strcpy(ap, "OL "); ap += 3; }
+            if (!(ld->loadatr1 & LOADEXEC))
+                { strcpy(ap, "NX "); ap += 3; }
+            if (ld->loadatr2 & LOADREFR)
+                { strcpy(ap, "RF "); ap += 3; }
+            /* Trim trailing space */
+            if (ap > attr && *(ap - 1) == ' ')
+                ap--;
+            *ap = '\0';
+
+            /* AC from APF section if present */
+            if ((ld->loadftb1 & LOADAPFLG) && udata_hw >= 12) {
+                LOADS04 *apf = (LOADS04 *)(pd->udata +
+                    sizeof(LOADDATA));
+                /* Skip scatter/alias/ssi sections based on flags */
+                unsigned char *p = ld->loadbcend;
+                if (ld->loadatr1 & LOADSCTR)
+                    p += sizeof(LOADS01);
+                if (pd->idc & PDSLIST_IDC_ALIAS)
+                    p += sizeof(LOADS02);
+                if (ld->loadftb1 & LOADSSI)
+                    p += sizeof(LOADS03);
+                apf = (LOADS04 *)p;
+                if ((unsigned char *)apf + 2 <=
+                    pd->udata + udata_hw * 2)
+                    ac = apf->loadapfac;
+            }
+
             ftpd_data_printf(sess,
-                "%-8s  %6s   %6s %-8s %2s %s\r\n",
-                lst.name, lst.size, lst.ttr,
-                lst.aliasof[0] ? lst.aliasof : "",
-                lst.ac, lst.attr);
+                "%-8s  %06lX   %02X%02X%02X %-8s %02d %-24s 24    24\r\n",
+                name, sz,
+                pd->ttr[0], pd->ttr[1], pd->ttr[2],
+                "",  /* alias-of: TODO */
+                ac, attr);
         } else {
             ftpd_data_printf(sess, "%-8s\r\n", name);
         }
@@ -576,7 +633,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             } else {
                 ftpd_data_printf(sess,
                     " Name      Size     TTR   Alias-of"
-                    " AC --------- Attributes ---------\r\n");
+                    " AC --------- Attributes --------- Amode Rmode\r\n");
             }
         }
 
