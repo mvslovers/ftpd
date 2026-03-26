@@ -12,6 +12,80 @@
 #include "ftpd#mvs.h"
 
 /* --------------------------------------------------------------------
+** z/OS-compatible dataset name wildcard matcher.
+**
+** Qualifier-based matching where each qualifier is separated by '.':
+**   *   = matches exactly one qualifier (any characters)
+**   **  = matches one or more qualifiers
+**   %   = matches exactly one character within a qualifier
+**   literal characters match case-insensitively
+**
+** Both pattern and name must be fully qualified (no trailing dots).
+** Returns 1 if match, 0 if no match.
+** ----------------------------------------------------------------- */
+static int
+dsn_match(const char *pattern, const char *name)
+{
+    const char *p = pattern;
+    const char *n = name;
+
+    while (*p && *n) {
+        if (*p == '*' && *(p + 1) == '*') {
+            /* ** = match one or more qualifiers */
+            p += 2;
+            if (*p == '.')
+                p++;  /* skip dot after ** */
+            if (*p == '\0')
+                return 1;  /* ** at end matches everything */
+
+            /* Try matching rest of pattern at each qualifier boundary */
+            while (*n) {
+                if (dsn_match(p, n))
+                    return 1;
+                /* Skip to next qualifier */
+                while (*n && *n != '.')
+                    n++;
+                if (*n == '.')
+                    n++;
+            }
+            return 0;
+        }
+        if (*p == '*') {
+            /* * = match exactly one qualifier */
+            p++;
+            /* Skip the current qualifier in name */
+            while (*n && *n != '.')
+                n++;
+            /* Both should be at dot or end */
+            if (*p == '.' && *n == '.') {
+                p++;
+                n++;
+                continue;
+            }
+            if (*p == '\0' && *n == '\0')
+                return 1;
+            return 0;
+        }
+        if (*p == '%') {
+            /* % = match one character (not dot) */
+            if (*n == '.' || *n == '\0')
+                return 0;
+            p++;
+            n++;
+            continue;
+        }
+        /* Literal match (case insensitive) */
+        if (toupper((unsigned char)*p) != toupper((unsigned char)*n))
+            return 0;
+        p++;
+        n++;
+    }
+
+    /* Both must be exhausted */
+    return (*p == '\0' && *n == '\0');
+}
+
+/* --------------------------------------------------------------------
 ** Helper: build a fully-qualified dataset name from CWD + argument.
 **
 ** Quoting rules (z/OS FTP compatible):
@@ -483,42 +557,38 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
     } else {
         /* --- Dataset listing --- */
         DSLIST **dsl;
-        char level[FTPD_MAX_DSN_LEN + 2];
-        const char *ds_filter;
+        int has_wildcard;
         int i;
         int len;
+        int count;
 
-        /* Separate level (for LISTC) from filter (for matching).
-        ** __listds level must not contain wildcards — LISTC doesn't
-        ** support them.  The filter parameter does wildcard matching
-        ** on the results.
-        **
-        ** If arg has wildcards (e.g. *.LOAD), use CWD as level and
-        ** the fully-resolved name as filter.
-        ** If no wildcards, use prefix as both level and no filter.
+        /* Always use CWD as LISTC level (no wildcards).
+        ** If arg has wildcards, filter results with dsn_match().
         */
-        ds_filter = NULL;
-        if (arg && arg[0] && (strchr(arg, '*') || strchr(arg, '%'))) {
-            /* Wildcard: level = CWD prefix, filter = resolved pattern */
-            strncpy(level, cwd_notrail, sizeof(level) - 1);
-            level[sizeof(level) - 1] = '\0';
-            ds_filter = prefix;
-        } else {
-            strncpy(level, prefix, sizeof(level) - 1);
-            level[sizeof(level) - 1] = '\0';
-        }
+        has_wildcard = (arg && arg[0] &&
+                        (strchr(arg, '*') || strchr(arg, '%')));
 
-        /* Strip trailing dot from level */
-        len = strlen(level);
-        if (len > 0 && level[len - 1] == '.')
-            level[len - 1] = '\0';
-
-        dsl = __listds(level, "NONVSAM VOLUME", ds_filter);
+        dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
         if (!dsl || !dsl[0]) {
             if (dsl) __freeds(&dsl);
             ftpd_session_reply(sess, FTP_550,
                                "No data sets found.");
             return 0;
+        }
+
+        /* If wildcard filter, check if any results match */
+        if (has_wildcard) {
+            count = 0;
+            for (i = 0; dsl[i]; i++) {
+                if (dsn_match(prefix, dsl[i]->dsn))
+                    count++;
+            }
+            if (count == 0) {
+                __freeds(&dsl);
+                ftpd_session_reply(sess, FTP_550,
+                                   "No data sets found.");
+                return 0;
+            }
         }
 
         /* Open data connection */
@@ -538,8 +608,11 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                 "Lrecl BlkSz Dsorg Dsname\r\n");
         }
 
-        for (i = 0; dsl[i]; i++)
+        for (i = 0; dsl[i]; i++) {
+            if (has_wildcard && !dsn_match(prefix, dsl[i]->dsn))
+                continue;
             send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
+        }
         __freeds(&dsl);
     }
 
