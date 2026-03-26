@@ -9,6 +9,7 @@
 #include "ftpd#ses.h"
 #include "ftpd#cmd.h"
 #include "ftpd#dat.h"
+#include "ftpd#aut.h"
 
 /* --------------------------------------------------------------------
 ** Helper: return human-readable name for the current TYPE setting.
@@ -248,18 +249,7 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
             return 0;
         }
         if (strcmp(cmd, "PASS") == 0) {
-            /* Stub: accept any password for now */
-            sess->authenticated = 1;
-            strcpy(sess->hlq, sess->user);
-            strcat(sess->hlq, ".");
-            strcpy(sess->mvs_cwd, sess->hlq);
-            sess->state = SESS_READY;
-            ftpd_session_reply(sess, FTP_230,
-                "%s is logged on.  Working directory is \"%s\".",
-                sess->user, sess->hlq);
-            ftpd_log(LOG_INFO, "%s: User %s logged in", __func__,
-                     sess->user);
-            return 0;
+            return ftpd_auth_pass(sess, arg);
         }
         /* Pre-auth allowlist (z/OS compatible) */
         if (strcmp(cmd, "QUIT") == 0) return cmd_quit(sess);
