@@ -54,6 +54,7 @@ include = [
   "FTPD#CON",
   "FTPD#DAT",
   "FTPD#LOG",
+  "FTPD#MVS",
   "FTPD#SES",
   "FTPD#XLT",
 ]
