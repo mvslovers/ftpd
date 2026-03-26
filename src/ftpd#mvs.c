@@ -394,54 +394,54 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
 
     if (nlst) {
         ftpd_data_printf(sess, "%s\r\n", name);
-    } else {
-        /* Try ISPF stats for text members */
-        if (recfm[0] != 'U') {
-            ISPFSTAT ist;
-            if (__fmtisp(pd, &ist) == 0) {
-                /* Reformat dates: yy-mm-dd → YYYY/MM/DD
-                ** and yy-mm-dd hh:mm:ss → YYYY/MM/DD HH:MM
-                */
-                char cdate[11];
-                char mdate[17];
-                int yy, mm, dd, hh, mi;
-
-                if (sscanf(ist.created, "%d-%d-%d", &yy, &mm, &dd) == 3) {
-                    snprintf(cdate, sizeof(cdate), "%4d/%02d/%02d",
-                             yy < 70 ? 2000 + yy : 1900 + yy, mm, dd);
-                } else {
-                    strncpy(cdate, ist.created, sizeof(cdate) - 1);
-                    cdate[sizeof(cdate) - 1] = '\0';
-                }
-
-                if (sscanf(ist.changed, "%d-%d-%d %d:%d",
-                           &yy, &mm, &dd, &hh, &mi) == 5) {
-                    snprintf(mdate, sizeof(mdate), "%4d/%02d/%02d %02d:%02d",
-                             yy < 70 ? 2000 + yy : 1900 + yy,
-                             mm, dd, hh, mi);
-                } else {
-                    strncpy(mdate, ist.changed, sizeof(mdate) - 1);
-                    mdate[sizeof(mdate) - 1] = '\0';
-                }
-
-                ftpd_data_printf(sess,
-                    "%-8s  %5s %10s %16s %5s %5s %5s %-8s\r\n",
-                    ist.name, ist.ver, cdate, mdate,
-                    ist.size, ist.init, ist.mod, ist.userid);
-                return;
-            }
+    } else if (recfm[0] == 'U') {
+        /* Load module — use __fmtloa() */
+        LOADSTAT lst;
+        if (__fmtloa(pd, &lst) == 0) {
+            ftpd_data_printf(sess,
+                " %-8s %8s %6s %6s %-8s %2s    %s\r\n",
+                lst.name, lst.ssi, lst.size, lst.ttr,
+                lst.aliasof[0] ? lst.aliasof : "",
+                lst.ac, lst.attr);
         } else {
-            LOADSTAT lst;
-            if (__fmtloa(pd, &lst) == 0) {
-                ftpd_data_printf(sess,
-                    " %-8s %6s %8s  AC=%2s  %s\r\n",
-                    lst.name, lst.size, lst.aliasof,
-                    lst.ac, lst.attr);
-                return;
-            }
+            ftpd_data_printf(sess, " %-8s\r\n", name);
         }
-        /* Fallback: just the name */
-        ftpd_data_printf(sess, " %-8s\r\n", name);
+    } else {
+        /* Text member — use __fmtisp() */
+        ISPFSTAT ist;
+        if (__fmtisp(pd, &ist) == 0) {
+            /* Reformat dates: yy-mm-dd → YYYY/MM/DD
+            ** and yy-mm-dd hh:mm:ss → YYYY/MM/DD HH:MM
+            */
+            char cdate[11];
+            char mdate[17];
+            int yy, mm, dd, hh, mi;
+
+            if (sscanf(ist.created, "%d-%d-%d", &yy, &mm, &dd) == 3) {
+                snprintf(cdate, sizeof(cdate), "%4d/%02d/%02d",
+                         yy < 70 ? 2000 + yy : 1900 + yy, mm, dd);
+            } else {
+                strncpy(cdate, ist.created, sizeof(cdate) - 1);
+                cdate[sizeof(cdate) - 1] = '\0';
+            }
+
+            if (sscanf(ist.changed, "%d-%d-%d %d:%d",
+                       &yy, &mm, &dd, &hh, &mi) == 5) {
+                snprintf(mdate, sizeof(mdate), "%4d/%02d/%02d %02d:%02d",
+                         yy < 70 ? 2000 + yy : 1900 + yy,
+                         mm, dd, hh, mi);
+            } else {
+                strncpy(mdate, ist.changed, sizeof(mdate) - 1);
+                mdate[sizeof(mdate) - 1] = '\0';
+            }
+
+            ftpd_data_printf(sess,
+                "%-8s  %5s %10s %16s %5s %5s %5s %-8s\r\n",
+                ist.name, ist.ver, cdate, mdate,
+                ist.size, ist.init, ist.mod, ist.userid);
+        } else {
+            ftpd_data_printf(sess, " %-8s\r\n", name);
+        }
     }
 }
 
@@ -547,7 +547,8 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                     "      Size  Init   Mod   Id\r\n");
             } else {
                 ftpd_data_printf(sess,
-                    " Name       Size   TTR    AC  Attributes\r\n");
+                    " Name        SSI     Size    TTR"
+                    " ALIAS-OF AC -- -ATTRIBUTES -\r\n");
             }
         }
 
