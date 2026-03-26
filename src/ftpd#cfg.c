@@ -171,6 +171,11 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
     }
     else if (strcmp(key, "IDLETIMEOUT") == 0) {
         cfg->idle_timeout = atoi(value);
+        if (cfg->idle_timeout <= 0) {
+            ftpd_log(LOG_WARN, "%s: IDLETIMEOUT must be > 0, using 300",
+                     __func__);
+            cfg->idle_timeout = 300;
+        }
     }
     else if (strcmp(key, "BANNER") == 0) {
         strncpy(cfg->banner, value, sizeof(cfg->banner) - 1);
