@@ -565,15 +565,19 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
     } else {
         /* --- Dataset listing --- */
         DSLIST **dsl;
+        int has_filter;
         int has_wildcard;
         int i;
-        int len;
         int count;
 
-        /* Always use CWD as LISTC level (no wildcards).
-        ** If arg has wildcards, filter results with dsn_match().
+        /* Determine if we need to filter results.
+        ** "ls *" was normalized to no-arg above (prefix == cwd).
+        ** Any other arg means we filter:
+        **   - with wildcards: dsn_match() for pattern matching
+        **   - without wildcards: prefix match on resolved name
         */
-        has_wildcard = (arg && arg[0] &&
+        has_filter = (arg && arg[0] && strcmp(arg, "*") != 0);
+        has_wildcard = (has_filter &&
                         (strchr(arg, '*') || strchr(arg, '%')));
 
         dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
@@ -584,12 +588,21 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             return 0;
         }
 
-        /* If wildcard filter, check if any results match */
-        if (has_wildcard) {
+        /* Count matching results — if filter active, check matches */
+        if (has_filter) {
             count = 0;
             for (i = 0; dsl[i]; i++) {
-                if (dsn_match(prefix, dsl[i]->dsn))
-                    count++;
+                if (has_wildcard) {
+                    if (dsn_match(prefix, dsl[i]->dsn))
+                        count++;
+                } else {
+                    /* Exact or prefix match for non-wildcard arg */
+                    if (strcmp(prefix, dsl[i]->dsn) == 0 ||
+                        (strncmp(prefix, dsl[i]->dsn,
+                                 strlen(prefix)) == 0 &&
+                         dsl[i]->dsn[strlen(prefix)] == '.'))
+                        count++;
+                }
             }
             if (count == 0) {
                 __freeds(&dsl);
@@ -617,8 +630,18 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         }
 
         for (i = 0; dsl[i]; i++) {
-            if (has_wildcard && !dsn_match(prefix, dsl[i]->dsn))
-                continue;
+            if (has_filter) {
+                if (has_wildcard) {
+                    if (!dsn_match(prefix, dsl[i]->dsn))
+                        continue;
+                } else {
+                    if (strcmp(prefix, dsl[i]->dsn) != 0 &&
+                        !(strncmp(prefix, dsl[i]->dsn,
+                                  strlen(prefix)) == 0 &&
+                          dsl[i]->dsn[strlen(prefix)] == '.'))
+                        continue;
+                }
+            }
             send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
         }
         __freeds(&dsl);
