@@ -412,28 +412,44 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
                  ((unsigned long)ld->loadstor[1] << 8) |
                   (unsigned long)ld->loadstor[2];
 
-            /* Attributes from loadatr1 */
-            if (ld->loadatr2 & LOADFLVL)
-                { strcpy(ap, "FO "); ap += 3; }
-            if (ld->loadatr1 & LOADSCTR)
-                { strcpy(ap, "SC "); ap += 3; }
-            if (ld->loadatr1 & LOADRENT)
-                { strcpy(ap, "RN "); ap += 3; }
-            if (ld->loadatr1 & LOADREUS)
-                { strcpy(ap, "RU "); ap += 3; }
-            if (ld->loadatr1 & LOADOVLY)
-                { strcpy(ap, "OV "); ap += 3; }
-            if (ld->loadatr1 & LOADTEST)
-                { strcpy(ap, "TS "); ap += 3; }
-            if (ld->loadatr1 & LOADLOAD)
-                { strcpy(ap, "OL "); ap += 3; }
+            /* Attributes — fixed 2-char columns matching ISPF layout:
+            ** -- -- PG RF RN RU -- --  (8 positions × 3 chars)
+            ** Each position is "XX " if set, "   " if absent.
+            ** ISPF order: NE OL PG RF RN RU OV TS
+            */
+            ap = attr;
+            /* NE = not executable (inverse of LOADEXEC) */
             if (!(ld->loadatr1 & LOADEXEC))
-                { strcpy(ap, "NX "); ap += 3; }
+                { memcpy(ap, "NE ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* OL = only loadable */
+            if (ld->loadatr1 & LOADLOAD)
+                { memcpy(ap, "OL ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* PG = page alignment required */
+            if (ld->loadftb1 & LOADPAGA)
+                { memcpy(ap, "PG ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* RF = refreshable */
             if (ld->loadatr2 & LOADREFR)
-                { strcpy(ap, "RF "); ap += 3; }
-            /* Trim trailing space */
-            if (ap > attr && *(ap - 1) == ' ')
-                ap--;
+                { memcpy(ap, "RF ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* RN = reentrant */
+            if (ld->loadatr1 & LOADRENT)
+                { memcpy(ap, "RN ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* RU = reusable */
+            if (ld->loadatr1 & LOADREUS)
+                { memcpy(ap, "RU ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* OV = overlay */
+            if (ld->loadatr1 & LOADOVLY)
+                { memcpy(ap, "OV ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
+            /* TS = testran */
+            if (ld->loadatr1 & LOADTEST)
+                { memcpy(ap, "TS ", 3); } else { memcpy(ap, "   ", 3); }
+            ap += 3;
             *ap = '\0';
 
             /* AC from APF section if present */
@@ -454,12 +470,39 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
                     ac = apf->loadapfac;
             }
 
-            ftpd_data_printf(sess,
-                "%-8s  %06lX   %02X%02X%02X %-8s %02d %-24s 24    24\r\n",
-                name, sz,
-                pd->ttr[0], pd->ttr[1], pd->ttr[2],
-                "",  /* alias-of: TODO */
-                ac, attr);
+            /* Alias detection: if PDSLIST_IDC_ALIAS is set,
+            ** the real member name is in loads02.loadmnm
+            */
+            {
+                char aliasof[9];
+                aliasof[0] = '\0';
+                if (pd->idc & PDSLIST_IDC_ALIAS) {
+                    /* Find the alias section in user data */
+                    unsigned char *p = ld->loadbcend;
+                    if (ld->loadatr1 & LOADSCTR)
+                        p += sizeof(LOADS01);
+                    if ((unsigned char *)p + sizeof(LOADS02) <=
+                        pd->udata + udata_hw * 2) {
+                        LOADS02 *al = (LOADS02 *)p;
+                        memcpy(aliasof, al->loadmnm, 8);
+                        aliasof[8] = '\0';
+                        /* Trim trailing spaces */
+                        {
+                            int j = 7;
+                            while (j >= 0 && aliasof[j] == ' ')
+                                aliasof[j--] = '\0';
+                        }
+                    }
+                }
+
+                ftpd_data_printf(sess,
+                    "%-8s  %06lX   %02X%02X%02X %-8s %02d %s%s 24    24\r\n",
+                    name, sz,
+                    pd->ttr[0], pd->ttr[1], pd->ttr[2],
+                    aliasof, ac,
+                    (ld->loadatr2 & LOADFLVL) ? "FO " : "   ",
+                    attr);
+            }
         } else {
             ftpd_data_printf(sess, "%-8s\r\n", name);
         }
