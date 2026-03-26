@@ -57,6 +57,9 @@ struct ftpd_session {
     char            cmd[FTPD_MAX_CMD_LEN]; /* current command line   */
     int             cmdlen;         /* command length                 */
 
+    /* Idle tracking (heap — immune to SVC stack corruption) */
+    time_t          idle_start;     /* getline idle timer start       */
+
     /* Statistics */
     long            bytes_sent;
     long            bytes_recv;

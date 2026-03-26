@@ -148,20 +148,27 @@ ftpd_session_getline(ftpd_session_t *sess)
 {
     unsigned char c;
     int rc;
+    int idle_timeout;
+    time_t now;
     fd_set rfds;
     struct timeval tv;
-    time_t start;
-    time_t now;
 
     sess->cmdlen = 0;
     memset(sess->cmd, 0, sizeof(sess->cmd));
 
-    time(&start);
+    idle_timeout = sess->server->config.idle_timeout;
+    if (idle_timeout <= 0)
+        idle_timeout = 300;
+
+    /* Idle start lives in the session struct (heap) — immune to
+    ** stack corruption caused by select()/SVC 75.
+    */
+    sess->idle_start = time(NULL);
 
     while (sess->cmdlen < FTPD_MAX_CMD_LEN - 1) {
         /* Short select timeout — poll every 5 seconds so we can
         ** check the shutdown flag.  The real idle timeout is
-        ** measured cumulatively via start/now.
+        ** measured cumulatively via idle_start/now.
         */
         FD_ZERO(&rfds);
         FD_SET(sess->ctrl_sock, &rfds);
@@ -177,8 +184,9 @@ ftpd_session_getline(ftpd_session_t *sess)
             if (sess->server->flags & FTPD_QUIESCE)
                 return -1;
 
-            time(&now);
-            if ((now - start) >= sess->server->config.idle_timeout) {
+            now = time(NULL);
+            if (now > sess->idle_start &&
+                (now - sess->idle_start) >= (time_t)idle_timeout) {
                 ftpd_session_reply(sess, FTP_421,
                                    "Idle timeout, closing connection");
                 return -1;
