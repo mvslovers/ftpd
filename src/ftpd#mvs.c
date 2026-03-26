@@ -484,17 +484,36 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         /* --- Dataset listing --- */
         DSLIST **dsl;
         char level[FTPD_MAX_DSN_LEN + 2];
+        const char *ds_filter;
         int i;
         int len;
 
-        /* Build the catalog search level (strip trailing dot) */
-        strncpy(level, prefix, sizeof(level) - 1);
-        level[sizeof(level) - 1] = '\0';
+        /* Separate level (for LISTC) from filter (for matching).
+        ** __listds level must not contain wildcards — LISTC doesn't
+        ** support them.  The filter parameter does wildcard matching
+        ** on the results.
+        **
+        ** If arg has wildcards (e.g. *.LOAD), use CWD as level and
+        ** the fully-resolved name as filter.
+        ** If no wildcards, use prefix as both level and no filter.
+        */
+        ds_filter = NULL;
+        if (arg && arg[0] && (strchr(arg, '*') || strchr(arg, '%'))) {
+            /* Wildcard: level = CWD prefix, filter = resolved pattern */
+            strncpy(level, cwd_notrail, sizeof(level) - 1);
+            level[sizeof(level) - 1] = '\0';
+            ds_filter = prefix;
+        } else {
+            strncpy(level, prefix, sizeof(level) - 1);
+            level[sizeof(level) - 1] = '\0';
+        }
+
+        /* Strip trailing dot from level */
         len = strlen(level);
         if (len > 0 && level[len - 1] == '.')
             level[len - 1] = '\0';
 
-        dsl = __listds(level, "NONVSAM VOLUME", NULL);
+        dsl = __listds(level, "NONVSAM VOLUME", ds_filter);
         if (!dsl || !dsl[0]) {
             if (dsl) __freeds(&dsl);
             ftpd_session_reply(sess, FTP_550,
