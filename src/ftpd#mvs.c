@@ -22,7 +22,8 @@
 ** Returns 0 on success, -1 if name is too long or contains wildcards.
 ** ----------------------------------------------------------------- */
 static int
-resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz)
+resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
+            int allow_wildcards)
 {
     const char *src;
     int len;
@@ -35,8 +36,8 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz)
         return 0;
     }
 
-    /* Reject wildcards — return -2 for wildcard-specific error */
-    if (strchr(arg, '*') || strchr(arg, '%')) {
+    /* Reject wildcards unless explicitly allowed (LIST/NLST) */
+    if (!allow_wildcards && (strchr(arg, '*') || strchr(arg, '%'))) {
         return -2;
     }
 
@@ -196,7 +197,7 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
     if (arg && strcmp(arg, "..") == 0)
         return ftpd_mvs_cdup(sess);
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn));
+    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc == -2) {
         wildcard_error(sess, arg);
         return 0;
@@ -324,9 +325,34 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
         if (recfm[0] != 'U') {
             ISPFSTAT ist;
             if (__fmtisp(pd, &ist) == 0) {
+                /* Reformat dates: yy-mm-dd → YYYY/MM/DD
+                ** and yy-mm-dd hh:mm:ss → YYYY/MM/DD HH:MM
+                */
+                char cdate[11];
+                char mdate[17];
+                int yy, mm, dd, hh, mi;
+
+                if (sscanf(ist.created, "%d-%d-%d", &yy, &mm, &dd) == 3) {
+                    snprintf(cdate, sizeof(cdate), "%4d/%02d/%02d",
+                             yy < 70 ? 2000 + yy : 1900 + yy, mm, dd);
+                } else {
+                    strncpy(cdate, ist.created, sizeof(cdate) - 1);
+                    cdate[sizeof(cdate) - 1] = '\0';
+                }
+
+                if (sscanf(ist.changed, "%d-%d-%d %d:%d",
+                           &yy, &mm, &dd, &hh, &mi) == 5) {
+                    snprintf(mdate, sizeof(mdate), "%4d/%02d/%02d %02d:%02d",
+                             yy < 70 ? 2000 + yy : 1900 + yy,
+                             mm, dd, hh, mi);
+                } else {
+                    strncpy(mdate, ist.changed, sizeof(mdate) - 1);
+                    mdate[sizeof(mdate) - 1] = '\0';
+                }
+
                 ftpd_data_printf(sess,
-                    " %-8s %5s %8s %17s %5s %5s %5s %-8s\r\n",
-                    ist.name, ist.ver, ist.created, ist.changed,
+                    "%-8s  %5s %10s %16s %5s %5s %5s %-8s\r\n",
+                    ist.name, ist.ver, cdate, mdate,
                     ist.size, ist.init, ist.mod, ist.userid);
                 return;
             }
@@ -347,49 +373,79 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
 
 /* --------------------------------------------------------------------
 ** LIST/NLST — dataset or PDS member listing
+**
+** z/OS behavior:
+** - In PDS context, arg is a member filter (e.g. "R*")
+** - In dataset context, arg with wildcards filters the listing
+** - Empty result → 550, no data connection opened
 ** ----------------------------------------------------------------- */
 int
 ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
 {
     char prefix[FTPD_MAX_DSN_LEN + 2];
+    char cwd_notrail[FTPD_MAX_DSN_LEN + 2];
     int is_pds;
+    int cwd_len;
+    const char *member_filter;
 
-    /* Build the listing prefix */
-    if (arg && arg[0]) {
-        if (resolve_dsn(sess, arg, prefix, sizeof(prefix)) != 0) {
+    /* Strip trailing dot from CWD for PDS check */
+    strncpy(cwd_notrail, sess->mvs_cwd, sizeof(cwd_notrail) - 1);
+    cwd_notrail[sizeof(cwd_notrail) - 1] = '\0';
+    cwd_len = strlen(cwd_notrail);
+    if (cwd_len > 0 && cwd_notrail[cwd_len - 1] == '.')
+        cwd_notrail[--cwd_len] = '\0';
+
+    /* Check if CWD is a PDS */
+    is_pds = ftpd_mvs_is_pds(cwd_notrail);
+
+    member_filter = NULL;
+
+    if (is_pds == 1) {
+        /* PDS context: arg is a member filter, not a dataset name */
+        strcpy(prefix, cwd_notrail);
+        if (arg && arg[0])
+            member_filter = arg;
+    } else if (arg && arg[0]) {
+        /* Dataset context with argument: resolve as dataset pattern */
+        if (resolve_dsn(sess, arg, prefix, sizeof(prefix), 1) != 0) {
             ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
             return 0;
         }
     } else {
-        /* No arg: list current CWD prefix */
-        strncpy(prefix, sess->mvs_cwd, sizeof(prefix) - 1);
-        prefix[sizeof(prefix) - 1] = '\0';
-        /* Strip trailing dot for is_pds check */
-        {
-            int len = strlen(prefix);
-            if (len > 0 && prefix[len - 1] == '.')
-                prefix[len - 1] = '\0';
-        }
-    }
-
-    /* Check if this is a PDS — if so, list members */
-    is_pds = ftpd_mvs_is_pds(prefix);
-
-    /* Open data connection */
-    ftpd_session_reply(sess, FTP_150,
-                       "Opening data connection for file list");
-    if (ftpd_data_open(sess) != 0) {
-        ftpd_session_reply(sess, FTP_425,
-                           "Cannot open data connection");
-        return 0;
+        /* No arg: use CWD prefix */
+        strcpy(prefix, cwd_notrail);
     }
 
     if (is_pds == 1) {
-        /* PDS member listing */
+        /* --- PDS member listing --- */
         PDSLIST **pds;
         DSLIST **dsl;
         char recfm[5];
         int i;
+        int count;
+
+        /* Uppercase member filter */
+        char filter_buf[9];
+        const char *filter = NULL;
+        if (member_filter) {
+            for (i = 0; i < 8 && member_filter[i]; i++)
+                filter_buf[i] = (char)toupper(
+                    (unsigned char)member_filter[i]);
+            filter_buf[i] = '\0';
+            filter = filter_buf;
+        }
+
+        pds = __listpd(prefix, filter);
+        if (!pds || !pds[0]) {
+            if (pds) __freepd(&pds);
+            ftpd_session_reply(sess, FTP_550,
+                               "No data sets found.");
+            return 0;
+        }
+
+        /* Count results */
+        for (count = 0; pds[count]; count++)
+            ;
 
         /* Get RECFM for formatting */
         recfm[0] = '\0';
@@ -399,37 +455,61 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         if (dsl)
             __freeds(&dsl);
 
-        /* List header for PDS */
+        /* Open data connection */
+        ftpd_session_reply(sess, FTP_150,
+                           "Opening data connection for file list");
+        if (ftpd_data_open(sess) != 0) {
+            __freepd(&pds);
+            ftpd_session_reply(sess, FTP_425,
+                               "Cannot open data connection");
+            return 0;
+        }
+
+        /* List header */
         if (!nlst) {
             if (recfm[0] != 'U') {
                 ftpd_data_printf(sess,
-                    " Name     VV.MM   Created   Changed"
-                    "            Size  Init   Mod   Id\r\n");
+                    " Name     VV.MM   Created       Changed"
+                    "      Size  Init   Mod   Id\r\n");
             } else {
                 ftpd_data_printf(sess,
                     " Name       Size   TTR    AC  Attributes\r\n");
             }
         }
 
-        pds = __listpd(prefix, NULL);
-        if (pds) {
-            for (i = 0; pds[i]; i++)
-                send_pds_entry(sess, pds[i], nlst, recfm);
-            __freepd(&pds);
-        }
+        for (i = 0; pds[i]; i++)
+            send_pds_entry(sess, pds[i], nlst, recfm);
+        __freepd(&pds);
     } else {
-        /* Dataset listing */
+        /* --- Dataset listing --- */
         DSLIST **dsl;
         char level[FTPD_MAX_DSN_LEN + 2];
         int i;
+        int len;
 
         /* Build the catalog search level (strip trailing dot) */
         strncpy(level, prefix, sizeof(level) - 1);
         level[sizeof(level) - 1] = '\0';
-        {
-            int len = strlen(level);
-            if (len > 0 && level[len - 1] == '.')
-                level[len - 1] = '\0';
+        len = strlen(level);
+        if (len > 0 && level[len - 1] == '.')
+            level[len - 1] = '\0';
+
+        dsl = __listds(level, "NONVSAM VOLUME", NULL);
+        if (!dsl || !dsl[0]) {
+            if (dsl) __freeds(&dsl);
+            ftpd_session_reply(sess, FTP_550,
+                               "No data sets found.");
+            return 0;
+        }
+
+        /* Open data connection */
+        ftpd_session_reply(sess, FTP_150,
+                           "Opening data connection for file list");
+        if (ftpd_data_open(sess) != 0) {
+            __freeds(&dsl);
+            ftpd_session_reply(sess, FTP_425,
+                               "Cannot open data connection");
+            return 0;
         }
 
         /* List header (z/OS format) */
@@ -439,16 +519,13 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                 "Lrecl BlkSz Dsorg Dsname\r\n");
         }
 
-        dsl = __listds(level, "NONVSAM VOLUME", NULL);
-        if (dsl) {
-            for (i = 0; dsl[i]; i++)
-                send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
-            __freeds(&dsl);
-        }
+        for (i = 0; dsl[i]; i++)
+            send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
+        __freeds(&dsl);
     }
 
     ftpd_data_close(sess);
-    ftpd_session_reply(sess, FTP_226, "Transfer complete");
+    ftpd_session_reply(sess, FTP_226, "List completed successfully.");
 
     return 0;
 }
@@ -465,7 +542,7 @@ ftpd_mvs_size(ftpd_session_t *sess, const char *dsn)
     int rc;
     long size;
 
-    if (resolve_dsn(sess, dsn, name, sizeof(name)) != 0)
+    if (resolve_dsn(sess, dsn, name, sizeof(name), 0) != 0)
         return -1;
 
     memset(&lw, 0, sizeof(lw));
