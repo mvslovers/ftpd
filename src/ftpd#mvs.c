@@ -480,10 +480,17 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         if (arg && arg[0])
             member_filter = arg;
     } else if (arg && arg[0]) {
-        /* Dataset context with argument: resolve as dataset pattern */
-        if (resolve_dsn(sess, arg, prefix, sizeof(prefix), 1) != 0) {
-            ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
-            return 0;
+        /* Dataset context with argument.
+        ** "ls *" is equivalent to "ls" (list everything under CWD).
+        */
+        if (strcmp(arg, "*") == 0) {
+            strcpy(prefix, cwd_notrail);
+        } else {
+            if (resolve_dsn(sess, arg, prefix, sizeof(prefix), 1) != 0) {
+                ftpd_session_reply(sess, FTP_501,
+                                   "Invalid dataset name");
+                return 0;
+            }
         }
     } else {
         /* No arg: use CWD prefix */
