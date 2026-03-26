@@ -399,12 +399,12 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
         LOADSTAT lst;
         if (__fmtloa(pd, &lst) == 0) {
             ftpd_data_printf(sess,
-                " %-8s %8s %6s %6s %-8s %2s    %s\r\n",
-                lst.name, lst.ssi, lst.size, lst.ttr,
+                "%-8s  %6s   %6s %-8s %2s %s\r\n",
+                lst.name, lst.size, lst.ttr,
                 lst.aliasof[0] ? lst.aliasof : "",
                 lst.ac, lst.attr);
         } else {
-            ftpd_data_printf(sess, " %-8s\r\n", name);
+            ftpd_data_printf(sess, "%-8s\r\n", name);
         }
     } else {
         /* Text member — use __fmtisp() */
@@ -575,8 +575,8 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                     "      Size  Init   Mod   Id\r\n");
             } else {
                 ftpd_data_printf(sess,
-                    " Name        SSI     Size    TTR"
-                    " ALIAS-OF AC -- -ATTRIBUTES -\r\n");
+                    " Name      Size     TTR   Alias-of"
+                    " AC --------- Attributes ---------\r\n");
             }
         }
 
