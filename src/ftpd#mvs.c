@@ -136,23 +136,26 @@ ftpd_mvs_is_pds(const char *dsn)
 ** Format and send dataset list entry on data connection
 ** ----------------------------------------------------------------- */
 static void
-send_ds_entry(ftpd_session_t *sess, DSLIST *ds, int nlst)
+send_ds_entry(ftpd_session_t *sess, DSLIST *ds, int nlst,
+              const char *prefix)
 {
+    /* z/OS strips the CWD prefix from dataset names in LIST output */
+    const char *name = ds->dsn;
+    int pfxlen = strlen(prefix);
+
+    if (pfxlen > 0 && strncmp(name, prefix, pfxlen) == 0)
+        name += pfxlen;
+
     if (nlst) {
-        /* NLST: just the name */
-        ftpd_data_printf(sess, "%s\r\n", ds->dsn);
+        ftpd_data_printf(sess, "%s\r\n", name);
     } else {
-        /* LIST: formatted like z/OS FTP */
         ftpd_data_printf(sess,
-            "Volume Unit    Referred  Ext Used Recfm Lrecl BlkSz "
-            "Dsorg Dsname\r\n"[0] ? "" : "");  /* header sent separately */
-        ftpd_data_printf(sess,
-            "%-6s %-4s %4d/%02d/%02d %3d %4d %-5s %5d %5d %-5s %s\r\n",
+            "%-6s %-4s %4d/%02d/%02d %2d %4d  %-5s %5d %5d  %-4s %s\r\n",
             ds->volser, ds->dev,
             ds->rfyear, ds->rfmon, ds->rfday,
             ds->extents, ds->used_trks,
             ds->recfm, ds->lrecl, ds->blksize,
-            ds->dsorg, ds->dsn);
+            ds->dsorg, name);
     }
 }
 
@@ -289,17 +292,17 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                 level[len - 1] = '\0';
         }
 
-        /* List header */
+        /* List header (z/OS format) */
         if (!nlst) {
             ftpd_data_printf(sess,
-                "Volume Unit    Referred  Ext Used Recfm "
+                "Volume Unit    Referred Ext Used Recfm "
                 "Lrecl BlkSz Dsorg Dsname\r\n");
         }
 
         dsl = __listds(level, "NONVSAM VOLUME", NULL);
         if (dsl) {
             for (i = 0; dsl[i]; i++)
-                send_ds_entry(sess, dsl[i], nlst);
+                send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
             __freeds(&dsl);
         }
     }
