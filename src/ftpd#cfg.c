@@ -1,8 +1,8 @@
 /*
 ** FTPD Configuration Parser
 **
-** Reads key=value configuration from SYS1.PARMLIB(FTPDPM00) or a
-** PARM-specified dataset. Supports comments (#) and DASD volume lines.
+** Reads key=value configuration from DD:FTPDPRM (the FTPDPRM DD card
+** in the STC JCL procedure). Supports comments (#) and DASD volume lines.
 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -246,25 +246,23 @@ parse_line(ftpd_config_t *cfg, char *line)
 }
 
 /* --------------------------------------------------------------------
-** Load configuration from a dataset.
+** Load configuration from DD:FTPDPRM.
+** If the DD is not allocated, log a warning and use defaults.
 ** ----------------------------------------------------------------- */
 int
-ftpdcfg_load(ftpd_config_t *cfg, const char *dsname)
+ftpdcfg_load(ftpd_config_t *cfg)
 {
     FILE *fp;
     char line[256];
-    const char *name;
 
     ftpdcfg_defaults(cfg);
 
-    name = dsname ? dsname : "SYS1.PARMLIB(FTPDPM00)";
+    ftpd_log(LOG_INFO, "%s: loading config from DD:FTPDPRM", __func__);
 
-    ftpd_log(LOG_INFO, "%s: loading configuration from %s", __func__, name);
-
-    fp = fopen(name, "r");
+    fp = fopen("DD:FTPDPRM", "r");
     if (!fp) {
-        ftpd_log(LOG_WARN, "%s: cannot open config %s, using defaults",
-                 __func__, name);
+        ftpd_log(LOG_WARN, "%s: cannot open DD:FTPDPRM, using defaults",
+                 __func__);
         return 0;
     }
 

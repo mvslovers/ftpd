@@ -25,7 +25,7 @@ z/OS-compatible SITE commands and dataset name handling.
 - **Encoding:** EBCDIC internal, ASCII conversion at network I/O boundary (`ftpdxlat`)
 - **Dataset catalog:** Abstract provider interface; initial impl = per-session filtered VTOC scan
 - **Auth:** RAKF via crent370 `racf` module (FACILITY class FTPAUTH)
-- **Config:** Key=value file in `SYS1.PARMLIB(FTPDPM00)`
+- **Config:** Key=value file via `DD:FTPDPRM` (JCL: `//FTPDPRM DD DSN=&D(&M),DISP=SHR,FREE=CLOSE`)
 - **Console:** `/S FTPD`, `/P FTPD`, `/F FTPD,STATS|SESSIONS|CONFIG|VERSION|HELP|SHUTDOWN`, `/F FTPD,TRACE ON|OFF|DUMP`
 
 ### Source Module Map

@@ -129,8 +129,6 @@ main(int argc, char **argv)
 static int
 initialize(ftpd_server_t *server, int argc, char **argv)
 {
-    const char *cfg_dsn = NULL;
-    int i;
     int rc;
 
     /* APF authorize task + STEPLIB */
@@ -148,18 +146,11 @@ initialize(ftpd_server_t *server, int argc, char **argv)
         }
     }
 
-    /* Parse PARM for config override: CONFIG=dsname */
-    for (i = 1; i < argc; i++) {
-        if (strncmp(argv[i], "CONFIG=", 7) == 0) {
-            cfg_dsn = argv[i] + 7;
-        }
-    }
-
     /* Initialize trace ring buffer */
     ftpd_trace_init(512);
 
-    /* Load configuration */
-    if (ftpdcfg_load(&server->config, cfg_dsn) != 0) {
+    /* Load configuration from DD:FTPDPRM */
+    if (ftpdcfg_load(&server->config) != 0) {
         return 4;
     }
 
