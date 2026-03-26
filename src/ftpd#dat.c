@@ -276,11 +276,14 @@ ftpd_data_printf(ftpd_session_t *sess, const char *fmt, ...)
     if (len <= 0)
         return 0;
 
-    /* Translate EBCDIC -> ASCII if TYPE A */
-    if (sess->type == XFER_TYPE_A) {
-        for (i = 0; i < len; i++)
-            buf[i] = ebc2asc[(unsigned char)buf[i]];
-    }
+    /* Always translate EBCDIC -> ASCII.
+    ** ftpd_data_printf() is used for LIST/NLST output and protocol-
+    ** formatted data which must always be ASCII on the wire, regardless
+    ** of the current TYPE setting.  Binary transfers (RETR/STOR) use
+    ** ftpd_data_send() directly and bypass this function.
+    */
+    for (i = 0; i < len; i++)
+        buf[i] = ebc2asc[(unsigned char)buf[i]];
 
     return ftpd_data_send(sess, buf, len);
 }
