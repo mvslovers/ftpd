@@ -35,9 +35,9 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz)
         return 0;
     }
 
-    /* Reject wildcards in CWD/RETR/STOR context */
+    /* Reject wildcards — return -2 for wildcard-specific error */
     if (strchr(arg, '*') || strchr(arg, '%')) {
-        return -1;
+        return -2;
     }
 
     if (arg[0] == '\'') {
@@ -72,18 +72,144 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz)
 /* --------------------------------------------------------------------
 ** CWD — change working directory (MVS dataset prefix)
 ** ----------------------------------------------------------------- */
+/* --------------------------------------------------------------------
+** Helper: generate z/OS-compatible wildcard error message.
+** Identifies the problematic qualifier and says "begins with"
+** or "contains" depending on position.
+** ----------------------------------------------------------------- */
+static void
+wildcard_error(ftpd_session_t *sess, const char *arg)
+{
+    /* Find the qualifier containing the wildcard */
+    const char *p = arg;
+    const char *qstart = arg;
+    char qual[46];
+    const char *wc;
+    int qlen;
+
+    /* Skip leading quote */
+    if (*p == '\'') {
+        p++;
+        qstart = p;
+    }
+
+    /* Find the qualifier with the wildcard */
+    while (*p) {
+        if (*p == '.' || *p == '\'') {
+            /* Check if this qualifier had a wildcard */
+            wc = qstart;
+            while (wc < p) {
+                if (*wc == '*' || *wc == '%')
+                    goto found;
+                wc++;
+            }
+            qstart = p + 1;
+        }
+        p++;
+    }
+    /* Check last qualifier */
+    wc = qstart;
+    while (*wc) {
+        if (*wc == '*' || *wc == '%')
+            goto found;
+        wc++;
+    }
+    /* Fallback */
+    ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+    return;
+
+found:
+    /* Extract the qualifier */
+    p = qstart;
+    qlen = 0;
+    while (p[qlen] && p[qlen] != '.' && p[qlen] != '\'' && qlen < 44)
+        qlen++;
+    memcpy(qual, p, qlen);
+    qual[qlen] = '\0';
+
+    if (qstart == arg || (arg[0] == '\'' && qstart == arg + 1) ||
+        *(qstart - 1) == '.') {
+        /* First char of qualifier is the wildcard? */
+        if (*qstart == '*' || *qstart == '%') {
+            ftpd_session_reply(sess, FTP_501,
+                "A qualifier in \"%s\" begins with an invalid character",
+                qual);
+        } else {
+            ftpd_session_reply(sess, FTP_501,
+                "A qualifier in \"%s\" contains an invalid character",
+                qual);
+        }
+    } else {
+        ftpd_session_reply(sess, FTP_501,
+            "A qualifier in \"%s\" contains an invalid character", qual);
+    }
+}
+
+/* --------------------------------------------------------------------
+** CDUP — remove last qualifier from CWD
+** SYS1.MACLIB. → SYS1.
+** SYS1. → (empty, reset to HLQ)
+** ----------------------------------------------------------------- */
+int
+ftpd_mvs_cdup(ftpd_session_t *sess)
+{
+    char *dot;
+    int len;
+
+    /* Strip trailing dot first */
+    len = strlen(sess->mvs_cwd);
+    if (len > 0 && sess->mvs_cwd[len - 1] == '.')
+        sess->mvs_cwd[--len] = '\0';
+
+    /* Find the last dot — everything after it is the last qualifier */
+    dot = strrchr(sess->mvs_cwd, '.');
+    if (dot) {
+        dot[1] = '\0';  /* Keep the dot: SYS1.MACLIB → SYS1. */
+    } else {
+        /* At top level — reset to HLQ */
+        strcpy(sess->mvs_cwd, sess->hlq);
+    }
+
+    ftpd_session_reply(sess, FTP_250,
+        "\"%s\" is the working directory name prefix.",
+        sess->mvs_cwd);
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** CWD — change working directory (MVS dataset prefix)
+**
+** z/OS behavior:
+** - CWD sets prefix only, no existence check (always 250)
+** - Exception: if resolved name is a PDS, response says so
+** - CWD .. is treated as CDUP
+** ----------------------------------------------------------------- */
 int
 ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
+    int rc;
+    int is_pds;
 
-    if (resolve_dsn(sess, arg, dsn, sizeof(dsn)) != 0) {
-        ftpd_session_reply(sess, FTP_501,
-                           "Invalid dataset name");
+    /* CWD .. / CWD handled as CDUP */
+    if (arg && strcmp(arg, "..") == 0)
+        return ftpd_mvs_cdup(sess);
+
+    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn));
+    if (rc == -2) {
+        wildcard_error(sess, arg);
+        return 0;
+    }
+    if (rc != 0) {
+        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
         return 0;
     }
 
-    /* Ensure trailing dot for prefix matching */
+    /* Check if this is a PDS for the response message */
+    is_pds = ftpd_mvs_is_pds(dsn);
+
+    /* Set CWD — always add trailing dot for prefix matching */
     {
         int len = strlen(dsn);
         if (len > 0 && dsn[len - 1] != '.') {
@@ -96,9 +222,23 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
 
     strcpy(sess->mvs_cwd, dsn);
 
-    ftpd_session_reply(sess, FTP_250,
-                       "\"'%s'\" is the working directory name prefix.",
-                       sess->mvs_cwd);
+    if (is_pds == 1) {
+        /* Strip trailing dot for PDS display */
+        char display[FTPD_MAX_DSN_LEN + 2];
+        strcpy(display, dsn);
+        {
+            int len = strlen(display);
+            if (len > 0 && display[len - 1] == '.')
+                display[len - 1] = '\0';
+        }
+        ftpd_session_reply(sess, FTP_250,
+            "The working directory \"%s\" is a partitioned data set",
+            display);
+    } else {
+        ftpd_session_reply(sess, FTP_250,
+            "\"%s\" is the working directory name prefix.",
+            sess->mvs_cwd);
+    }
 
     ftpd_log(LOG_INFO, "%s: CWD -> %s", __func__, sess->mvs_cwd);
 

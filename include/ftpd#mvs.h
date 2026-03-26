@@ -18,6 +18,12 @@ int ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
                                                     asm("FTPMVCWD");
 
 /*
+** CDUP — remove last qualifier from CWD.
+** SYS1.MACLIB. → SYS1.
+*/
+int ftpd_mvs_cdup(ftpd_session_t *sess)             asm("FTPMVCDU");
+
+/*
 ** Check if a dataset name refers to a PDS.
 ** Uses __locate() + __dscbdv() to read DSORG.
 ** Returns 1 if PDS, 0 if not, -1 on error.

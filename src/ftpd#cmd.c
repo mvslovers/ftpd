@@ -352,24 +352,8 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "CDUP") == 0 || strcmp(cmd, "XCUP") == 0) {
-        if (sess->fsmode == FS_MVS) {
-            /* Remove last qualifier from CWD */
-            char *dot;
-            int len = strlen(sess->mvs_cwd);
-            if (len > 0 && sess->mvs_cwd[len - 1] == '.')
-                sess->mvs_cwd[len - 1] = '\0';
-            dot = strrchr(sess->mvs_cwd, '.');
-            if (dot) {
-                dot[1] = '\0';
-            } else {
-                /* Already at top level — reset to HLQ */
-                strcpy(sess->mvs_cwd, sess->hlq);
-            }
-            ftpd_session_reply(sess, FTP_250,
-                "\"'%s'\" is the working directory name prefix.",
-                sess->mvs_cwd);
-            return 0;
-        }
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_cdup(sess);
         ftpd_session_reply(sess, FTP_502, "CDUP not implemented for UFS");
         return 0;
     }
