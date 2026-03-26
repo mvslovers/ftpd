@@ -496,7 +496,7 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
                 }
 
                 ftpd_data_printf(sess,
-                    "%-8s  %06lX   %02X%02X%02X %-8s %02d %s%s 24    24\r\n",
+                    "%-8s  %06lX   %02X%02X%02X %-8s %02d %s%s    24    24\r\n",
                     name, sz,
                     pd->ttr[0], pd->ttr[1], pd->ttr[2],
                     aliasof, ac,
