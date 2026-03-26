@@ -528,13 +528,34 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         for (count = 0; pds[count]; count++)
             ;
 
-        /* Get RECFM for formatting */
+        /* Get RECFM for formatting.
+        ** Try __listds first; if it returns nothing (LISTC may not
+        ** find a single exact dataset), fall back to DSCB lookup.
+        */
         recfm[0] = '\0';
         dsl = __listds(prefix, "NONVSAM VOLUME", NULL);
         if (dsl && dsl[0])
             strncpy(recfm, dsl[0]->recfm, sizeof(recfm) - 1);
         if (dsl)
             __freeds(&dsl);
+
+        if (recfm[0] == '\0') {
+            /* DSCB fallback for RECFM */
+            LOCWORK lw;
+            DSCB dscb;
+            memset(&lw, 0, sizeof(lw));
+            if (__locate(prefix, &lw) == 0) {
+                memset(&dscb, 0, sizeof(dscb));
+                if (__dscbdv(prefix, lw.volser, &dscb) == 0) {
+                    if ((dscb.dscb1.recfm & RECFU) == RECFU)
+                        strcpy(recfm, "U");
+                    else if (dscb.dscb1.recfm & RECFV)
+                        strcpy(recfm, "V");
+                    else if (dscb.dscb1.recfm & RECFF)
+                        strcpy(recfm, "F");
+                }
+            }
+        }
 
         /* Open data connection */
         ftpd_session_reply(sess, FTP_150,
