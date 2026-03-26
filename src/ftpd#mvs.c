@@ -134,6 +134,11 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
             return -1;
         memcpy(buf, src, len);
         buf[len] = '\0';
+    } else if (sess->in_pds && !strchr(arg, '.') && !strchr(arg, '(')) {
+        /* Inside a PDS: unquoted simple name = member reference */
+        len = snprintf(buf, bufsz, "%s(%s)", sess->pds_name, arg);
+        if (len >= bufsz)
+            return -1;
     } else {
         /* Relative: prepend CWD prefix */
         len = snprintf(buf, bufsz, "%s%s", sess->mvs_cwd, arg);
@@ -240,6 +245,10 @@ ftpd_mvs_cdup(ftpd_session_t *sess)
     char *dot;
     int len;
 
+    /* Leave PDS context */
+    sess->in_pds = 0;
+    sess->pds_name[0] = '\0';
+
     /* Strip trailing dot first */
     len = strlen(sess->mvs_cwd);
     if (len > 0 && sess->mvs_cwd[len - 1] == '.')
@@ -293,6 +302,16 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
     /* Check if this is a PDS for the response message */
     is_pds = ftpd_mvs_is_pds(dsn);
 
+    /* Track PDS context for RETR/STOR/DELE member access */
+    if (is_pds == 1) {
+        sess->in_pds = 1;
+        strncpy(sess->pds_name, dsn, sizeof(sess->pds_name) - 1);
+        sess->pds_name[sizeof(sess->pds_name) - 1] = '\0';
+    } else {
+        sess->in_pds = 0;
+        sess->pds_name[0] = '\0';
+    }
+
     /* Set CWD — always add trailing dot for prefix matching */
     {
         int len = strlen(dsn);
@@ -307,17 +326,9 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
     strcpy(sess->mvs_cwd, dsn);
 
     if (is_pds == 1) {
-        /* Strip trailing dot for PDS display */
-        char display[FTPD_MAX_DSN_LEN + 2];
-        strcpy(display, dsn);
-        {
-            int len = strlen(display);
-            if (len > 0 && display[len - 1] == '.')
-                display[len - 1] = '\0';
-        }
         ftpd_session_reply(sess, FTP_250,
             "The working directory \"%s\" is a partitioned data set",
-            display);
+            sess->pds_name);
     } else {
         ftpd_session_reply(sess, FTP_250,
             "\"%s\" is the working directory name prefix.",
@@ -571,21 +582,21 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
     int cwd_len;
     const char *member_filter;
 
-    /* Strip trailing dot from CWD for PDS check */
+    /* Strip trailing dot from CWD for catalog queries */
     strncpy(cwd_notrail, sess->mvs_cwd, sizeof(cwd_notrail) - 1);
     cwd_notrail[sizeof(cwd_notrail) - 1] = '\0';
     cwd_len = strlen(cwd_notrail);
     if (cwd_len > 0 && cwd_notrail[cwd_len - 1] == '.')
         cwd_notrail[--cwd_len] = '\0';
 
-    /* Check if CWD is a PDS */
-    is_pds = ftpd_mvs_is_pds(cwd_notrail);
+    /* Use cached PDS state from CWD instead of re-checking DSCB */
+    is_pds = sess->in_pds;
 
     member_filter = NULL;
 
-    if (is_pds == 1) {
+    if (is_pds) {
         /* PDS context: arg is a member filter, not a dataset name */
-        strcpy(prefix, cwd_notrail);
+        strcpy(prefix, sess->pds_name);
         if (arg && arg[0])
             member_filter = arg;
     } else if (arg && arg[0]) {

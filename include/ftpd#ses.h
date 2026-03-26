@@ -36,6 +36,8 @@ struct ftpd_session {
     /* MVS context */
     char            hlq[45];        /* high-level qualifier/prefix   */
     char            mvs_cwd[45];    /* current MVS "directory"       */
+    int             in_pds;         /* 1 = CWD is inside a PDS       */
+    char            pds_name[45];   /* PDS dataset name when in_pds  */
 
     /* UFS context */
     char            ufs_cwd[256];   /* current UFS path              */
