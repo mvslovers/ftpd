@@ -42,7 +42,7 @@ Initialize the repository structure, build configuration, and basic infrastructu
 ### Implementation Details
 
 **ftpdcfg.c — Configuration Parser:**
-- Read `SYS1.PARMLIB(FTPDPM00)` (or PARM-specified dataset)
+- Read config from `DD:FTPDPRM`
 - Parse key=value format, `#` comments, DASD volume lines
 - Populate `ftpd_config_t` structure (see concept §3.5)
 - Default values for all parameters

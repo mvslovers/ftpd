@@ -671,7 +671,10 @@ Authentication uses crent370's `racf/` module (which integrates with RAKF on MVS
 
 ### 5.1 Configuration File
 
-Location: `SYS1.PARMLIB(FTPDPM00)` (default, overridable via PARM)
+Read via `DD:FTPDPRM` in the STC JCL procedure. The DD card points to
+the configuration member (default `SYS2.PARMLIB(FTPDPRM0)`), allowing
+operators to override the location via PROC parameters without changing
+the program.
 
 ```
 # FTPD Configuration File

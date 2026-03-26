@@ -48,11 +48,10 @@ typedef struct ftpd_config {
 } ftpd_config_t;
 
 /*
-** Load configuration from a dataset.
-** If dsname is NULL, uses SYS1.PARMLIB(FTPDPM00).
-** Returns 0 on success, -1 on error.
+** Load configuration from DD:FTPDPRM.
+** If the DD is not allocated, defaults are used (returns 0).
 */
-int ftpdcfg_load(ftpd_config_t *cfg, const char *dsname)    asm("FTPCFGLD");
+int ftpdcfg_load(ftpd_config_t *cfg)                        asm("FTPCFGLD");
 
 /*
 ** Set default values in config structure.
