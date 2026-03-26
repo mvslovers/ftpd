@@ -49,9 +49,14 @@ struct ftpd_session {
     /* SITE allocation defaults */
     ftpd_alloc_t    alloc;
 
+    /* Transfer modifiers (SITE toggles) */
+    int             trailing;       /* SITE TRAILING (0=keep blanks) */
+    int             truncate;       /* SITE TRUNCATE                 */
+    int             rdw;            /* SITE RDW                      */
+
     /* Transfer state */
     long            rest_offset;    /* REST restart offset           */
-    char            rnfr_path[256]; /* RNFR pending rename source    */
+    char            rnfr_path[46];  /* RNFR pending rename source    */
 
     /* Command buffer */
     char            cmd[FTPD_MAX_CMD_LEN]; /* current command line   */

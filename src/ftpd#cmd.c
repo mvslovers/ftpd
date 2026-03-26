@@ -11,6 +11,7 @@
 #include "ftpd#dat.h"
 #include "ftpd#aut.h"
 #include "ftpd#mvs.h"
+#include "ftpd#sit.h"
 
 /* --------------------------------------------------------------------
 ** Helper: return human-readable name for the current TYPE setting.
@@ -267,6 +268,11 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     /* ----------------------------------------------------------------
     ** Authenticated commands
     ** ---------------------------------------------------------------- */
+
+    /* Clear RNFR state on any command other than RNTO */
+    if (strcmp(cmd, "RNTO") != 0)
+        sess->rnfr_path[0] = '\0';
+
     if (strcmp(cmd, "QUIT") == 0) return cmd_quit(sess);
     if (strcmp(cmd, "SYST") == 0) return cmd_syst(sess);
     if (strcmp(cmd, "NOOP") == 0) return cmd_noop(sess);
@@ -356,6 +362,57 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
             return ftpd_mvs_cdup(sess);
         ftpd_session_reply(sess, FTP_502, "CDUP not implemented for UFS");
         return 0;
+    }
+    if (strcmp(cmd, "RETR") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_retr(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "RETR not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "STOR") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_stor(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "STOR not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "APPE") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_appe(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "APPE not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "DELE") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_dele(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "DELE not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "MKD") == 0 || strcmp(cmd, "XMKD") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_mkd(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "MKD not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "RMD") == 0 || strcmp(cmd, "XRMD") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_rmd(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "RMD not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "RNFR") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_rnfr(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "RNFR not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "RNTO") == 0) {
+        if (sess->fsmode == FS_MVS)
+            return ftpd_mvs_rnto(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "RNTO not implemented for UFS");
+        return 0;
+    }
+    if (strcmp(cmd, "SITE") == 0) {
+        return ftpd_site_dispatch(sess, arg);
     }
 
     /* Unknown command */
