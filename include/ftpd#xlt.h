@@ -11,6 +11,11 @@
 **   ftpd_xlat_mvs_e2a()  — EBCDIC CP037 -> ASCII
 */
 
+/* ASCII wire constants — use these instead of '\r'/'\n' after translation */
+#define ASCII_CR   0x0D
+#define ASCII_LF   0x0A
+#define ASCII_CRLF "\x0D\x0A"
+
 /* Active translation table pointers — always IBM-1047 */
 extern unsigned char *asc2ebc;
 extern unsigned char *ebc2asc;

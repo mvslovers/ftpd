@@ -954,8 +954,8 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
             /* Translate EBCDIC -> ASCII (CP037 for MVS datasets) */
             ftpd_xlat_mvs_e2a((unsigned char *)buf, end);
 
-            buf[end] = '\r';
-            buf[end + 1] = '\n';
+            buf[end]     = ASCII_CR;
+            buf[end + 1] = ASCII_LF;
             ftpd_data_send(sess, buf, end + 2);
             total += end + 2;
         }
@@ -1335,10 +1335,10 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             /* ASCII mode: buffer until CRLF, translate, write records */
             int i;
             for (i = 0; i < nread; i++) {
-                if (netbuf[i] == '\r') {
+                if (netbuf[i] == ASCII_CR) {
                     continue;   /* Skip CR, LF triggers record write */
                 }
-                if (netbuf[i] == '\n') {
+                if (netbuf[i] == ASCII_LF) {
                     /* End of record — translate ASCII→EBCDIC (CP037) */
                     ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
 
