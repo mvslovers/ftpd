@@ -913,8 +913,12 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     else
         snprintf(rname, sizeof(rname), "'%s'", dsn);
 
+    ftpd_log(LOG_INFO, "RETR: arg='%s' dsn='%s' member='%s' rname='%s'",
+             arg, dsn, member, rname);
+
     rc = ropen(rname, 0, &fp);
     if (rc != 0) {
+        ftpd_log(LOG_INFO, "RETR: ropen('%s') failed rc=%d", rname, rc);
         if (member[0])
             ftpd_session_reply(sess, FTP_550,
                 "Request nonexistent member %s(%s) to be sent.",
