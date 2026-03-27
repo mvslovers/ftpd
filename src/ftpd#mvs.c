@@ -939,11 +939,37 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     }
 
     total = 0;
-    while (rread(fp, buf, &len) == 0) {
-        if (sess->type == XFER_TYPE_A) {
-            /* EBCDIC -> ASCII, trim trailing blanks, add CRLF */
+
+    ftpd_log(LOG_INFO, "RETR: dsn=%s type=%c lrecl=%d recfm=%d",
+             dsn, sess->type == XFER_TYPE_I ? 'I' :
+                  sess->type == XFER_TYPE_A ? 'A' : 'E',
+             fp->lrecl, fp->recfm);
+
+    if (sess->type == XFER_TYPE_I) {
+        /* ---------------------------------------------------------------
+        ** Binary mode: send raw records without translation.
+        ** --------------------------------------------------------------- */
+        int recnum = 0;
+
+        ftpd_log(LOG_INFO, "RETR BIN: start lrecl=%d recfm=%d",
+                 fp->lrecl, fp->recfm);
+
+        while (rread(fp, buf, &len) == 0) {
+            ftpd_data_send(sess, buf, (int)len);
+            total += len;
+            recnum++;
+        }
+
+        ftpd_log(LOG_INFO,
+                 "RETR BIN: done sent=%ld records=%d lrecl=%d",
+                 total, recnum, fp->lrecl);
+    }
+    else if (sess->type == XFER_TYPE_A) {
+        /* ---------------------------------------------------------------
+        ** ASCII mode: translate EBCDIC->ASCII, trim blanks, add CRLF.
+        ** --------------------------------------------------------------- */
+        while (rread(fp, buf, &len) == 0) {
             int end = (int)len;
-            int i;
 
             /* Trim trailing blanks (unless SITE TRAILING) */
             if (!sess->trailing) {
@@ -959,13 +985,10 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
             ftpd_data_send(sess, buf, end + 2);
             total += end + 2;
         }
-        else if (sess->type == XFER_TYPE_I) {
-            /* Binary: send raw */
-            ftpd_data_send(sess, buf, (int)len);
-            total += len;
-        }
-        else {
-            /* TYPE E: send EBCDIC as-is */
+    }
+    else {
+        /* TYPE E: send EBCDIC as-is */
+        while (rread(fp, buf, &len) == 0) {
             ftpd_data_send(sess, buf, (int)len);
             total += len;
         }
@@ -1328,12 +1351,73 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     total = 0;
     recpos = 0;
 
-    while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
-        total += nread;
+    ftpd_log(LOG_INFO, "STOR: dsn=%s type=%c lrecl=%d recfm=%d",
+             dsn, sess->type == XFER_TYPE_I ? 'I' :
+                  sess->type == XFER_TYPE_A ? 'A' : 'E',
+             fp->lrecl, fp->recfm);
 
-        if (sess->type == XFER_TYPE_A) {
-            /* ASCII mode: buffer until CRLF, translate, write records */
+    if (sess->type == XFER_TYPE_I) {
+        /* ---------------------------------------------------------------
+        ** Binary mode: split byte stream into LRECL-sized records.
+        ** Use memcpy for bulk transfer instead of byte-by-byte copy.
+        ** --------------------------------------------------------------- */
+        int lrecl = fp->lrecl;
+        int recnum = 0;
+        long total_out = 0;
+
+        ftpd_log(LOG_INFO, "STOR BIN: start lrecl=%d recfm=%d",
+                 lrecl, fp->recfm);
+
+        while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
+            int off = 0;
+            total += nread;
+
+            ftpd_log(LOG_DEBUG, "STOR BIN: recv=%d pending=%d total_in=%ld",
+                     nread, recpos, total);
+
+            while (off < nread) {
+                int need = lrecl - recpos;
+                int avail = nread - off;
+                int take = (avail < need) ? avail : need;
+
+                memcpy(recbuf + recpos, netbuf + off, take);
+                recpos += take;
+                off += take;
+
+                if (recpos == lrecl) {
+                    rwrite(fp, recbuf, lrecl);
+                    total_out += lrecl;
+                    recpos = 0;
+                    recnum++;
+                }
+            }
+        }
+
+        /* Final partial record: pad with binary zeros */
+        if (recpos > 0) {
+            if (fp->recfm == RFILE_RECFM_F && lrecl > 0) {
+                memset(recbuf + recpos, 0x00, lrecl - recpos);
+                rwrite(fp, recbuf, lrecl);
+                total_out += lrecl;
+            } else {
+                rwrite(fp, recbuf, recpos);
+                total_out += recpos;
+            }
+            recnum++;
+        }
+
+        ftpd_log(LOG_INFO,
+                 "STOR BIN: done recv=%ld written=%ld records=%d lrecl=%d",
+                 total, total_out, recnum, lrecl);
+    }
+    else if (sess->type == XFER_TYPE_A) {
+        /* ---------------------------------------------------------------
+        ** ASCII mode: buffer until CRLF, translate, write records.
+        ** --------------------------------------------------------------- */
+        while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
             int i;
+            total += nread;
+
             for (i = 0; i < nread; i++) {
                 if (netbuf[i] == ASCII_CR) {
                     continue;   /* Skip CR, LF triggers record write */
@@ -1357,47 +1441,43 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
                     recbuf[recpos++] = netbuf[i];
             }
         }
-        else if (sess->type == XFER_TYPE_I) {
-            /* Binary: write in record-sized chunks */
-            int off = 0;
-            int chunk;
-            while (off < nread) {
-                /* Accumulate into recbuf */
-                while (recpos < fp->lrecl && off < nread) {
-                    recbuf[recpos++] = netbuf[off++];
-                }
-                if (recpos >= fp->lrecl) {
-                    rwrite(fp, recbuf, fp->lrecl);
-                    recpos = 0;
-                }
-            }
-        }
-        else {
-            /* TYPE E: write EBCDIC as-is, same as binary */
-            int off = 0;
-            while (off < nread) {
-                while (recpos < fp->lrecl && off < nread) {
-                    recbuf[recpos++] = netbuf[off++];
-                }
-                if (recpos >= fp->lrecl) {
-                    rwrite(fp, recbuf, fp->lrecl);
-                    recpos = 0;
-                }
-            }
-        }
-    }
 
-    /* Flush any remaining partial record */
-    if (recpos > 0) {
-        if (sess->type == XFER_TYPE_A) {
-            /* Translate remaining data (CP037) */
+        /* Flush any remaining partial record */
+        if (recpos > 0) {
             ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
             if (fp->recfm == RFILE_RECFM_F && fp->lrecl > 0) {
                 while (recpos < fp->lrecl)
-                    recbuf[recpos++] = ' ';
+                    recbuf[recpos++] = ' ';  /* EBCDIC blank */
+            }
+            rwrite(fp, recbuf, recpos);
+        }
+    }
+    else {
+        /* ---------------------------------------------------------------
+        ** TYPE E: write EBCDIC as-is, same record logic as binary.
+        ** --------------------------------------------------------------- */
+        while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
+            int off = 0;
+            total += nread;
+
+            while (off < nread) {
+                int need = fp->lrecl - recpos;
+                int avail = nread - off;
+                int take = (avail < need) ? avail : need;
+
+                memcpy(recbuf + recpos, netbuf + off, take);
+                recpos += take;
+                off += take;
+
+                if (recpos == fp->lrecl) {
+                    rwrite(fp, recbuf, fp->lrecl);
+                    recpos = 0;
+                }
             }
         }
-        rwrite(fp, recbuf, recpos);
+
+        if (recpos > 0)
+            rwrite(fp, recbuf, recpos);
     }
 
     rclose(fp);
