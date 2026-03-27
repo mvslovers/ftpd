@@ -1365,6 +1365,20 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     if (sess->type == XFER_TYPE_I) {
         /* ---------------------------------------------------------------
         ** Binary mode: split byte stream into LRECL-sized records.
+        **
+        ** TODO: Binary STOR produces corrupt data at byte 3073 (3×1024).
+        ** Root cause: rwrite() / __awrite() in crent370 rfile layer has a
+        ** blockung/deblocking bug. The record accumulation logic here is
+        ** correct (verified: recv=710400, written=710400, records=8880).
+        **
+        ** mvsmf uses fopen()/fwrite()/fflush() (stdio layer) for the
+        ** same operation and works correctly. The stdio and rfile layers
+        ** both end up in MVS assembler I/O, but rfile's __awrite has
+        ** the bug.
+        **
+        ** Fix: switch STOR/RETR from ropen/rwrite/rread to fopen/fwrite/
+        ** fread, matching the proven mvsmf pattern in dsapi.c
+        ** (write_record() with fwrite + fflush per record).
         ** Use memcpy for bulk transfer instead of byte-by-byte copy.
         ** --------------------------------------------------------------- */
         int lrecl = fp->lrecl;
