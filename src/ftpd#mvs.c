@@ -11,6 +11,7 @@
 #include "ftpd#ses.h"
 #include "ftpd#dat.h"
 #include "ftpd#mvs.h"
+#include "ftpd#xlt.h"
 #include "rfile.h"
 #include "mvssupa.h"
 
@@ -950,9 +951,8 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
                     end--;
             }
 
-            /* Translate EBCDIC -> ASCII */
-            for (i = 0; i < end; i++)
-                buf[i] = ebc2asc[(unsigned char)buf[i]];
+            /* Translate EBCDIC -> ASCII (CP037 for MVS datasets) */
+            ftpd_xlat_mvs_e2a((unsigned char *)buf, end);
 
             buf[end] = '\r';
             buf[end + 1] = '\n';
@@ -1339,10 +1339,8 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
                     continue;   /* Skip CR, LF triggers record write */
                 }
                 if (netbuf[i] == '\n') {
-                    /* End of record — translate ASCII→EBCDIC */
-                    int j;
-                    for (j = 0; j < recpos; j++)
-                        recbuf[j] = asc2ebc[(unsigned char)recbuf[j]];
+                    /* End of record — translate ASCII→EBCDIC (CP037) */
+                    ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
 
                     /* Pad FB records with EBCDIC blanks */
                     if (fp->recfm == RFILE_RECFM_F && fp->lrecl > 0) {
@@ -1392,10 +1390,8 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     /* Flush any remaining partial record */
     if (recpos > 0) {
         if (sess->type == XFER_TYPE_A) {
-            /* Translate remaining data */
-            int j;
-            for (j = 0; j < recpos; j++)
-                recbuf[j] = asc2ebc[(unsigned char)recbuf[j]];
+            /* Translate remaining data (CP037) */
+            ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
             if (fp->recfm == RFILE_RECFM_F && fp->lrecl > 0) {
                 while (recpos < fp->lrecl)
                     recbuf[recpos++] = ' ';
