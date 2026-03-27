@@ -1372,6 +1372,23 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         ftpd_log(LOG_INFO, "STOR BIN: start lrecl=%d recfm=%d",
                  lrecl, fp->recfm);
 
+        /* Safety: lrecl must be > 0 for record-based writing */
+        if (lrecl <= 0) {
+            /* Use SITE LRECL if set, otherwise fail */
+            lrecl = sess->alloc.lrecl;
+            ftpd_log(LOG_INFO, "STOR BIN: fp->lrecl=0, using alloc.lrecl=%d",
+                     lrecl);
+        }
+        if (lrecl <= 0) {
+            rclose(fp);
+            ftpd_data_close(sess);
+            if (allocated_new)
+                free_ddname(ddname);
+            ftpd_session_reply(sess, FTP_550,
+                "Cannot determine record length for binary transfer");
+            return 0;
+        }
+
         while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
             int off = 0;
             total += nread;
