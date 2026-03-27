@@ -12,7 +12,6 @@
 #include "ftpd#dat.h"
 #include "ftpd#mvs.h"
 #include "ftpd#xlt.h"
-#include "rfile.h"
 #include "mvssupa.h"
 
 /* __svc99 is OS linkage — declared under #ifdef MUSIC in mvssupa.h,
@@ -866,15 +865,16 @@ split_member(char *dsn, char *member, int mbrsz)
 
 /* --------------------------------------------------------------------
 ** Helper: format RECFM name for 125 response.
+** Uses _FILE_RECFM_* constants from clibio.h (FILE struct recfm).
 ** F/FB → "FIX", V/VB → "VAR", U → "UND"
 ** ----------------------------------------------------------------- */
 static const char *
-recfm_label(int recfm)
+recfm_label(unsigned char recfm)
 {
-    switch (recfm) {
-    case RFILE_RECFM_F: return "FIX";
-    case RFILE_RECFM_V: return "VAR";
-    case RFILE_RECFM_U: return "UND";
+    switch (recfm & _FILE_RECFM_TYPE) {
+    case _FILE_RECFM_F: return "FIX";
+    case _FILE_RECFM_V: return "VAR";
+    case _FILE_RECFM_U: return "UND";
     default:            return "UNK";
     }
 }
@@ -887,12 +887,14 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
     char member[FTPD_MAX_MBR_LEN + 1];
-    char rname[FTPD_MAX_DSN_LEN + FTPD_MAX_MBR_LEN + 4];
-    RFILE *fp;
+    char fname[FTPD_MAX_DSN_LEN + FTPD_MAX_MBR_LEN + 4];
+    FILE *fp;
     char buf[32768];
-    size_t len;
+    size_t n;
     int rc;
     long total;
+    int lrecl;
+    int is_fixed;
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing dataset name");
@@ -907,20 +909,18 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
     split_member(dsn, member, sizeof(member));
 
-    /* Build ropen() name — no quotes needed under STC (no TSO prefix).
-    ** Note: ropen() has a bug where closing quote is not stripped,
-    ** causing __fildef to fail with a trailing quote in the DSN. */
+    /* Build fopen filename — single-quoted for fully qualified DSN */
     if (member[0])
-        snprintf(rname, sizeof(rname), "%s(%s)", dsn, member);
+        snprintf(fname, sizeof(fname), "'%s(%s)'", dsn, member);
     else
-        snprintf(rname, sizeof(rname), "%s", dsn);
+        snprintf(fname, sizeof(fname), "'%s'", dsn);
 
-    ftpd_log(LOG_INFO, "RETR: arg='%s' dsn='%s' member='%s' rname='%s'",
-             arg, dsn, member, rname);
+    ftpd_log(LOG_INFO, "RETR: arg='%s' dsn='%s' member='%s' fname='%s'",
+             arg, dsn, member, fname);
 
-    rc = ropen(rname, 0, &fp);
-    if (rc != 0) {
-        ftpd_log(LOG_INFO, "RETR: ropen('%s') failed rc=%d", rname, rc);
+    fp = fopen(fname, "rb");
+    if (fp == NULL) {
+        ftpd_log(LOG_INFO, "RETR: fopen('%s') failed", fname);
         if (member[0])
             ftpd_session_reply(sess, FTP_550,
                 "Request nonexistent member %s(%s) to be sent.",
@@ -931,14 +931,23 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Read LRECL/RECFM from file handle — crent370 populates from DCB.
+    ** For RECFM=U, lrecl is 0; use blksize instead (mvsmf pattern). */
+    is_fixed = (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_F;
+    {
+        int is_undefined =
+            (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U;
+        lrecl = is_undefined ? (int)fp->blksize : (int)fp->lrecl;
+    }
+
     /* 125 response with RECFM and LRECL info */
     ftpd_session_reply(sess, FTP_125,
         "Sending data set %s %srecfm %d",
-        member[0] ? rname + 1 : dsn,
-        recfm_label(fp->recfm), fp->lrecl);
+        member[0] ? arg : dsn,
+        recfm_label(fp->recfm), lrecl);
 
     if (ftpd_data_open(sess) != 0) {
-        rclose(fp);
+        fclose(fp);
         ftpd_session_reply(sess, FTP_425,
                            "Cannot open data connection");
         return 0;
@@ -946,61 +955,67 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
     total = 0;
 
-    ftpd_log(LOG_INFO, "RETR: dsn=%s type=%c lrecl=%d recfm=%d",
+    ftpd_log(LOG_INFO, "RETR: dsn=%s type=%c lrecl=%d blksize=%d recfm=0x%02X",
              dsn, sess->type == XFER_TYPE_I ? 'I' :
                   sess->type == XFER_TYPE_A ? 'A' : 'E',
-             fp->lrecl, fp->recfm);
+             lrecl, fp->blksize, fp->recfm);
 
     if (sess->type == XFER_TYPE_I) {
         /* ---------------------------------------------------------------
-        ** Binary mode: send raw records without translation.
+        ** Binary mode: fread lrecl bytes per record, send raw.
+        ** Matches mvsmf dsapi.c read_and_send_dataset(DATA_TYPE_BINARY).
         ** --------------------------------------------------------------- */
         int recnum = 0;
 
-        ftpd_log(LOG_INFO, "RETR BIN: start lrecl=%d recfm=%d",
-                 fp->lrecl, fp->recfm);
-
-        while (rread(fp, buf, &len) == 0) {
-            ftpd_data_send(sess, buf, (int)len);
-            total += len;
-            recnum++;
+        if (lrecl > 0) {
+            while ((n = fread(buf, 1, lrecl, fp)) > 0) {
+                ftpd_data_send(sess, buf, (int)n);
+                total += n;
+                recnum++;
+            }
         }
 
         ftpd_log(LOG_INFO,
                  "RETR BIN: done sent=%ld records=%d lrecl=%d",
-                 total, recnum, fp->lrecl);
+                 total, recnum, lrecl);
     }
     else if (sess->type == XFER_TYPE_A) {
         /* ---------------------------------------------------------------
-        ** ASCII mode: translate EBCDIC->ASCII, trim blanks, add CRLF.
+        ** ASCII mode: fread lrecl bytes per record, trim, xlat, CRLF.
+        ** For FB: each fread returns exactly LRECL bytes (one record).
         ** --------------------------------------------------------------- */
-        while (rread(fp, buf, &len) == 0) {
-            int end = (int)len;
+        if (lrecl > 0) {
+            while ((n = fread(buf, 1, lrecl, fp)) > 0) {
+                int end = (int)n;
 
-            /* Trim trailing blanks (unless SITE TRAILING) */
-            if (!sess->trailing) {
-                while (end > 0 && buf[end - 1] == ' ')
-                    end--;
+                /* Trim trailing blanks (unless SITE TRAILING) */
+                if (!sess->trailing) {
+                    while (end > 0 && buf[end - 1] == ' ')
+                        end--;
+                }
+
+                /* Translate EBCDIC -> ASCII (CP037 for MVS datasets) */
+                ftpd_xlat_mvs_e2a((unsigned char *)buf, end);
+
+                buf[end]     = ASCII_CR;
+                buf[end + 1] = ASCII_LF;
+                ftpd_data_send(sess, buf, end + 2);
+                total += end + 2;
             }
-
-            /* Translate EBCDIC -> ASCII (CP037 for MVS datasets) */
-            ftpd_xlat_mvs_e2a((unsigned char *)buf, end);
-
-            buf[end]     = ASCII_CR;
-            buf[end + 1] = ASCII_LF;
-            ftpd_data_send(sess, buf, end + 2);
-            total += end + 2;
         }
     }
     else {
-        /* TYPE E: send EBCDIC as-is */
-        while (rread(fp, buf, &len) == 0) {
-            ftpd_data_send(sess, buf, (int)len);
-            total += len;
+        /* TYPE E: send EBCDIC as-is, fread lrecl bytes per record */
+        if (lrecl > 0) {
+            while ((n = fread(buf, 1, lrecl, fp)) > 0) {
+                ftpd_data_send(sess, buf, (int)n);
+                total += n;
+            }
         }
     }
 
-    rclose(fp);
+    ftpd_log(LOG_INFO, "RETR: closing %s", fname);
+    fclose(fp);
     ftpd_data_close(sess);
 
     sess->bytes_sent += total;
@@ -1271,10 +1286,11 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
     char member[FTPD_MAX_MBR_LEN + 1];
-    char rname[FTPD_MAX_DSN_LEN + FTPD_MAX_MBR_LEN + 4];
-    RFILE *fp;
+    char fname[FTPD_MAX_DSN_LEN + FTPD_MAX_MBR_LEN + 4];
+    FILE *fp;
     LOCWORK lw;
     char ddname[9];
+    int ds_exists;
     int allocated_new;
     int rc;
     long total;
@@ -1282,6 +1298,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     char recbuf[32768];
     int recpos;
     int nread;
+    int is_fixed;
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing dataset name");
@@ -1300,43 +1317,55 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 
     /* Check if dataset exists */
     memset(&lw, 0, sizeof(lw));
-    rc = __locate(dsn, &lw);
+    ds_exists = (__locate(dsn, &lw) == 0);
 
-    if (rc != 0) {
-        /* Dataset does not exist */
-        if (member[0]) {
-            ftpd_session_reply(sess, FTP_550,
-                "%s(%s) requests a nonexistent partitioned data set. "
-                "Use MKD command to create it.", dsn, member);
-            return 0;
-        }
-        /* Allocate new dataset using SITE params */
-        rc = alloc_new_dataset(sess, dsn, 0, ddname);
+    if (!ds_exists && member[0]) {
+        ftpd_session_reply(sess, FTP_550,
+            "%s(%s) requests a nonexistent partitioned data set. "
+            "Use MKD command to create it.", dsn, member);
+        return 0;
+    }
+
+    /* Step 1: If dataset doesn't exist, create it via __dsalcf().
+    ** This is the proven mvsMF DSAPI pattern (dsapi.c line 1794):
+    ** __dsalcf() for SVC 99 allocation, __dsfree() to release DD,
+    ** then fopen("wb") reads DCB from the new DSCB on DASD. */
+    if (!ds_exists) {
+        char opts[256];
+        snprintf(opts, sizeof(opts),
+            "DSN=%s;DISP=(NEW,CATLG,DELETE);DSORG=PS;RECFM=%s;"
+            "LRECL=%d;BLKSIZE=%d;SPACE=%s(%d,%d)",
+            dsn,
+            sess->alloc.recfm,
+            sess->alloc.lrecl,
+            sess->alloc.blksize,
+            sess->alloc.spacetype[0] ? sess->alloc.spacetype : "TRK",
+            sess->alloc.primary   > 0 ? sess->alloc.primary   : 100,
+            sess->alloc.secondary > 0 ? sess->alloc.secondary : 50);
+
+        ftpd_log(LOG_INFO, "STOR: __dsalcf opts='%s'", opts);
+        rc = __dsalcf(ddname, "%s", opts);
         if (rc != 0) {
+            ftpd_log(LOG_ERROR, "STOR: __dsalcf failed rc=%d", rc);
             ftpd_session_reply(sess, FTP_550,
                 "Cannot allocate dataset %s", dsn);
             return 0;
         }
+        __dsfree(ddname);       /* release DD — fopen will re-allocate */
         allocated_new = 1;
     }
 
-    /* Build ropen() name */
-    if (allocated_new) {
-        snprintf(rname, sizeof(rname), "dd:%s", ddname);
-        if (member[0]) {
-            /* Should not happen (checked above) */
-            snprintf(rname, sizeof(rname), "dd:%s(%s)", ddname, member);
-        }
-    } else if (member[0]) {
-        snprintf(rname, sizeof(rname), "%s(%s)", dsn, member);
-    } else {
-        snprintf(rname, sizeof(rname), "%s", dsn);
-    }
+    /* Step 2: Build fopen filename — single-quoted for fully qualified DSN.
+    ** Always open with just "wb" — crent370 reads DCB from DSCB. */
+    if (member[0])
+        snprintf(fname, sizeof(fname), "'%s(%s)'", dsn, member);
+    else
+        snprintf(fname, sizeof(fname), "'%s'", dsn);
 
-    rc = ropen(rname, 1, &fp);
-    if (rc != 0) {
-        if (allocated_new)
-            free_ddname(ddname);
+    ftpd_log(LOG_INFO, "STOR: fopen('%s', 'wb') new=%d", fname, allocated_new);
+
+    fp = fopen(fname, "wb");
+    if (fp == NULL) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot open dataset %s for writing", dsn);
         return 0;
@@ -1346,9 +1375,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
                        member[0] ? arg : dsn);
 
     if (ftpd_data_open(sess) != 0) {
-        rclose(fp);
-        if (allocated_new)
-            free_ddname(ddname);
+        fclose(fp);
         ftpd_session_reply(sess, FTP_425,
                            "Cannot open data connection");
         return 0;
@@ -1356,96 +1383,84 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 
     total = 0;
     recpos = 0;
+    is_fixed = (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_F;
 
-    ftpd_log(LOG_INFO, "STOR: dsn=%s type=%c lrecl=%d recfm=%d",
+    ftpd_log(LOG_INFO, "STOR: dsn=%s type=%c lrecl=%d blksize=%d recfm=0x%02X",
              dsn, sess->type == XFER_TYPE_I ? 'I' :
                   sess->type == XFER_TYPE_A ? 'A' : 'E',
-             fp->lrecl, fp->recfm);
+             fp->lrecl, fp->blksize, fp->recfm);
 
     if (sess->type == XFER_TYPE_I) {
         /* ---------------------------------------------------------------
-        ** Binary mode: split byte stream into LRECL-sized records.
-        **
-        ** TODO: Binary STOR produces corrupt data at byte 3073 (3×1024).
-        ** Root cause: rwrite() / __awrite() in crent370 rfile layer has a
-        ** blockung/deblocking bug. The record accumulation logic here is
-        ** correct (verified: recv=710400, written=710400, records=8880).
-        **
-        ** mvsmf uses fopen()/fwrite()/fflush() (stdio layer) for the
-        ** same operation and works correctly. The stdio and rfile layers
-        ** both end up in MVS assembler I/O, but rfile's __awrite has
-        ** the bug.
-        **
-        ** Fix: switch STOR/RETR from ropen/rwrite/rread to fopen/fwrite/
-        ** fread, matching the proven mvsmf pattern in dsapi.c
-        ** (write_record() with fwrite + fflush per record).
-        ** Use memcpy for bulk transfer instead of byte-by-byte copy.
+        ** Binary mode: exact mvsMF dsapi.c pattern (lines 1013-1054).
+        ** Accumulate into eff_lrecl-sized records, fwrite+fflush each.
+        ** recv directly into record_buffer, limited to space remaining.
         ** --------------------------------------------------------------- */
-        int lrecl = fp->lrecl;
+        int is_undefined =
+            (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U;
+        size_t eff_lrecl = is_undefined
+            ? (size_t)fp->blksize : (size_t)fp->lrecl;
+        char *record_buffer;
+        size_t record_pos = 0;
         int recnum = 0;
-        long total_out = 0;
 
-        ftpd_log(LOG_INFO, "STOR BIN: start lrecl=%d recfm=%d",
-                 lrecl, fp->recfm);
-
-        /* Safety: lrecl must be > 0 for record-based writing */
-        if (lrecl <= 0) {
-            /* Use SITE LRECL if set, otherwise fail */
-            lrecl = sess->alloc.lrecl;
-            ftpd_log(LOG_INFO, "STOR BIN: fp->lrecl=0, using alloc.lrecl=%d",
-                     lrecl);
-        }
-        if (lrecl <= 0) {
-            rclose(fp);
+        if (eff_lrecl == 0) {
+            fclose(fp);
             ftpd_data_close(sess);
-            if (allocated_new)
-                free_ddname(ddname);
             ftpd_session_reply(sess, FTP_550,
-                "Cannot determine record length for binary transfer");
+                "Dataset has zero record length");
             return 0;
         }
 
-        while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
-            int off = 0;
-            total += nread;
-
-            ftpd_log(LOG_DEBUG, "STOR BIN: recv=%d pending=%d total_in=%ld",
-                     nread, recpos, total);
-
-            while (off < nread) {
-                int need = lrecl - recpos;
-                int avail = nread - off;
-                int take = (avail < need) ? avail : need;
-
-                memcpy(recbuf + recpos, netbuf + off, take);
-                recpos += take;
-                off += take;
-
-                if (recpos == lrecl) {
-                    rwrite(fp, recbuf, lrecl);
-                    total_out += lrecl;
-                    recpos = 0;
-                    recnum++;
-                }
-            }
-        }
-
-        /* Final partial record: pad with binary zeros */
-        if (recpos > 0) {
-            if (fp->recfm == RFILE_RECFM_F && lrecl > 0) {
-                memset(recbuf + recpos, 0x00, lrecl - recpos);
-                rwrite(fp, recbuf, lrecl);
-                total_out += lrecl;
-            } else {
-                rwrite(fp, recbuf, recpos);
-                total_out += recpos;
-            }
-            recnum++;
+        record_buffer = calloc(1, eff_lrecl);
+        if (!record_buffer) {
+            fclose(fp);
+            ftpd_data_close(sess);
+            ftpd_session_reply(sess, FTP_550,
+                "Memory allocation failed");
+            return 0;
         }
 
         ftpd_log(LOG_INFO,
-                 "STOR BIN: done recv=%ld written=%ld records=%d lrecl=%d",
-                 total, total_out, recnum, lrecl);
+                 "STOR BIN: start eff_lrecl=%lu recfm=0x%02X%s",
+                 (unsigned long)eff_lrecl, fp->recfm,
+                 is_undefined ? " (U)" : "");
+
+        /* Recv directly into record_buffer, limited to space left */
+        while (1) {
+            size_t space = eff_lrecl - record_pos;
+            int n = ftpd_data_recv(sess,
+                        record_buffer + record_pos, (int)space);
+            if (n <= 0) break;
+
+            total += n;
+            record_pos += n;
+
+            if (record_pos >= eff_lrecl) {
+                fwrite(record_buffer, 1, record_pos, fp);
+                fflush(fp);
+                record_pos = 0;
+                recnum++;
+            }
+        }
+
+        /* Final partial record: pad with 0x00 (skip for RECFM=U) */
+        if (record_pos > 0) {
+            if (!is_undefined) {
+                memset(record_buffer + record_pos, 0x00,
+                       eff_lrecl - record_pos);
+                record_pos = eff_lrecl;
+            }
+            fwrite(record_buffer, 1, record_pos, fp);
+            fflush(fp);
+            recnum++;
+        }
+
+        free(record_buffer);
+
+        ftpd_log(LOG_INFO,
+                 "STOR BIN: done total=%ld records=%d eff_lrecl=%lu",
+                 total, recnum, (unsigned long)eff_lrecl);
     }
     else if (sess->type == XFER_TYPE_A) {
         /* ---------------------------------------------------------------
@@ -1464,12 +1479,14 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
                     ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
 
                     /* Pad FB records with EBCDIC blanks */
-                    if (fp->recfm == RFILE_RECFM_F && fp->lrecl > 0) {
+                    if (is_fixed && fp->lrecl > 0) {
                         while (recpos < fp->lrecl)
                             recbuf[recpos++] = ' ';  /* EBCDIC blank */
-                        rwrite(fp, recbuf, fp->lrecl);
+                        fwrite(recbuf, 1, fp->lrecl, fp);
+                        fflush(fp);
                     } else {
-                        rwrite(fp, recbuf, recpos);
+                        fwrite(recbuf, 1, recpos, fp);
+                        fflush(fp);
                     }
                     recpos = 0;
                     continue;
@@ -1482,46 +1499,62 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         /* Flush any remaining partial record */
         if (recpos > 0) {
             ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
-            if (fp->recfm == RFILE_RECFM_F && fp->lrecl > 0) {
+            if (is_fixed && fp->lrecl > 0) {
                 while (recpos < fp->lrecl)
                     recbuf[recpos++] = ' ';  /* EBCDIC blank */
             }
-            rwrite(fp, recbuf, recpos);
+            fwrite(recbuf, 1, recpos, fp);
+            fflush(fp);
         }
     }
     else {
         /* ---------------------------------------------------------------
-        ** TYPE E: write EBCDIC as-is, same record logic as binary.
+        ** TYPE E: EBCDIC as-is, same record accumulation as binary.
         ** --------------------------------------------------------------- */
-        while ((nread = ftpd_data_recv(sess, netbuf, sizeof(netbuf))) > 0) {
-            int off = 0;
-            total += nread;
+        int is_undefined =
+            (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U;
+        size_t eff_lrecl = is_undefined
+            ? (size_t)fp->blksize : (size_t)fp->lrecl;
+        char *record_buffer;
+        size_t record_pos = 0;
 
-            while (off < nread) {
-                int need = fp->lrecl - recpos;
-                int avail = nread - off;
-                int take = (avail < need) ? avail : need;
-
-                memcpy(recbuf + recpos, netbuf + off, take);
-                recpos += take;
-                off += take;
-
-                if (recpos == fp->lrecl) {
-                    rwrite(fp, recbuf, fp->lrecl);
-                    recpos = 0;
-                }
-            }
+        if (eff_lrecl > 0) {
+            record_buffer = calloc(1, eff_lrecl);
+        } else {
+            record_buffer = NULL;
         }
 
-        if (recpos > 0)
-            rwrite(fp, recbuf, recpos);
+        if (record_buffer) {
+            while (1) {
+                size_t space = eff_lrecl - record_pos;
+                int n = ftpd_data_recv(sess,
+                            record_buffer + record_pos, (int)space);
+                if (n <= 0) break;
+                total += n;
+                record_pos += n;
+
+                if (record_pos >= eff_lrecl) {
+                    fwrite(record_buffer, 1, record_pos, fp);
+                    fflush(fp);
+                    record_pos = 0;
+                }
+            }
+            if (record_pos > 0) {
+                if (!is_undefined) {
+                    memset(record_buffer + record_pos, 0x00,
+                           eff_lrecl - record_pos);
+                    record_pos = eff_lrecl;
+                }
+                fwrite(record_buffer, 1, record_pos, fp);
+                fflush(fp);
+            }
+            free(record_buffer);
+        }
     }
 
-    rclose(fp);
+    ftpd_log(LOG_INFO, "STOR: closing %s", fname);
+    fclose(fp);
     ftpd_data_close(sess);
-
-    if (allocated_new)
-        free_ddname(ddname);
 
     sess->bytes_recv += total;
     sess->xfer_count++;
@@ -1541,8 +1574,8 @@ int
 ftpd_mvs_appe(ftpd_session_t *sess, const char *arg)
 {
     /* For now, APPE behaves like STOR.
-    ** True append (DISP=MOD) requires __fildef modification.
-    ** ropen() with write=1 replaces content for sequential,
+    ** True append (DISP=MOD) requires fopen mode change.
+    ** fopen("wb") replaces content for sequential datasets,
     ** but for PDS members it replaces the member — which is correct.
     */
     /* TODO: implement true append via DISP=MOD for sequential datasets */
