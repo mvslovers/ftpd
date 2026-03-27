@@ -907,11 +907,13 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
     split_member(dsn, member, sizeof(member));
 
-    /* Build ropen() name: 'DSN' or 'DSN(MEMBER)' */
+    /* Build ropen() name — no quotes needed under STC (no TSO prefix).
+    ** Note: ropen() has a bug where closing quote is not stripped,
+    ** causing __fildef to fail with a trailing quote in the DSN. */
     if (member[0])
-        snprintf(rname, sizeof(rname), "'%s(%s)'", dsn, member);
+        snprintf(rname, sizeof(rname), "%s(%s)", dsn, member);
     else
-        snprintf(rname, sizeof(rname), "'%s'", dsn);
+        snprintf(rname, sizeof(rname), "%s", dsn);
 
     ftpd_log(LOG_INFO, "RETR: arg='%s' dsn='%s' member='%s' rname='%s'",
              arg, dsn, member, rname);
@@ -1326,9 +1328,9 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             snprintf(rname, sizeof(rname), "dd:%s(%s)", ddname, member);
         }
     } else if (member[0]) {
-        snprintf(rname, sizeof(rname), "'%s(%s)'", dsn, member);
+        snprintf(rname, sizeof(rname), "%s(%s)", dsn, member);
     } else {
-        snprintf(rname, sizeof(rname), "'%s'", dsn);
+        snprintf(rname, sizeof(rname), "%s", dsn);
     }
 
     rc = ropen(rname, 1, &fp);
