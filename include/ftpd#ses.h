@@ -36,6 +36,8 @@ struct ftpd_session {
     /* MVS context */
     char            hlq[45];        /* high-level qualifier/prefix   */
     char            mvs_cwd[45];    /* current MVS "directory"       */
+    int             in_pds;         /* 1 = CWD is inside a PDS       */
+    char            pds_name[45];   /* PDS dataset name when in_pds  */
 
     /* UFS context */
     char            ufs_cwd[256];   /* current UFS path              */
@@ -49,9 +51,14 @@ struct ftpd_session {
     /* SITE allocation defaults */
     ftpd_alloc_t    alloc;
 
+    /* Transfer modifiers (SITE toggles) */
+    int             trailing;       /* SITE TRAILING (0=keep blanks) */
+    int             truncate;       /* SITE TRUNCATE                 */
+    int             rdw;            /* SITE RDW                      */
+
     /* Transfer state */
     long            rest_offset;    /* REST restart offset           */
-    char            rnfr_path[256]; /* RNFR pending rename source    */
+    char            rnfr_path[46];  /* RNFR pending rename source    */
 
     /* Command buffer */
     char            cmd[FTPD_MAX_CMD_LEN]; /* current command line   */

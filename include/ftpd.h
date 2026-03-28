@@ -67,6 +67,7 @@ typedef unsigned char   UCHAR;
 #define FTP_125             125     /* data conn open, xfer starting */
 #define FTP_150             150     /* file ok, opening data conn    */
 #define FTP_200             200     /* command okay                  */
+#define FTP_202             202     /* command not needed            */
 #define FTP_211             211     /* system status / FEAT          */
 #define FTP_213             213     /* file status (SIZE)            */
 #define FTP_214             214     /* help message                  */
@@ -86,6 +87,7 @@ typedef unsigned char   UCHAR;
 #define FTP_450             450     /* file unavailable (busy)       */
 #define FTP_451             451     /* local error                   */
 #define FTP_452             452     /* insufficient storage          */
+#define FTP_503             503     /* bad sequence of commands      */
 #define FTP_500             500     /* unrecognized command          */
 #define FTP_501             501     /* syntax error in parameters    */
 #define FTP_502             502     /* command not implemented       */
