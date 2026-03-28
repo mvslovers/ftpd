@@ -53,6 +53,7 @@ include = [
   "FTPD#CMD",
   "FTPD#CON",
   "FTPD#DAT",
+  "FTPD#JES",
   "FTPD#LOG",
   "FTPD#MVS",
   "FTPD#SES",

@@ -11,6 +11,7 @@
 #include "ftpd#dat.h"
 #include "ftpd#aut.h"
 #include "ftpd#mvs.h"
+#include "ftpd#jes.h"
 #include "ftpd#sit.h"
 
 /* --------------------------------------------------------------------
@@ -370,6 +371,8 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "STOR") == 0) {
+        if (sess->filetype == FT_JES)
+            return ftpd_jes_submit(sess);
         if (sess->fsmode == FS_MVS)
             return ftpd_mvs_stor(sess, arg);
         ftpd_session_reply(sess, FTP_502, "STOR not implemented for UFS");
