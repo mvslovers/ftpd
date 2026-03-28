@@ -135,27 +135,26 @@ Comprehensive error handling with correct FTP reply codes for all failure condit
 ## Step 4.4 — Performance
 
 ### What
-Optimize VTOC scanning, data transfer buffering, and general throughput.
+Optimize catalog queries, data transfer buffering, and general throughput.
 
 ### Implementation Details
 
-**VTOC scan optimization:**
-- Read VTOC blocks in larger chunks where possible (multi-track reads)
-- Skip Format-0 (empty) DSCBs quickly
-- Pattern matching: reject non-matching DSCBs at the first qualifier level before full comparison
+**Catalog query optimization:**
+- `__listds()` calls IDCAMS LISTC internally — fast for filtered queries but may be slow for very broad prefixes
+- Consider limiting result sets for large catalogs
+- Profile `__dscbdv()` overhead per LIST entry
 
 **Transfer buffering:**
 - Increase socket send/receive buffer sizes (SO_SNDBUF/SO_RCVBUF) for data connections
-- Buffer dataset reads: read multiple blocks at once, then write to socket in one call
 - For FB datasets: read full blocks (BLKSIZE), deblock into records, trim/translate, send
 - For VB datasets: handle variable-length records correctly with BDW/RDW
+- STOR: current pattern is recv-per-record (limited to `lrecl - recpos` bytes) — consider double-buffering for throughput
 
 **Connection reuse:**
 - Don't close/reopen PASV listener between transfers if client supports it
-- Reuse allocated dataset handles within a session where safe
 
 ### Acceptance Criteria
-- [ ] `LIST` on a volume with 200+ datasets completes in reasonable time (< 5 seconds)
+- [ ] `LIST` on a prefix with 200+ datasets completes in reasonable time (< 5 seconds)
 - [ ] Large file transfers (>1MB) sustain reasonable throughput
 - [ ] FB dataset deblocking is correct for various BLKSIZE values
 - [ ] VB dataset RDW/BDW handling is correct
@@ -193,7 +192,7 @@ README, admin guide, and inline code documentation.
 - JCL procedure
 - Console commands reference
 - Logging and troubleshooting
-- DASD volume configuration
+- SITE VOLUME=xxx for uncataloged datasets
 
 **COMPAT.md:**
 - FileZilla: server type settings, known quirks
@@ -242,6 +241,34 @@ MVP package for MVS/CE, mbt release artifacts, CI/CD pipeline.
 
 ---
 
+## Step 4.7 — Backlog Items from Phase 1
+
+### What
+Address known limitations and enhancements discovered during Phase 1 testing.
+
+### Tracked Tasks
+
+| Task | Description | Priority | Effort |
+|------|-------------|----------|--------|
+| TSK-77 | Prevent duplicate STC instances + stale socket scanner | Medium | S |
+| TSK-82 | 5-second startup delay | Low | S |
+| TSK-83 | crent370 FD_ZERO/select() buffer overflow | High | M |
+| TSK-84 | EPSV support RFC 2428 (Reflection Desktop) | High | M |
+| TSK-85 | RAKF config + STC identity switch (RACINIT inline) | Medium | L |
+| TSK-86 | TVFS + MLSD support RFC 3659 | Low | L |
+| TSK-87 | AUTH TLS/SSL returns 530 instead of 502 | Medium | XS |
+| TSK-88 | crent370 ropen/rwrite ignores RECFM (upstream bug) | High | M |
+| TSK-89 | APPE: echtes Append statt Replace (DISP=MOD) | Low | S |
+| TSK-90 | PDS Member Delete: IDCAMS vs STOW DELETE | Low | S |
+| TSK-91 | CWD multi-level navigation (cd ..., cd ../..) | Low | S |
+
+### Notes
+- TSK-84 (EPSV) is High priority — Reflection Desktop fails without it
+- TSK-86 (TVFS + MLSD) maps MVS qualifiers to Unix-style paths (`/HLQ/QUAL/DSN`) and adds machine-readable LIST format — significant improvement for client compatibility
+- TSK-88 is a crent370 upstream bug — workaround (fopen/fwrite) is already in place
+
+---
+
 ## Phase 4 Completion Criteria
 
 The server is production-ready when:
@@ -254,3 +281,4 @@ The server is production-ready when:
 6. Documentation is complete and accurate
 7. MVP package installs cleanly on a fresh MVS/CE
 8. CI/CD pipeline is operational
+9. High-priority backlog items (TSK-83, TSK-84) resolved

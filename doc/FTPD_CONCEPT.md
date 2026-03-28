@@ -24,7 +24,7 @@ There are currently two FTP servers available for MVS 3.8j on Hercules:
 
 **MVS-sysgen FTPD (Jason Winter / Juergen Winkelmann)**
 - Standalone FTP daemon (FTPDXCTL)
-- Built for native MVS datasets — reads VTOC from configured DASD volumes
+- Built for native MVS datasets — reads VTOC from configured DASD volumes (startup scan)
 - RAKF authentication (FACILITY class FTPAUTH)
 - Configuration via SYS1.PARMLIB(FTPDPM00)
 - Internal reader DD (AAINTRDR) for JES job submission
@@ -165,10 +165,31 @@ This is lenient behavior for forward compatibility — clients that send z/OS-sp
 
 **CWD behavior (z/OS compatible):**
 - `CWD` sets the dataset name prefix only — **no I/O, no existence check**. Always returns `250`.
-- Exception: when the resolved name is an actual PDS, response text changes to indicate "partitioned data set"
-- `CWD 'NONEXISTENT.'` → `250 "NONEXISTENT." is the working directory name prefix.` (succeeds)
-- `CWD ..` / `CDUP` → removes last qualifier. At empty prefix, returns `250` with empty prefix (no error)
 - The trailing dot is significant: prefix `IBMUSER.` means `RETR FOO` resolves to `IBMUSER.FOO`
+
+**CWD relative vs. absolute (verified on z/OS 3.1):**
+- **Unquoted** CWD is **relative** — appends to current prefix:
+  - Login: prefix = `IBMUSER.`
+  - `CWD SOURCE` → `IBMUSER.SOURCE.`
+  - `CWD COBOL` → `IBMUSER.SOURCE.COBOL.` (accumulates!)
+- **Quoted** CWD is **absolute** — resets the prefix:
+  - `CWD 'SYS1.MACLIB'` → `SYS1.MACLIB.`
+- `CWD ..` / `CDUP` → removes last qualifier. At empty prefix, returns `250` with empty prefix (no error)
+
+**CWD trailing dot controls PDS detection (verified on z/OS 3.1):**
+- **Without** trailing dot → OBTAIN checks DSORG; if PDS → enters PDS context:
+  - `CWD 'SYS1.MACLIB'` → `250 The working directory "SYS1.MACLIB" is a partitioned data set`
+  - In PDS context: RETR/STOR/DELE treat arguments as member names, LIST shows members
+- **With** trailing dot → prefix only, no I/O, no PDS detection:
+  - `CWD 'SYS1.MACLIB.'` → `250 "SYS1.MACLIB." is the working directory name prefix.`
+- PWD always shows trailing dot regardless of mode — confirmed on z/OS.
+
+**CWD wildcard validation (verified on z/OS 3.1):**
+- Wildcards (`*`, `%`, `?`) are **rejected** in CWD — only valid in LIST:
+  - `CWD *` → `501 A qualifier in "*" begins with an invalid character`
+  - `CWD MIK*` → `501 A qualifier in "MIK*" contains an invalid character`
+- Only alphanumeric characters, `@`, `#`, `$` allowed in qualifiers
+- Qualifiers must not begin with a digit
 
 **Supported Dataset Organizations:**
 - PS (Physical Sequential)
@@ -519,7 +540,7 @@ typedef struct ftpd_config {
         char            volume[7];
     } defaults;
 
-    /* DASD configuration for VTOC scanning */
+    /* DASD configuration (optional — only for SITE VOLUME=xxx fallback) */
     int                 num_dasd;
     struct {
         char            volser[7];       /* Volume serial                */
@@ -573,56 +594,110 @@ All internal processing is in **EBCDIC** (native MVS). Translation at the networ
 
 ### 4.1 Dataset Access
 
-**Reading datasets:**
-- OBTAIN (SVC 27) to get DSCB from VTOC
-- Dynamic allocation (SVC 99) to allocate the dataset
-- OPEN/READ/CLOSE macros for sequential reading
-- For PDS: Read directory block, then individual members via BPAM/FIND
+**Dataset I/O via crent370 standard C stdio (fopen/fread/fwrite/fclose):**
 
-**Writing datasets:**
-- Existing datasets: Dynamic allocation + OPEN/WRITE/CLOSE
-- New datasets: Use SITE allocation parameters with SVC 99
-- PDS member creation: STOW macro after writing
+The server uses crent370's standard C stream I/O for all dataset access. The crent370 stdio layer handles RECFM-specific record blocking, DASD I/O, and DCB attribute management internally. Key I/O patterns (validated via mvsMF DSAPI, `../mvsmf/src/dsapi.c`):
 
-**Dataset catalog operations:**
-- LOCATE (SVC 26) for catalog lookup
-- SCRATCH (SVC 29) for dataset deletion
-- RENAME via CATALOG management
-
-Much of this low-level I/O is available through crent370's `os/` module (dynamic allocation wrappers, dataset open/close) and `emfile/` module.
-
-### 4.2 Dataset Catalog — Abstracted via Provider Interface
-
-**Design principle:** The dataset catalog is accessed through an abstract **catalog provider interface**. The initial implementation uses VTOC scanning, but the interface is designed so that alternative backends (e.g. a future catalog service, or direct CVOL/VSAM catalog access) can be swapped in without changing the FTP logic.
-
-**Catalog provider interface (conceptual):**
+**Reading datasets (RETR):**
 ```c
-typedef struct ftpd_catprov {
-    int  (*list)(const char *pattern, ftpd_dsinfo_t *results, int max);
-    int  (*stat)(const char *dsname, ftpd_dsinfo_t *info);
-    void (*invalidate)(const char *dsname);  /* after STOR/DELE */
-    void (*close)(void);
-} ftpd_catprov_t;
+FILE *fp = fopen("'IBMUSER.DATASET'", "rb");    /* crent370 reads DCB from DSCB */
+int lrecl = fp->lrecl;                           /* get LRECL from file handle */
+char *buf = calloc(1, lrecl);
+while (fread(buf, 1, lrecl, fp) > 0) {
+    send(data_sock, buf, lrecl, 0);              /* TYPE I: raw bytes */
+}
+fclose(fp);
 ```
 
+**Writing datasets (STOR) — critical: fwrite + fflush per record:**
+```c
+FILE *fp = fopen("'IBMUSER.DATASET'", "wb");     /* existing dataset */
+int lrecl = fp->lrecl;
+char *recbuf = calloc(1, lrecl);
+int recpos = 0;
+while ((n = recv(data_sock, recbuf + recpos, lrecl - recpos, 0)) > 0) {
+    recpos += n;
+    if (recpos >= lrecl) {
+        fwrite(recbuf, 1, lrecl, fp);
+        fflush(fp);                               /* CRITICAL: force fixflush() */
+        recpos = 0;
+    }
+}
+fclose(fp);                                       /* releases dataset + ENQ */
+```
+
+**Key learnings from Phase 1 implementation:**
+- crent370 `fwrite()` for FB datasets needs exact LRECL-sized writes + `fflush()` after each record
+- Raw TCP chunk passthrough to `fwrite()` does NOT work (data corruption)
+- `recv()` must be limited to `lrecl - recpos` (space remaining in current record)
+- `fopen()` with DCB params in mode string (`"wb,recfm=FB,lrecl=80"`) is unreliable for binary writes
+- For RECFM=U: use `fp->blksize` instead of `fp->lrecl` as effective record length
+- Pattern validated 1:1 against mvsMF DSAPI (dsapi.c lines 1013-1054)
+
+**Creating new datasets (via SVC 99 dynamic allocation):**
+```c
+char ddname[9] = {0};
+char opts[512];
+snprintf(opts, sizeof(opts),
+    "DSN=%s;DISP=(NEW,CATLG,DELETE);DSORG=PS;RECFM=%s;"
+    "LRECL=%d;BLKSIZE=%d;SPACE=%s(%d,%d)",
+    dsname, recfm, lrecl, blksize, alcunit, primary, secondary);
+__dsalcf(ddname, "%s", opts);     /* crent370 SVC 99 wrapper */
+__dsfree(ddname);                  /* free DD, dataset stays cataloged */
+/* Then fopen("'DSN'", "wb") to write */
+```
+Pattern from mvsMF `datasetCreateHandler()` (dsapi.c lines 1794-1813).
+
+**Deleting datasets:** `remove("'DSN'")` — uncatalogs and scratches (crent370 wrapper for SCRATCH SVC 29).
+
+**Dataset catalog operations:**
+- `__locate(dsn, &locwork)` — SVC 26 catalog lookup, returns volser
+- `__dscbdv(dsn, vol, &dscb)` — SVC 27 OBTAIN, returns DSCB (RECFM, LRECL, BLKSIZE, DSORG, etc.)
+
+### 4.2 Dataset Catalog — crent370 Catalog Functions (Option D)
+
+**Design principle:** Use the MVS catalog (CVOL) as the primary data source, not VTOC scanning. This eliminates the need for DASD volume configuration, startup scans, and per-session caches. Only cataloged datasets are listed; uncataloged datasets are accessible via `SITE VOLUME=xxx`.
+
+**crent370 functions used:**
+
+| Function | Purpose | Used by |
+|----------|---------|---------|
+| `__listds(level, option, filter)` | List datasets by HLQ + filter via IDCAMS LISTC + OBTAIN | `LIST` |
+| `__listpd(dataset, filter)` | List PDS members with optional name filter | `LIST` on PDS |
+| `__fmtisp(pdslist, ispfstat)` | Format ISPF statistics from PDS directory entry | `LIST` on PDS |
+| `__fmtloa(pdslist, loadstat)` | Format load module statistics from PDS directory entry | `LIST` on RECFM=U PDS |
+| `__locate(dsn, workarea)` | Find volume for a single dataset name (SVC 26) | `RETR`, `STOR`, `DELE`, `SIZE` |
+| `__dscbdv(dsn, vol, dscb)` | Get DSCB attributes for dataset on volume (SVC 27) | `CWD` PDS detect, `SIZE` |
+| `__dsalcf(ddname, fmt, opts)` | Dynamic allocation via SVC 99 | `STOR` (new dataset), `MKD` |
+| `__dsfree(ddname)` | Free DD allocation | After `__dsalcf()` |
+| `__listvl(filter, dolspace, vatlst)` | List DASD volumes | `SITE VOLUME=xxx` |
+
 **z/OS-inspired behavior:**
-- `CWD` only sets the dataset name prefix — no I/O, no scan
-- `LIST` triggers a filtered VTOC scan across configured volumes, matching against the current prefix. Results are cached per-session.
-- `RETR` / `STOR` / `DELE` use OBTAIN (SVC 27) for individual dataset lookups
-- After `STOR` or `DELE`, the session cache is invalidated for the affected dataset
-- No global startup scan — the server starts immediately
-- No `/F FTPD,REFRESH` needed (but could be kept for manual full-cache clear)
+- `CWD` only sets the dataset name prefix — no I/O, no scan. Wildcards rejected with `501`.
+- `LIST` calls `__listds()` with the current prefix as level and optional filter pattern. Returns `DSLIST` array with DSN, Volser, DSORG, RECFM, LRECL, BLKSIZE, dates, space usage. Dsname shown **relative** to current prefix.
+- `LIST` on PDS calls `__listpd()` with optional member filter. `__fmtisp()` formats ISPF stats for RECFM=F/V, `__fmtloa()` formats load module stats for RECFM=U.
+- `RETR` / `STOR` / `DELE` use standard C `fopen()`/`fread()`/`fwrite()`/`fclose()`. crent370 handles catalog lookup and DCB internally.
+- `CWD` into a PDS (without trailing dot): `__dscbdv()` checks DSORG=PO to enter PDS context.
+- No global startup scan — the server starts immediately.
+- No cache — each `LIST` queries the catalog directly (IDCAMS LISTC is fast for filtered queries).
+- No DASD volume configuration in FTPDPM00 needed for normal operation.
 
-**VTOC scan provider (initial implementation):**
-- Scans Format-1 DSCBs on all configured DASD volumes
-- Filters by dataset name pattern during scan (skip non-matching DSCBs early)
-- Returns dataset attributes: DSNAME, DSORG, RECFM, LRECL, BLKSIZE, volume, extents
-- Per-session result cache: cleared on CWD to a different prefix, or on STOR/DELE
+**`SITE VOLUME=xxx` fallback (for uncataloged datasets):**
+When `SITE VOLUME=xxx` is set, `LIST` switches to VTOC scan mode for that specific volume only, using `fopen("", "rb,vtoc,unit=...,volser=...")` (same pattern as old MVS-sysgen FTPD). This is the only case where VTOC scanning occurs.
 
-**Future alternatives:**
-- Direct CVOL/VSAM catalog lookup via LOCATE (SVC 26) + OBTAIN for attributes
-- A shared catalog service (cross-address-space, like UFSD)
-- Hybrid: catalog for name resolution, VTOC only for attributes
+**Example flows:**
+```
+LOGIN → prefix = "IBMUSER."
+LIST                → __listds("IBMUSER", "NONVSAM VOLUME", NULL)
+LIST *.LOAD         → __listds("IBMUSER", "NONVSAM VOLUME", "IBMUSER.*.LOAD")
+LIST **.DATA        → __listds("IBMUSER", "NONVSAM VOLUME", "IBMUSER.**.DATA")
+CWD 'SYS1.MACLIB'  → prefix = "SYS1.MACLIB." + __dscbdv() → DSORG=PO → PDS context
+LIST                → __listpd("SYS1.MACLIB", NULL)  (PDS mode)
+LIST ABC*           → __listpd("SYS1.MACLIB", "ABC*")
+RETR IEFBR14        → fopen("'SYS1.MACLIB(IEFBR14)'", "rb") + fread
+SITE VOLUME=WORK01
+LIST                → VTOC scan on WORK01 only
+```
 
 ### 4.3 JES2 Interface
 
@@ -705,12 +780,15 @@ DEFBLKSIZE=3120
 DEFUNIT=3390
 DEFVOLUME=PUB001
 
-# DASD volumes for VTOC scanning
-MVSRES,3350   SYSTEM RESIDENCE
-MVS000,3350   SYSTEM DATASETS
-PUB000,3380   PUBLIC DATASETS
-PUB001,3390   PUBLIC DATASETS
-SYSCPK,3350   COMPILER/TOOLS
+# DASD volumes (optional — only needed for SITE VOLUME=xxx fallback)
+# With the catalog-based approach (§4.2), LIST uses IDCAMS LISTC
+# for cataloged datasets. DASD volumes are only scanned when
+# SITE VOLUME=xxx is explicitly set by the client.
+# MVSRES,3350   SYSTEM RESIDENCE
+# MVS000,3350   SYSTEM DATASETS
+# PUB000,3380   PUBLIC DATASETS
+# PUB001,3390   PUBLIC DATASETS
+# SYSCPK,3350   COMPILER/TOOLS
 ```
 
 ### 5.2 JCL Procedure
@@ -815,7 +893,7 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 - Basic commands: SYST, TYPE, MODE, STRU, NOOP, QUIT, HELP, FEAT, STAT
 
 **Step 1.4 — MVS dataset access**
-- `ftpdmvs.c` — VTOC scanning, OBTAIN, dynamic allocation, OPEN/READ/WRITE/CLOSE
+- `ftpdmvs.c` — Catalog queries (__listds, __listpd, __locate), dataset I/O (fopen/fwrite/fclose), dynamic allocation (__dsalcf)
 - `ftpdlist.c` — z/OS-compatible LIST formatting for datasets + PDS members
 - CWD/PWD for MVS, LIST/NLST, RETR, STOR, DELE, RNFR/RNTO
 
@@ -954,7 +1032,7 @@ Some z/OS FTP features cannot exist on MVS 3.8j:
 
 All major design questions have been resolved:
 
-1. ~~**VTOC caching strategy**~~ → **Decided:** Per-session filtered VTOC scan behind abstract catalog provider interface. CWD sets prefix only, LIST triggers scan. No startup scan. See §4.2.
+1. ~~**VTOC caching strategy**~~ → **Revised:** Catalog-based approach (Option D). Use crent370 `__listds()` (IDCAMS LISTC + OBTAIN) for LIST, `__listpd()` for PDS members, `__locate()` + `__dscbdv()` for single datasets, `__dsalcf()` for new dataset creation. No VTOC scanning except for `SITE VOLUME=xxx` fallback. No cache, no DASD config, no startup scan. Dataset I/O via `fopen()`/`fread()`/`fwrite()`/`fclose()` with per-record `fflush()` (mvsMF pattern). See §4.1 + §4.2.
 
 2. ~~**JES2 spool access**~~ → **Decided:** Use crent370's `jes/` module directly for job status queries and spool retrieval.
 
@@ -985,6 +1063,10 @@ The following behaviors were confirmed from z/OS 3.1 FTP server protocol capture
 18. **RNFR state cleared on any non-RNTO command.** Stricter than z/OS (which has a stale-RNFR bug). See §2.3.
 19. **Spool DD separator:** ` !! END OF JES SPOOL FILE !!` (space-prefixed, exact string). DD numbering starts at 1. See §2.5.
 20. **DELE JOB response:** `250 Cancel successful` (matches z/OS). See §2.5.
+21. **Dual codepage strategy:** IBM-1047 for FTP protocol I/O and UFS files, CP037 for MVS dataset content. Translation tables derived from HTTPD's corrected tables (NEL/NL fix: EBCDIC 0x15 ↔ ASCII 0x0A). See §3.8.
+22. **CWD relative/absolute semantics:** Unquoted CWD is relative (appends to prefix), quoted CWD is absolute (resets prefix). Wildcards (`*`, `%`, `?`) rejected in CWD with `501`. Trailing dot controls PDS detection: without dot → OBTAIN + DSORG check; with dot → prefix only, no I/O. Validated from z/OS 3.1 protocol captures. See §2.3.
+23. **Catalog-based dataset access (Option D):** Use crent370 `__listds()`, `__listpd()`, `__locate()`, `__dscbdv()`, `__dsalcf()` instead of VTOC scanning. Dataset I/O via `fopen()`/`fwrite()`+`fflush()`/`fclose()` (mvsMF DSAPI pattern). VTOC only for `SITE VOLUME=xxx` fallback. No DASD config, no cache, no startup scan. See §4.1 + §4.2.
+24. **LIST output always ASCII:** LIST/NLST data must be translated EBCDIC→ASCII regardless of current TYPE setting. TYPE only affects data content transfers (RETR/STOR). FileZilla sends TYPE I before LIST — without forced ASCII, listing shows as garbage.
 
 ---
 
