@@ -284,10 +284,26 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
     char dsn[FTPD_MAX_DSN_LEN + 2];
     int rc;
     int is_pds;
+    int has_trailing_dot;
 
     /* CWD .. / CWD handled as CDUP */
     if (arg && strcmp(arg, "..") == 0)
         return ftpd_mvs_cdup(sess);
+
+    /* Detect trailing dot BEFORE resolve_dsn strips it.
+    ** z/OS behavior (verified on z/OS 3.1):
+    **   CWD 'SYS1.MACLIB'  → PDS detection via OBTAIN (no trailing dot)
+    **   CWD 'SYS1.MACLIB.' → prefix-only, no I/O (trailing dot) */
+    has_trailing_dot = 0;
+    if (arg && arg[0]) {
+        int alen = strlen(arg);
+        /* Check the char before closing quote (quoted) or last char (unquoted) */
+        if (arg[0] == '\'' && alen >= 3 && arg[alen - 1] == '\'') {
+            has_trailing_dot = (arg[alen - 2] == '.');
+        } else {
+            has_trailing_dot = (arg[alen - 1] == '.');
+        }
+    }
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc == -2) {
@@ -299,8 +315,13 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    /* Check if this is a PDS for the response message */
-    is_pds = ftpd_mvs_is_pds(dsn);
+    /* PDS detection only if argument had NO trailing dot.
+    ** Trailing dot = prefix-only mode (no I/O, no OBTAIN). */
+    if (!has_trailing_dot) {
+        is_pds = ftpd_mvs_is_pds(dsn);
+    } else {
+        is_pds = 0;
+    }
 
     /* Track PDS context for RETR/STOR/DELE member access */
     if (is_pds == 1) {
@@ -335,7 +356,8 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
             sess->mvs_cwd);
     }
 
-    ftpd_log(LOG_INFO, "%s: CWD -> %s", __func__, sess->mvs_cwd);
+    ftpd_log(LOG_INFO, "%s: CWD -> %s (in_pds=%d trailing_dot=%d)",
+             __func__, sess->mvs_cwd, sess->in_pds, has_trailing_dot);
 
     return 0;
 }
