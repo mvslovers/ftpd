@@ -29,6 +29,7 @@ struct ftpd_session {
 
     /* Authentication */
     char            user[9];        /* userid (8 chars + null)       */
+    char            pass[9];        /* password (for JES USER= inj.) */
     int             authenticated;  /* login complete flag            */
     int             auth_attempts;  /* failed login attempts          */
     ACEE            *acee;          /* RACF ACEE pointer             */
