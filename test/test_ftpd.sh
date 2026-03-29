@@ -433,6 +433,42 @@ else
     fail "JES did not return a job ID"
 fi
 
+# JES LIST — job listing
+info "LIST in JES mode"
+FTP_OUT="$TMPDIR/ftp_jes_list.log"
+ftp_run "$(cat <<CMDS
+site filetype=jes
+ls
+site filetype=seq
+CMDS
+)" "$FTP_OUT"
+if grep -qi "JOBNAME" "$FTP_OUT"; then
+    pass "JES LIST: header present"
+else
+    info "JES LIST output:"
+    cat "$FTP_OUT" | sed 's/^/    /'
+    fail "JES LIST: no job listing header"
+fi
+
+# JES LIST — spool files for submitted job
+if [ -n "$JOBID" ]; then
+    info "LIST $JOBID (spool files)"
+    FTP_OUT="$TMPDIR/ftp_jes_spool.log"
+    ftp_run "$(cat <<CMDS
+site filetype=jes
+ls $JOBID
+site filetype=seq
+CMDS
+)" "$FTP_OUT"
+    if grep -qi "DDNAME\|JESMSGLG\|JESJCL" "$FTP_OUT"; then
+        pass "JES spool file listing"
+    else
+        info "JES spool output:"
+        cat "$FTP_OUT" | sed 's/^/    /'
+        fail "JES spool file listing: no spool files found"
+    fi
+fi
+
 # Verify FILETYPE=SEQ restores dataset mode
 info "SITE FILETYPE=SEQ — verify dataset mode restored"
 FTP_OUT="$TMPDIR/ftp_jes_seq.log"

@@ -334,12 +334,16 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "LIST") == 0) {
+        if (sess->filetype == FT_JES)
+            return ftpd_jes_list(sess, arg);
         if (sess->fsmode == FS_MVS)
             return ftpd_mvs_list(sess, arg, 0);
         ftpd_session_reply(sess, FTP_502, "LIST not implemented for UFS");
         return 0;
     }
     if (strcmp(cmd, "NLST") == 0) {
+        if (sess->filetype == FT_JES)
+            return ftpd_jes_list(sess, arg);
         if (sess->fsmode == FS_MVS)
             return ftpd_mvs_list(sess, arg, 1);
         ftpd_session_reply(sess, FTP_502, "NLST not implemented for UFS");
