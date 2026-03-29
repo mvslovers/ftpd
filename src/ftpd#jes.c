@@ -37,7 +37,9 @@ static void
 build_card(ftpd_session_t *sess, const char *line, int linelen, char *card)
 {
     if (linelen > 80) linelen = 80;
-    memset(card, ' ', 80);
+    /* Pad with ASCII space (0x20), NOT C literal ' ' which is EBCDIC 0x40.
+    ** The entire card will be converted a2e, so padding must be ASCII. */
+    memset(card, 0x20, 80);
     if (linelen > 0)
         memcpy(card, line, linelen);
     card[80] = '\0';
@@ -68,31 +70,24 @@ inject_user_pass(ftpd_session_t *sess, VSFILE *intrdr, int *cardcount)
     char card[81];
     int rc;
 
-    /* USER= continuation card (in ASCII, then convert) */
-    {
-        char asc[81];
-        memset(asc, ' ', 80);
-        snprintf(asc, 80, "//         USER=%s,", sess->user);
-        asc[strlen(asc)] = ' ';    /* overwrite snprintf null with blank */
-        asc[80] = '\0';
-        ftpd_xlat_mvs_a2e((unsigned char *)asc, 80);
-        memcpy(card, asc, 81);
-    }
+    /* USER= continuation card.
+    ** Built from C string literals → already EBCDIC (c2asm370).
+    ** sess->user is EBCDIC (stored uppercase at login).
+    ** Do NOT run through ftpd_xlat_mvs_a2e — would double-convert. */
+    memset(card, 0x40, 80);                         /* EBCDIC blank pad */
+    snprintf(card, 72, "//         USER=%s,", sess->user);
+    card[strlen(card)] = 0x40;                      /* null → EBCDIC blank */
+    card[80] = '\0';
 
     rc = submit_card(intrdr, card, *cardcount + 1);
     if (rc < 0) return rc;
     (*cardcount)++;
 
-    /* PASSWORD= continuation card */
-    {
-        char asc[81];
-        memset(asc, ' ', 80);
-        snprintf(asc, 80, "//         PASSWORD=%s", sess->pass);
-        asc[strlen(asc)] = ' ';
-        asc[80] = '\0';
-        ftpd_xlat_mvs_a2e((unsigned char *)asc, 80);
-        memcpy(card, asc, 81);
-    }
+    /* PASSWORD= continuation card — same: already EBCDIC, no conversion */
+    memset(card, 0x40, 80);
+    snprintf(card, 72, "//         PASSWORD=%s", sess->pass);
+    card[strlen(card)] = 0x40;
+    card[80] = '\0';
 
     rc = submit_card(intrdr, card, *cardcount + 1);
     if (rc < 0) return rc;
