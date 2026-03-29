@@ -19,7 +19,6 @@
 #include "ftpd#jes.h"
 #include "ftpd#xlt.h"
 #include "clibjes2.h"
-#include "clibwto.h"
 
 /* ASCII constants (wire format before translation) */
 #define ASCII_LF    0x0A
@@ -50,13 +49,12 @@ build_card(ftpd_session_t *sess, const char *line, int linelen, char *card)
 }
 
 /* --------------------------------------------------------------------
-** Helper: submit one card to the internal reader with wtof debug.
+** Helper: submit one card to the internal reader.
 ** Returns jesirput() return code.
 ** ----------------------------------------------------------------- */
 static int
 submit_card(VSFILE *intrdr, char *card, int cardnum)
 {
-    wtof("FTPD JES CARD %03d: %.80s", cardnum, card);
     return jesirput(intrdr, card);
 }
 
