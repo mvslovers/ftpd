@@ -21,4 +21,19 @@ int ftpd_jes_submit(ftpd_session_t *sess)               asm("FTPJESUB");
 */
 int ftpd_jes_list(ftpd_session_t *sess, const char *arg) asm("FTPJELST");
 
+/*
+** Retrieve spool output for a job.
+** RETR JOBnnnnn   → all spool files concatenated.
+** RETR JOBnnnnn.n → specific spool file (1-based index).
+*/
+int ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
+                                                          asm("FTPJERET");
+
+/*
+** Delete (purge) a job from JES queues.
+** DELE JOBnnnnn → jescanj(jobname, jobid, 1).
+*/
+int ftpd_jes_delete(ftpd_session_t *sess, const char *arg)
+                                                          asm("FTPJEDEL");
+
 #endif /* FTPD_JES_H */

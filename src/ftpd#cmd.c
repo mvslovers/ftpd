@@ -369,6 +369,8 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "RETR") == 0) {
+        if (sess->filetype == FT_JES)
+            return ftpd_jes_retrieve(sess, arg);
         if (sess->fsmode == FS_MVS)
             return ftpd_mvs_retr(sess, arg);
         ftpd_session_reply(sess, FTP_502, "RETR not implemented for UFS");
@@ -389,6 +391,8 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "DELE") == 0) {
+        if (sess->filetype == FT_JES)
+            return ftpd_jes_delete(sess, arg);
         if (sess->fsmode == FS_MVS)
             return ftpd_mvs_dele(sess, arg);
         ftpd_session_reply(sess, FTP_502, "DELE not implemented for UFS");

@@ -471,6 +471,61 @@ CMDS
     fi
 fi
 
+# JES RETR — spool retrieval (all spool files)
+if [ -n "$JOBID" ]; then
+    info "RETR $JOBID (all spool files)"
+    SPOOL_ALL="$TMPDIR/spool_all.txt"
+    FTP_OUT="$TMPDIR/ftp_jes_retr_all.log"
+    ftp_run "$(cat <<CMDS
+site filetype=jes
+type ascii
+get $JOBID $SPOOL_ALL
+site filetype=seq
+CMDS
+)" "$FTP_OUT"
+    if [ -f "$SPOOL_ALL" ] && [ -s "$SPOOL_ALL" ]; then
+        pass "JES RETR all spool files ($(wc -c < "$SPOOL_ALL") bytes)"
+    else
+        fail "JES RETR all spool files: empty or missing"
+        tail -5 "$FTP_OUT" | sed 's/^/    /'
+    fi
+
+    # JES RETR — specific spool file (file 1)
+    info "RETR $JOBID.1 (first spool file)"
+    SPOOL_ONE="$TMPDIR/spool_one.txt"
+    FTP_OUT="$TMPDIR/ftp_jes_retr_one.log"
+    ftp_run "$(cat <<CMDS
+site filetype=jes
+type ascii
+get $JOBID.1 $SPOOL_ONE
+site filetype=seq
+CMDS
+)" "$FTP_OUT"
+    if [ -f "$SPOOL_ONE" ] && [ -s "$SPOOL_ONE" ]; then
+        pass "JES RETR specific spool file ($(wc -c < "$SPOOL_ONE") bytes)"
+    else
+        fail "JES RETR specific spool file: empty or missing"
+        tail -5 "$FTP_OUT" | sed 's/^/    /'
+    fi
+
+    # JES DELE — job purge
+    info "DELE $JOBID (purge job)"
+    FTP_OUT="$TMPDIR/ftp_jes_dele.log"
+    ftp_run "$(cat <<CMDS
+site filetype=jes
+delete $JOBID
+site filetype=seq
+CMDS
+)" "$FTP_OUT"
+    if grep -qi "cancel\|250" "$FTP_OUT"; then
+        pass "JES job purge"
+    else
+        info "JES DELE output:"
+        cat "$FTP_OUT" | sed 's/^/    /'
+        fail "JES job purge"
+    fi
+fi
+
 # Verify FILETYPE=SEQ restores dataset mode
 info "SITE FILETYPE=SEQ — verify dataset mode restored"
 FTP_OUT="$TMPDIR/ftp_jes_seq.log"
