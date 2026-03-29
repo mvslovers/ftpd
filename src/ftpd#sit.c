@@ -168,9 +168,13 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
         for (i = 0; val[i]; i++)
             val[i] = (char)toupper((unsigned char)val[i]);
         if (strcmp(val, "JES") == 0) {
+            // Save current fsmode so FILETYPE=SEQ can restore it
+            sess->prev_fsmode = sess->fsmode;
             sess->filetype = FT_JES;
         } else {
             sess->filetype = FT_SEQ;
+            // Restore fsmode saved when entering JES mode
+            sess->fsmode = sess->prev_fsmode;
         }
         ftpd_session_reply(sess, FTP_200, "SITE command was accepted");
         return 0;

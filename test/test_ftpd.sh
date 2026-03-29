@@ -850,6 +850,74 @@ fi
 fi  # UFS_AVAILABLE
 
 # ============================================================
+# TEST 5c: Hybrid Navigation (Phase 3c) — only if UFSD running
+# ============================================================
+if [ "${UFS_AVAILABLE:-0}" = "1" ]; then
+section "Test 5c: Hybrid MVS/UFS/JES Navigation"
+
+# Full hybrid cycle in a single session:
+# MVS → UFS → MVS → JES → back to MVS
+info "Hybrid: MVS → UFS → MVS → JES → MVS"
+FTP_OUT="$TMPDIR/ftp_hybrid.log"
+ftp_run "$(cat <<CMDS
+pwd
+cd /
+pwd
+cd '${HLQ}.'
+pwd
+site filetype=jes
+site filetype=seq
+pwd
+CMDS
+)" "$FTP_OUT"
+
+# Check MVS mode at start
+if grep -qi "257.*${HLQ}\.\|working directory.*${HLQ}" "$FTP_OUT"; then
+    pass "Hybrid: starts in MVS mode"
+else
+    fail "Hybrid: expected MVS mode at start"
+    cat "$FTP_OUT" | sed 's/^/    /'
+fi
+
+# Check UFS mode after CWD /
+if grep -qi "250.*HFS directory.*/" "$FTP_OUT"; then
+    pass "Hybrid: CWD / switches to UFS"
+else
+    fail "Hybrid: CWD / did not switch to UFS"
+fi
+
+# Check MVS mode after CWD 'HLQ.'
+if grep -qi "250.*${HLQ}\.\|working directory.*${HLQ}" "$FTP_OUT"; then
+    pass "Hybrid: CWD 'HLQ.' switches back to MVS"
+else
+    fail "Hybrid: CWD 'HLQ.' did not switch to MVS"
+fi
+
+# SITE FILETYPE=JES from UFS mode, then back
+info "Hybrid: JES from UFS mode preserves fsmode"
+FTP_OUT="$TMPDIR/ftp_hybrid_jes.log"
+ftp_run "$(cat <<CMDS
+cd /
+pwd
+site filetype=jes
+site filetype=seq
+pwd
+CMDS
+)" "$FTP_OUT"
+
+# After JES→SEQ, PWD should show UFS (restored from before JES)
+if grep -qi 'HFS.*working directory\|"/"' "$FTP_OUT"; then
+    pass "Hybrid: FILETYPE=SEQ restores UFS mode"
+else
+    # Check if at least the commands succeeded
+    info "Hybrid JES→SEQ output:"
+    grep -i "250\|257\|200\|215" "$FTP_OUT" | sed 's/^/    /'
+    fail "Hybrid: FILETYPE=SEQ did not restore UFS mode"
+fi
+
+fi  # UFS_AVAILABLE (hybrid)
+
+# ============================================================
 # TEST 6: Cleanup (DELE)
 # ============================================================
 section "Test 6: Cleanup"
