@@ -61,22 +61,38 @@ submit_card(VSFILE *intrdr, char *card, int cardnum)
 }
 
 /* --------------------------------------------------------------------
-** Helper: inject USER= and PASSWORD= continuation cards after JOB card.
-** Follows mvsmf jobsapi.c process_jobcard() lines 1590-1625.
+** Helper: inject continuation cards after JOB card.
+** - NOTIFY=DUMMY (only if JOB card has no NOTIFY)
+** - USER=username
+** - PASSWORD=password
+** All cards built from C literals → already EBCDIC, no a2e conversion.
 ** ----------------------------------------------------------------- */
 static int
-inject_user_pass(ftpd_session_t *sess, VSFILE *intrdr, int *cardcount)
+inject_job_params(ftpd_session_t *sess, VSFILE *intrdr, int *cardcount,
+                  int has_notify)
 {
     char card[81];
     int rc;
+
+    /* NOTIFY=DUMMY — suppress TSO notification for STC-submitted jobs */
+    if (!has_notify) {
+        memset(card, 0x40, 80);
+        snprintf(card, 72, "//         NOTIFY=DUMMY,");
+        card[strlen(card)] = 0x40;
+        card[80] = '\0';
+
+        rc = submit_card(intrdr, card, *cardcount + 1);
+        if (rc < 0) return rc;
+        (*cardcount)++;
+    }
 
     /* USER= continuation card.
     ** Built from C string literals → already EBCDIC (c2asm370).
     ** sess->user is EBCDIC (stored uppercase at login).
     ** Do NOT run through ftpd_xlat_mvs_a2e — would double-convert. */
-    memset(card, 0x40, 80);                         /* EBCDIC blank pad */
+    memset(card, 0x40, 80);
     snprintf(card, 72, "//         USER=%s,", sess->user);
-    card[strlen(card)] = 0x40;                      /* null → EBCDIC blank */
+    card[strlen(card)] = 0x40;
     card[80] = '\0';
 
     rc = submit_card(intrdr, card, *cardcount + 1);
@@ -119,8 +135,9 @@ ftpd_jes_submit(ftpd_session_t *sess)
     /* JOB card detection state:
     ** 0 = haven't seen JOB yet
     ** 1 = inside JOB card (may have continuations)
-    ** 2 = JOB card complete, USER/PASS injected */
+    ** 2 = JOB card complete, params injected */
     int job_state;
+    int has_notify;     /* 1 if NOTIFY= found in any JOB card line */
 
     /* Reply 125 before opening data connection */
     ftpd_session_reply(sess, FTP_125, "Submitting JCL to internal reader");
@@ -147,6 +164,7 @@ ftpd_jes_submit(ftpd_session_t *sess)
     cardcount = 0;
     total = 0;
     job_state = 0;
+    has_notify = 0;
 
     /* Read byte-by-byte, split at ASCII LF (0x0A) */
     while (ftpd_data_recv(sess, &c, 1) == 1) {
@@ -175,6 +193,12 @@ ftpd_jes_submit(ftpd_session_t *sess)
             }
 
             if (job_state == 1) {
+                /* Scan this JOB card line for NOTIFY (EBCDIC).
+                ** C literal "NOTIFY" is EBCDIC on c2asm370, card is
+                ** also EBCDIC after build_card, so strstr works. */
+                if (strstr(card, "NOTIFY") != NULL)
+                    has_notify = 1;
+
                 /* Check if JOB card ends (no trailing comma = last JOB line).
                 ** Find last non-blank EBCDIC byte. */
                 int len = 80;
@@ -192,8 +216,9 @@ ftpd_jes_submit(ftpd_session_t *sess)
                     if (rc < 0) goto fail;
                     cardcount++;
 
-                    /* Inject USER= and PASSWORD= */
-                    rc = inject_user_pass(sess, intrdr, &cardcount);
+                    /* Inject NOTIFY (if missing), USER, PASSWORD */
+                    rc = inject_job_params(sess, intrdr, &cardcount,
+                                           has_notify);
                     if (rc < 0) goto fail;
 
                     job_state = 2;
