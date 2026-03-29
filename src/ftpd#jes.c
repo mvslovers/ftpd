@@ -1,8 +1,8 @@
 /*
-** FTPD JES Interface — Job Submission
+** FTPD JES Interface — Job Submission + Job Query
 **
-** Submits JCL received on the FTP data connection to JES2 via the
-** internal reader API (jesiropn/jesirput/jesircls).
+** Job submission via internal reader (jesiropn/jesirput/jesircls).
+** Job listing via checkpoint (jesopen/jesjob/jesclose).
 **
 ** Line-by-line processing (no bulk buffer):
 ** 1. Read byte-by-byte from data connection in ASCII
@@ -19,6 +19,7 @@
 #include "ftpd#jes.h"
 #include "ftpd#xlt.h"
 #include "clibjes2.h"
+#include "haspjqe.h"
 
 /* ASCII constants (wire format before translation) */
 #define ASCII_LF    0x0A
@@ -302,5 +303,243 @@ fail:
     }
     ftpd_session_reply(sess, FTP_451,
                        "Failed to submit JCL to internal reader");
+    return 0;
+}
+
+/* ====================================================================
+** JES Job Query — LIST in JES mode
+** ==================================================================== */
+
+/* --------------------------------------------------------------------
+** Helper: map q_type to status string.
+** Follows mvsmf jobsapi.c process_job() status mapping.
+** ----------------------------------------------------------------- */
+static const char *
+job_status(unsigned char q_type)
+{
+    if (q_type & _XEQ)                  return "ACTIVE";
+    if (q_type & _INPUT)                return "INPUT";
+    if (q_type & _XMIT)                return "XMIT";
+    if (q_type & _SETUP)                return "SETUP";
+    if (q_type & _RECEIVE)              return "RECEIVE";
+    if (q_type & (_OUTPUT | _HARDCPY))  return "OUTPUT";
+    return "UNKNOWN";
+}
+
+/* --------------------------------------------------------------------
+** Helper: format return code from JCTCNVRC completion field.
+** Follows mvsmf jobsapi.c process_job() retcode decoding.
+** ----------------------------------------------------------------- */
+static const char *
+job_retcode(JESJOB *job, char *buf, int bufsz)
+{
+    unsigned int comp;
+
+    if (!(job->q_type & (_OUTPUT | _HARDCPY)))
+        return "";
+
+    comp = job->completion;
+    if ((comp >> 24) == 0x77) {
+        /* Job executed — decode completion info */
+        unsigned int abend = (comp >> 12) & 0xFFF;
+        unsigned int maxcc =  comp        & 0xFFF;
+        if (abend) {
+            snprintf(buf, bufsz, "ABEND S%03X", abend);
+        } else if ((job->jtflg & JESJOB_ABD) && maxcc) {
+            snprintf(buf, bufsz, "ABEND U%04d", maxcc);
+        } else {
+            snprintf(buf, bufsz, "RC=%04d", maxcc);
+        }
+        return buf;
+    }
+    if (comp == 4 || comp == 8 || comp == 36)
+        return "JCL ERROR";
+
+    return "";
+}
+
+/* --------------------------------------------------------------------
+** Helper: check if job matches owner filter.
+** Follows mvsmf jobsapi.c should_skip_job().
+** ----------------------------------------------------------------- */
+static int
+job_matches_owner(JESJOB *job, const char *owner)
+{
+    if (!owner || owner[0] == '\0' || owner[0] == '*')
+        return 1;   /* no filter or wildcard = match all */
+    if (job->owner[0] == '\0')
+        return 0;
+    return (strncmp((const char *)job->owner, owner,
+                    strlen(owner)) == 0);
+}
+
+/* --------------------------------------------------------------------
+** List spool files for a specific job (LIST JOBnnnnn).
+** z/OS format:
+**   JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
+** ----------------------------------------------------------------- */
+static int
+list_job_files(ftpd_session_t *sess, const char *jobid_arg)
+{
+    JES *jes = NULL;
+    JESJOB **joblist = NULL;
+    JESJOB *job;
+    int i;
+
+    jes = jesopen();
+    if (!jes) {
+        ftpd_session_reply(sess, FTP_451,
+                           "Unable to open JES checkpoint");
+        return 0;
+    }
+
+    /* Query with dd=1 to include JESDD array */
+    joblist = jesjob(jes, jobid_arg, FILTER_JOBID, 1);
+
+    if (!joblist || !joblist[0]) {
+        if (joblist) jesjobfr(&joblist);
+        jesclose(&jes);
+        ftpd_session_reply(sess, FTP_550,
+                           "No job found with ID %s", jobid_arg);
+        return 0;
+    }
+
+    job = joblist[0];
+
+    ftpd_session_reply(sess, FTP_125, "List started OK for %s",
+                       jobid_arg);
+
+    if (ftpd_data_open(sess) != 0) {
+        jesjobfr(&joblist);
+        jesclose(&jes);
+        ftpd_session_reply(sess, FTP_425,
+                           "Cannot open data connection");
+        return 0;
+    }
+
+    /* Header */
+    ftpd_data_printf(sess,
+        "JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT\r\n");
+
+    /* Iterate spool files */
+    if (job->jesdd) {
+        for (i = 0; job->jesdd[i]; i++) {
+            JESDD *dd = job->jesdd[i];
+            long bytecount = (long)dd->records * (dd->lrecl > 0 ? dd->lrecl : 80);
+
+            ftpd_data_printf(sess,
+                "%-8.8s %-8.8s %-8.8s %-8.8s %c %-8.8s %10ld\r\n",
+                job->jobname, job->jobid,
+                dd->stepname, dd->procstep,
+                dd->oclass ? dd->oclass : ' ',
+                dd->ddname,
+                bytecount);
+        }
+    }
+
+    ftpd_data_close(sess);
+    jesjobfr(&joblist);
+    jesclose(&jes);
+
+    ftpd_session_reply(sess, FTP_250, "List completed successfully.");
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** List jobs in JES queues (LIST in JES mode).
+**
+** If arg starts with "JOB" → spool file listing for that job.
+** Otherwise → job listing with JESOWNER/JESJOBNAME/JESSTATUS filters.
+**
+** z/OS format:
+**   JOBNAME  JOBID    OWNER    STATUS CLASS
+**   TESTJOB  JOB00042 IBMUSER  OUTPUT A     RC=0000
+** ----------------------------------------------------------------- */
+int
+ftpd_jes_list(ftpd_session_t *sess, const char *arg)
+{
+    JES *jes = NULL;
+    JESJOB **joblist = NULL;
+    JESFILT filt_type;
+    const char *filter;
+    const char *owner;
+    int i;
+    int count;
+    char rcbuf[16];
+
+    /* If arg looks like a job ID (JOBnnnnn), list spool files */
+    if (arg && arg[0] &&
+        (arg[0] == 'J' || arg[0] == 'j') &&
+        (arg[1] == 'O' || arg[1] == 'o') &&
+        (arg[2] == 'B' || arg[2] == 'b')) {
+        return list_job_files(sess, arg);
+    }
+
+    /* Determine filter from SITE settings */
+    if (sess->jes_jobname[0]) {
+        filter = sess->jes_jobname;
+        filt_type = FILTER_JOBNAME;
+    } else {
+        filter = "";
+        filt_type = FILTER_NONE;
+    }
+
+    owner = sess->jes_owner[0] ? sess->jes_owner : sess->user;
+
+    jes = jesopen();
+    if (!jes) {
+        ftpd_session_reply(sess, FTP_451,
+                           "Unable to open JES checkpoint");
+        return 0;
+    }
+
+    /* Query jobs — dd=0 (no spool file details needed for job list) */
+    joblist = jesjob(jes, filter, filt_type, 0);
+
+    ftpd_session_reply(sess, FTP_125, "List started OK");
+
+    if (ftpd_data_open(sess) != 0) {
+        if (joblist) jesjobfr(&joblist);
+        jesclose(&jes);
+        ftpd_session_reply(sess, FTP_425,
+                           "Cannot open data connection");
+        return 0;
+    }
+
+    /* Header */
+    ftpd_data_printf(sess,
+        "JOBNAME  JOBID    OWNER    STATUS CLASS\r\n");
+
+    /* Iterate jobs */
+    count = 0;
+    if (joblist) {
+        for (i = 0; joblist[i]; i++) {
+            JESJOB *job = joblist[i];
+            const char *status;
+            const char *rc_str;
+
+            if (!job_matches_owner(job, owner))
+                continue;
+
+            status = job_status(job->q_type);
+            rc_str = job_retcode(job, rcbuf, sizeof(rcbuf));
+
+            ftpd_data_printf(sess,
+                "%-8.8s %-8.8s %-8.8s %-6s  %-5c %s\r\n",
+                job->jobname, job->jobid, job->owner,
+                status,
+                job->eclass ? job->eclass : ' ',
+                rc_str);
+            count++;
+        }
+    }
+
+    ftpd_data_close(sess);
+
+    if (joblist) jesjobfr(&joblist);
+    jesclose(&jes);
+
+    ftpd_log(LOG_INFO, "JES LIST: %d jobs", count);
+    ftpd_session_reply(sess, FTP_250, "List completed successfully.");
     return 0;
 }
