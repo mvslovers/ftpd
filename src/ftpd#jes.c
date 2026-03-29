@@ -19,6 +19,7 @@
 #include "ftpd#jes.h"
 #include "ftpd#xlt.h"
 #include "clibjes2.h"
+#include "clibwto.h"
 
 /* --------------------------------------------------------------------
 ** Submit JCL from data connection to JES2 internal reader.
@@ -80,6 +81,8 @@ ftpd_jes_submit(ftpd_session_t *sess)
             if (sess->type == XFER_TYPE_A)
                 ftpd_xlat_mvs_a2e((unsigned char *)card, 80);
 
+            wtof("FTPD JES CARD %03d: %.80s", cardcount + 1, card);
+
             rc = jesirput(intrdr, card);
             if (rc < 0) {
                 ftpd_log(LOG_ERROR,
@@ -103,6 +106,8 @@ ftpd_jes_submit(ftpd_session_t *sess)
             /* Binary/EBCDIC: pad with EBCDIC blank (0x40) */
             memset(card + cardpos, 0x40, 80 - cardpos);
         }
+
+        wtof("FTPD JES CARD %03d: %.80s", cardcount + 1, card);
 
         rc = jesirput(intrdr, card);
         if (rc < 0) {
