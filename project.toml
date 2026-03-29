@@ -40,6 +40,7 @@ space = ["TRK", 10, 5, 5]
 
 [dependencies]
 "mvslovers/crent370" = ">=1.0.7"
+"mvslovers/ufsd" = "=1.0.0-dev"
 
 [[link.module]]
 name = "FTPD"
@@ -58,9 +59,13 @@ include = [
   "FTPD#MVS",
   "FTPD#SES",
   "FTPD#SIT",
+  "FTPD#UFS",
   "FTPD#XLT",
 ]
 setcode = "AC(1)"
+
+[link.module.dep_includes]
+"mvslovers/ufsd" = "*"
 
 [release]
 version_files = ["VERSION"]

@@ -7,6 +7,7 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#cmd.h"
+#include "ftpd#ufs.h"
 
 /* --------------------------------------------------------------------
 ** Allocate and initialize a new session
@@ -36,6 +37,8 @@ ftpd_session_new(ftpd_server_t *server, int sock)
     sess->auth_attempts = 0;
     sess->acee = NULL;
     sess->rest_offset = 0;
+    sess->ufs = NULL;
+    strcpy(sess->ufs_cwd, "/");
     sess->server = server;
 
     /* Set default allocation from server config */
@@ -70,6 +73,8 @@ ftpd_session_free(ftpd_session_t *sess)
         closesocket(sess->pasv_sock);
     if (sess->ctrl_sock >= 0)
         closesocket(sess->ctrl_sock);
+
+    ftpd_ufs_free(sess);
 
     if (sess->acee)
         racf_logout(&sess->acee);

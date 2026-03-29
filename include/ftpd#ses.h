@@ -5,6 +5,9 @@
 */
 #include "ftpd#xlt.h"
 
+/* Forward declaration — full definition in libufs.h */
+struct libufs_ufs;
+
 /* --- Session structure --- */
 struct ftpd_session {
     char            eye[8];         /* eye catcher                   */
@@ -41,6 +44,7 @@ struct ftpd_session {
     char            pds_name[45];   /* PDS dataset name when in_pds  */
 
     /* UFS context */
+    struct libufs_ufs *ufs;         /* UFSD session handle (lazy)    */
     char            ufs_cwd[256];   /* current UFS path              */
 
     /* JES context */

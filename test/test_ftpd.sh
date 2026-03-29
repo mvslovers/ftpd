@@ -549,9 +549,60 @@ else
 fi
 
 # ============================================================
-# TEST 5: Cleanup (DELE)
+# TEST 5: UFS Mode Switching (Phase 3a)
 # ============================================================
-section "Test 5: Cleanup"
+section "Test 5: UFS Mode Switching"
+
+# CWD / — should switch to UFS mode (250) or fail gracefully (550)
+info "CWD / (UFS mode switch)"
+FTP_OUT="$TMPDIR/ftp_ufs_cwd.log"
+ftp_run "$(cat <<CMDS
+cd /
+pwd
+CMDS
+)" "$FTP_OUT"
+
+if grep -qi "250.*HFS directory\|257.*/" "$FTP_OUT"; then
+    pass "CWD / — UFS mode active"
+    UFS_AVAILABLE=1
+
+    # PWD should show UFS-style path
+    if grep -qi '257.*"/"' "$FTP_OUT"; then
+        pass "PWD in UFS mode shows /"
+    else
+        fail "PWD in UFS mode: expected /"
+        grep -i "257" "$FTP_OUT" | sed 's/^/    /'
+    fi
+
+    # CWD back to MVS mode
+    info "CWD '${HLQ}.' (back to MVS mode)"
+    FTP_OUT="$TMPDIR/ftp_ufs_back.log"
+    ftp_run "$(cat <<CMDS
+cd /
+cd '${HLQ}.'
+pwd
+CMDS
+)" "$FTP_OUT"
+    if grep -qi "257.*'${HLQ}\." "$FTP_OUT"; then
+        pass "CWD back to MVS mode"
+    else
+        fail "CWD back to MVS mode"
+        grep -i "257\|250\|550" "$FTP_OUT" | sed 's/^/    /'
+    fi
+elif grep -qi "550.*UFS service not available" "$FTP_OUT"; then
+    pass "CWD / — UFSD not running, graceful 550"
+    UFS_AVAILABLE=0
+    info "UFSD not running — skipping further UFS tests"
+else
+    fail "CWD / — unexpected response"
+    cat "$FTP_OUT" | sed 's/^/    /'
+    UFS_AVAILABLE=0
+fi
+
+# ============================================================
+# TEST 6: Cleanup (DELE)
+# ============================================================
+section "Test 6: Cleanup"
 
 info "DELE '$DSN_BIN'"
 FTP_OUT="$TMPDIR/ftp_cleanup.log"

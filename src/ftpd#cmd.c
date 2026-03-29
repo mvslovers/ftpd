@@ -11,6 +11,7 @@
 #include "ftpd#dat.h"
 #include "ftpd#aut.h"
 #include "ftpd#mvs.h"
+#include "ftpd#ufs.h"
 #include "ftpd#jes.h"
 #include "ftpd#sit.h"
 
@@ -327,11 +328,22 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "CWD") == 0 || strcmp(cmd, "XCWD") == 0) {
-        if (sess->fsmode == FS_MVS) {
-            return ftpd_mvs_cwd(sess, arg);
+        // Mode switching: CWD /... → UFS, CWD 'DSN' → MVS
+        if (arg[0] == '/') {
+            // Switch to UFS mode
+            sess->fsmode = FS_UFS;
+            return ftpd_ufs_cwd(sess, arg);
         }
-        ftpd_session_reply(sess, FTP_502, "CWD not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS) {
+            // Quoted name while in UFS → switch back to MVS
+            if (arg[0] == '\'') {
+                sess->fsmode = FS_MVS;
+                return ftpd_mvs_cwd(sess, arg);
+            }
+            // Relative navigation within UFS
+            return ftpd_ufs_cwd(sess, arg);
+        }
+        return ftpd_mvs_cwd(sess, arg);
     }
     if (strcmp(cmd, "LIST") == 0) {
         if (sess->filetype == FT_JES)
@@ -363,10 +375,9 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "CDUP") == 0 || strcmp(cmd, "XCUP") == 0) {
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_cdup(sess);
-        ftpd_session_reply(sess, FTP_502, "CDUP not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_cdup(sess);
+        return ftpd_mvs_cdup(sess);
     }
     if (strcmp(cmd, "RETR") == 0) {
         if (sess->filetype == FT_JES)
