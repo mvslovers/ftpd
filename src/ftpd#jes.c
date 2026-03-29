@@ -573,8 +573,10 @@ spool_line_callback(const char *line, unsigned linelen)
     if (sess->type == XFER_TYPE_A)
         ftpd_xlat_mvs_e2a((unsigned char *)buf, len);
 
-    buf[len]     = '\r';
-    buf[len + 1] = '\n';
+    /* ASCII CRLF — must use explicit values, not C literals
+    ** which are EBCDIC on c2asm370 ('\n' = 0x15 NEL, not 0x0A LF) */
+    buf[len]     = 0x0D;   /* ASCII CR */
+    buf[len + 1] = 0x0A;   /* ASCII LF */
 
     ftpd_data_send(sess, buf, len + 2);
     return 0;
