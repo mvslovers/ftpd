@@ -103,8 +103,14 @@ accept:
     strcat(sess->hlq, ".");
     strcpy(sess->mvs_cwd, sess->hlq);
 
-    /* Also store uppercased userid */
+    /* Also store uppercased userid and password (for JES USER= injection) */
     strcpy(sess->user, user);
+    {
+        int i;
+        for (i = 0; i < 8 && password[i]; i++)
+            sess->pass[i] = (char)toupper((unsigned char)password[i]);
+        sess->pass[i] = '\0';
+    }
 
     sess->state = SESS_READY;
 
