@@ -27,6 +27,7 @@ struct ftpd_session {
     int             state;          /* session state                 */
     int             filetype;       /* FT_SEQ or FT_JES             */
     int             fsmode;         /* FS_MVS or FS_UFS             */
+    int             prev_fsmode;    /* saved fsmode during JES mode  */
     char            type;           /* 'A','E','I' transfer type     */
     char            stru;           /* 'F','R' structure             */
 

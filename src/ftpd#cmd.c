@@ -330,8 +330,14 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     if (strcmp(cmd, "CWD") == 0 || strcmp(cmd, "XCWD") == 0) {
         // Mode switching: CWD /... → UFS, CWD 'DSN' → MVS
         if (arg[0] == '/') {
-            // Switch to UFS mode
+            // Try UFS — only switch mode if ftpd_ufs_get() succeeds
+            // (prevents getting stuck in UFS mode when UFSD is down)
+            int prev = sess->fsmode;
             sess->fsmode = FS_UFS;
+            if (!ftpd_ufs_get(sess)) {
+                sess->fsmode = prev;  // UFSD not available, stay
+                return 0;            // 550 already sent
+            }
             return ftpd_ufs_cwd(sess, arg);
         }
         if (sess->fsmode == FS_UFS) {

@@ -31,6 +31,7 @@ ftpd_session_new(ftpd_server_t *server, int sock)
     sess->state = SESS_GREETING;
     sess->filetype = FT_SEQ;
     sess->fsmode = FS_MVS;
+    sess->prev_fsmode = FS_MVS;
     sess->type = XFER_TYPE_A;
     sess->stru = XFER_STRU_F;
     sess->authenticated = 0;
