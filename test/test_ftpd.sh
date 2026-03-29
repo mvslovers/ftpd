@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # FTPD Comprehensive Test Suite
-# Uses ncftpput/ncftpget for non-interactive operation
+# Uses tnftp (BSD ftp) for scripted FTP operations
 #
 # Usage: ./test_ftpd.sh [host] [port] [user] [pass]
 #
@@ -18,7 +18,7 @@ PORT="${2:-2121}"
 USER="${3:-ibmuser}"
 PASS="${4:-secret}"
 
-HLQ="IBMUSER"
+HLQ=$(echo "$USER" | tr '[:lower:]' '[:upper:]')
 TMPDIR="/tmp/ftpd_test_$$"
 TOTAL=0
 PASSED=0
@@ -50,6 +50,20 @@ trap cleanup EXIT
 echo -e "${BOLD}FTPD Comprehensive Test Suite${NC}"
 echo "Target: $USER@$HOST:$PORT"
 echo "Temp:   $TMPDIR"
+
+# ============================================================
+# Helper: run FTP commands via tnftp script
+# Captures server output for analysis.
+# Usage: ftp_run "command1\ncommand2\n..." [capture_file]
+# ============================================================
+ftp_run() {
+    local cmds="$1"
+    local capture="${2:-/dev/null}"
+
+    printf "user %s %s\n%b\nquit\n" "$USER" "$PASS" "$cmds" \
+        | ftp -n -v -p -P "$PORT" "$HOST" > "$capture" 2>&1
+    return $?
+}
 
 # ============================================================
 # Helper: generate binary test file (FB 80 XMIT-like)
@@ -118,34 +132,6 @@ generate_text_testfile() {
 TEXTEOF
 }
 
-# ============================================================
-# Helper: FTP upload
-# ============================================================
-ftp_put() {
-    local localfile="$1"
-    local remotename="$2"
-    shift 2
-    # remaining args are -W options
-    ncftpput -u "$USER" -p "$PASS" -P "$PORT" "$@" \
-        -C "$HOST" "$localfile" "$remotename" 2>&1
-}
-
-# Helper: FTP download
-ftp_get() {
-    local remotename="$1"
-    local localfile="$2"
-    shift 2
-    ncftpget -u "$USER" -p "$PASS" -P "$PORT" "$@" \
-        -C "$HOST" "$remotename" "$localfile" 2>&1
-}
-
-# Helper: FTP command (abuse ncftpput with /dev/null)
-ftp_cmd() {
-    # Send raw FTP commands via -W, upload /dev/null to dummy
-    ncftpput -u "$USER" -p "$PASS" -P "$PORT" "$@" \
-        -C "$HOST" /dev/null "'${HLQ}.DUMMY.NULL'" 2>&1 || true
-}
-
 # Helper: compare files
 compare_files() {
     local orig="$1"
@@ -160,8 +146,8 @@ compare_files() {
         return 1
     fi
 
-    local orig_md5=$(md5sum "$orig" | cut -d' ' -f1)
-    local back_md5=$(md5sum "$back" | cut -d' ' -f1)
+    local orig_md5=$(md5sum "$orig" 2>/dev/null | cut -d' ' -f1 || md5 -q "$orig")
+    local back_md5=$(md5sum "$back" 2>/dev/null | cut -d' ' -f1 || md5 -q "$back")
 
     if [ "$orig_md5" = "$back_md5" ]; then
         pass "$label: MD5 match ($orig_md5)"
@@ -197,21 +183,40 @@ BINSIZE=$(stat -c%s "$BINFILE" 2>/dev/null || stat -f%z "$BINFILE")
 info "Generated $BINSIZE bytes ($((BINSIZE/80)) records)"
 
 info "STOR -> '$DSN_BIN'"
-ftp_put "$BINFILE" "'$DSN_BIN'" \
-    -W "DELE $DSN_BIN" \
-    -W "SITE RECFM=FB" \
-    -W "SITE LRECL=80" \
-    -W "SITE BLKSIZE=3120" \
-    -W "SITE PRIMARY=100" \
-    -W "SITE SECONDARY=50" \
-    -W "SITE TRACKS" > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_bin_up.log"
+ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=3120
+site primary=100
+site secondary=50
+site tracks
+type binary
+put $BINFILE '$DSN_BIN'
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && pass "Binary upload" || fail "Binary upload (rc=$RC)"
+if [ $RC -eq 0 ] && ! grep -qi "^550\|^553\|^451" "$FTP_OUT"; then
+    pass "Binary upload"
+else
+    fail "Binary upload (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 info "RETR -> $BINBACK"
-ftp_get "'$DSN_BIN'" "$BINBACK" > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_bin_dn.log"
+ftp_run "$(cat <<CMDS
+type binary
+get '$DSN_BIN' $BINBACK
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && [ -f "$BINBACK" ] && pass "Binary download" || fail "Binary download (rc=$RC)"
+if [ $RC -eq 0 ] && [ -f "$BINBACK" ]; then
+    pass "Binary download"
+else
+    fail "Binary download (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 compare_files "$BINFILE" "$BINBACK" "Binary roundtrip"
 
@@ -230,27 +235,43 @@ TXTLINES=$(wc -l < "$TXTFILE")
 info "Generated $TXTSIZE bytes, $TXTLINES lines"
 
 info "STOR (TYPE A) -> '$DSN_TXT'"
-ftp_put "$TXTFILE" "'$DSN_TXT'" \
-    -a \
-    -W "DELE $DSN_TXT" \
-    -W "SITE RECFM=FB" \
-    -W "SITE LRECL=80" \
-    -W "SITE BLKSIZE=3120" \
-    -W "SITE PRIMARY=10" \
-    -W "SITE SECONDARY=5" \
-    -W "SITE TRACKS" > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_txt_up.log"
+ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=3120
+site primary=10
+site secondary=5
+site tracks
+type ascii
+put $TXTFILE '$DSN_TXT'
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && pass "Text upload" || fail "Text upload (rc=$RC)"
+if [ $RC -eq 0 ] && ! grep -qi "^550\|^553\|^451" "$FTP_OUT"; then
+    pass "Text upload"
+else
+    fail "Text upload (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 info "RETR (TYPE A) -> $TXTBACK"
-ftp_get "'$DSN_TXT'" "$TXTBACK" -a > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_txt_dn.log"
+ftp_run "$(cat <<CMDS
+type ascii
+get '$DSN_TXT' $TXTBACK
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && [ -f "$TXTBACK" ] && pass "Text download" || fail "Text download (rc=$RC)"
+if [ $RC -eq 0 ] && [ -f "$TXTBACK" ]; then
+    pass "Text download"
+else
+    fail "Text download (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
-# For text, we can't do byte-for-byte compare (CRLF, trailing blanks, etc.)
-# Instead, compare content after normalizing whitespace
+# For text, compare content after normalizing whitespace
 if [ -f "$TXTBACK" ]; then
-    # Strip trailing whitespace and normalize line endings
     sed 's/[[:space:]]*$//' "$TXTFILE"  | tr -d '\r' > "$TMPDIR/txt_orig_norm"
     sed 's/[[:space:]]*$//' "$TXTBACK"  | tr -d '\r' > "$TMPDIR/txt_back_norm"
 
@@ -282,52 +303,83 @@ MEMTXT="$TMPDIR/member_txt.txt"
 MEMBIN_BACK="$TMPDIR/member_bin_back.dat"
 MEMTXT_BACK="$TMPDIR/member_txt_back.txt"
 
-# Generate small test files for members
 generate_binary_testfile "$MEMBIN" 8000   # 100 records x 80
 generate_text_testfile "$MEMTXT"
 
-# Delete PDS if exists, then create via MKD
+# Create PDS (delete first if exists)
 info "MKD '$DSN_PDS'"
-ftp_cmd -W "RMD '$DSN_PDS'" > /dev/null 2>&1 || true
-ftp_cmd \
-    -W "SITE RECFM=FB" \
-    -W "SITE LRECL=80" \
-    -W "SITE BLKSIZE=3120" \
-    -W "SITE PRIMARY=10" \
-    -W "SITE SECONDARY=5" \
-    -W "SITE TRACKS" \
-    -W "MKD '$DSN_PDS'" > /dev/null 2>&1
+ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=3120
+site primary=10
+site secondary=5
+site tracks
+rmdir '$DSN_PDS'
+mkdir '$DSN_PDS'
+CMDS
+)" /dev/null
 
 # Upload binary member
 info "STOR binary member -> '$DSN_PDS(BINMEM)'"
-ftp_put "$MEMBIN" "'$DSN_PDS(BINMEM)'" > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_pds_binup.log"
+ftp_run "$(cat <<CMDS
+type binary
+put $MEMBIN '$DSN_PDS(BINMEM)'
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && pass "PDS binary member upload" || fail "PDS binary member upload (rc=$RC)"
+if [ $RC -eq 0 ] && ! grep -qi "^550\|^553\|^451" "$FTP_OUT"; then
+    pass "PDS binary member upload"
+else
+    fail "PDS binary member upload (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 # Upload text member
 info "STOR text member -> '$DSN_PDS(TXTMEM)'"
-ftp_put "$MEMTXT" "'$DSN_PDS(TXTMEM)'" -a > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_pds_txtup.log"
+ftp_run "$(cat <<CMDS
+type ascii
+put $MEMTXT '$DSN_PDS(TXTMEM)'
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && pass "PDS text member upload" || fail "PDS text member upload (rc=$RC)"
+if [ $RC -eq 0 ] && ! grep -qi "^550\|^553\|^451" "$FTP_OUT"; then
+    pass "PDS text member upload"
+else
+    fail "PDS text member upload (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 # Download binary member
 info "RETR binary member -> $MEMBIN_BACK"
-ftp_get "'$DSN_PDS(BINMEM)'" "$MEMBIN_BACK" > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_pds_bindn.log"
+ftp_run "$(cat <<CMDS
+type binary
+get '$DSN_PDS(BINMEM)' $MEMBIN_BACK
+CMDS
+)" "$FTP_OUT"
 RC=$?
 if [ $RC -eq 0 ] && [ -f "$MEMBIN_BACK" ]; then
     pass "PDS binary member download"
     compare_files "$MEMBIN" "$MEMBIN_BACK" "PDS binary member roundtrip"
 else
     fail "PDS binary member download (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
 fi
 
 # Download text member
 info "RETR text member -> $MEMTXT_BACK"
-ftp_get "'$DSN_PDS(TXTMEM)'" "$MEMTXT_BACK" -a > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_pds_txtdn.log"
+ftp_run "$(cat <<CMDS
+type ascii
+get '$DSN_PDS(TXTMEM)' $MEMTXT_BACK
+CMDS
+)" "$FTP_OUT"
 RC=$?
 if [ $RC -eq 0 ] && [ -f "$MEMTXT_BACK" ]; then
     pass "PDS text member download"
-    # Normalize and compare
     sed 's/[[:space:]]*$//' "$MEMTXT"      | tr -d '\r' > "$TMPDIR/mem_orig_norm"
     sed 's/[[:space:]]*$//' "$MEMTXT_BACK" | tr -d '\r' > "$TMPDIR/mem_back_norm"
     if diff -q "$TMPDIR/mem_orig_norm" "$TMPDIR/mem_back_norm" > /dev/null 2>&1; then
@@ -338,6 +390,7 @@ if [ $RC -eq 0 ] && [ -f "$MEMTXT_BACK" ]; then
     fi
 else
     fail "PDS text member download (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
 fi
 
 # ============================================================
@@ -353,39 +406,54 @@ cat > "$JCLFILE" << 'JCLEOF'
 JCLEOF
 
 info "SITE FILETYPE=JES + STOR JCL"
-JES_OUT=$(ncftpput -u "$USER" -p "$PASS" -P "$PORT" \
-    -W "SITE FILETYPE=JES" \
-    -C "$HOST" "$JCLFILE" "test_job.jcl" 2>&1)
+FTP_OUT="$TMPDIR/ftp_jes.log"
+ftp_run "$(cat <<CMDS
+site filetype=jes
+type ascii
+put $JCLFILE test_job.jcl
+site filetype=seq
+CMDS
+)" "$FTP_OUT"
 RC=$?
 
 if [ $RC -eq 0 ]; then
     pass "JES job submission (rc=0)"
 else
     fail "JES job submission (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
 fi
 
 # Check if the server mentioned a JOB ID in the response
-if echo "$JES_OUT" | grep -qi "JOB[0-9]"; then
-    JOBID=$(echo "$JES_OUT" | grep -oi "JOB[0-9]*" | head -1)
+if grep -qi "JOB[0-9]" "$FTP_OUT"; then
+    JOBID=$(grep -oi "JOB[0-9]*" "$FTP_OUT" | head -1)
     pass "JES returned job ID: $JOBID"
 else
-    info "JES output: $JES_OUT"
+    info "JES output:"
+    cat "$FTP_OUT" | sed 's/^/    /'
     fail "JES did not return a job ID"
 fi
 
-# Switch back to SEQ mode and verify STOR still works
+# Verify FILETYPE=SEQ restores dataset mode
 info "SITE FILETYPE=SEQ — verify dataset mode restored"
-ftp_put "$JCLFILE" "'${HLQ}.TEST.JESBACK'" \
-    -a \
-    -W "SITE FILETYPE=SEQ" \
-    -W "SITE RECFM=FB" \
-    -W "SITE LRECL=80" \
-    -W "SITE BLKSIZE=3120" \
-    -W "SITE PRIMARY=1" \
-    -W "SITE SECONDARY=1" \
-    -W "SITE TRACKS" > /dev/null 2>&1
+FTP_OUT="$TMPDIR/ftp_jes_seq.log"
+ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=3120
+site primary=1
+site secondary=1
+site tracks
+type ascii
+put $JCLFILE '${HLQ}.TEST.JESBACK'
+CMDS
+)" "$FTP_OUT"
 RC=$?
-[ $RC -eq 0 ] && pass "STOR after FILETYPE=SEQ" || fail "STOR after FILETYPE=SEQ (rc=$RC)"
+if [ $RC -eq 0 ] && ! grep -qi "^550\|^553\|^451" "$FTP_OUT"; then
+    pass "STOR after FILETYPE=SEQ"
+else
+    fail "STOR after FILETYPE=SEQ (rc=$RC)"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 # ============================================================
 # TEST 5: Cleanup (DELE)
@@ -393,16 +461,21 @@ RC=$?
 section "Test 5: Cleanup"
 
 info "DELE '$DSN_BIN'"
-ftp_cmd -W "DELE $DSN_BIN" > /dev/null 2>&1 && pass "Delete binary DS" || fail "Delete binary DS"
+FTP_OUT="$TMPDIR/ftp_cleanup.log"
+ftp_run "delete '$DSN_BIN'" "$FTP_OUT"
+! grep -qi "^550" "$FTP_OUT" && pass "Delete binary DS" || fail "Delete binary DS"
 
 info "DELE '$DSN_TXT'"
-ftp_cmd -W "DELE $DSN_TXT" > /dev/null 2>&1 && pass "Delete text DS" || fail "Delete text DS"
+ftp_run "delete '$DSN_TXT'" "$FTP_OUT"
+! grep -qi "^550" "$FTP_OUT" && pass "Delete text DS" || fail "Delete text DS"
 
 info "RMD '$DSN_PDS'"
-ftp_cmd -W "RMD '$DSN_PDS'" > /dev/null 2>&1 && pass "Delete PDS" || fail "Delete PDS"
+ftp_run "rmdir '$DSN_PDS'" "$FTP_OUT"
+! grep -qi "^550" "$FTP_OUT" && pass "Delete PDS" || fail "Delete PDS"
 
 info "DELE '${HLQ}.TEST.JESBACK'"
-ftp_cmd -W "DELE ${HLQ}.TEST.JESBACK" > /dev/null 2>&1 && pass "Delete JES test DS" || fail "Delete JES test DS"
+ftp_run "delete '${HLQ}.TEST.JESBACK'" "$FTP_OUT"
+! grep -qi "^550" "$FTP_OUT" && pass "Delete JES test DS" || fail "Delete JES test DS"
 
 # ============================================================
 # Summary
