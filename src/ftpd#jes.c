@@ -139,8 +139,9 @@ ftpd_jes_submit(ftpd_session_t *sess)
     int job_state;
     int has_notify;     /* 1 if NOTIFY= found in any JOB card line */
 
-    /* Reply 125 before opening data connection */
-    ftpd_session_reply(sess, FTP_125, "Submitting JCL to internal reader");
+    /* z/OS: "125 Sending Job to JES internal reader FIXrecfm 80" */
+    ftpd_session_reply(sess, FTP_125,
+        "Sending Job to JES internal reader FIXrecfm 80");
 
     if (ftpd_data_open(sess) != 0) {
         ftpd_session_reply(sess, FTP_425,
@@ -497,7 +498,11 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
     /* Query jobs — dd=0 (no spool file details needed for job list) */
     joblist = jesjob(jes, filter, filt_type, 0);
 
-    ftpd_session_reply(sess, FTP_125, "List started OK");
+    /* z/OS: "125 List started OK for JESJOBNAME=..., JESSTATUS=ALL and JESOWNER=..." */
+    ftpd_session_reply(sess, FTP_125,
+        "List started OK for JESJOBNAME=%s, JESSTATUS=ALL and JESOWNER=%s",
+        sess->jes_jobname[0] ? sess->jes_jobname : "*",
+        owner[0] == '*' || !owner[0] ? "*" : owner);
 
     if (ftpd_data_open(sess) != 0) {
         if (joblist) jesjobfr(&joblist);
@@ -507,30 +512,49 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    /* Header */
+    /* Header — z/OS format */
     ftpd_data_printf(sess,
         "JOBNAME  JOBID    OWNER    STATUS CLASS\r\n");
 
-    /* Iterate jobs */
+    /* Iterate jobs — respect JESENTRYLIMIT (default 200) */
     count = 0;
     if (joblist) {
         for (i = 0; joblist[i]; i++) {
             JESJOB *job = joblist[i];
             const char *status;
             const char *rc_str;
+            const char *class_str;
+            char class_buf[4];
 
             if (!job_matches_owner(job, owner))
                 continue;
 
+            if (count >= 200) {
+                /* z/OS: JESENTRYLIMIT reached */
+                break;
+            }
+
             status = job_status(job->q_type);
             rc_str = job_retcode(job, rcbuf, sizeof(rcbuf));
 
+            /* z/OS CLASS column: for STCs/TSO use first 3 chars of jobid,
+            ** for normal jobs use the execution class character */
+            if (strncmp((const char *)job->jobid, "STC", 3) == 0) {
+                class_str = "STC";
+            } else if (strncmp((const char *)job->jobid, "TSU", 3) == 0) {
+                class_str = "TSU";
+            } else if (job->eclass && job->eclass != ' ') {
+                snprintf(class_buf, sizeof(class_buf), "%c",
+                         job->eclass);
+                class_str = class_buf;
+            } else {
+                class_str = "";
+            }
+
             ftpd_data_printf(sess,
-                "%-8.8s %-8.8s %-8.8s %-6s  %-5c %s\r\n",
+                "%-8.8s %-8.8s %-8.8s %-6s  %-3s %s\r\n",
                 job->jobname, job->jobid, job->owner,
-                status,
-                job->eclass ? job->eclass : ' ',
-                rc_str);
+                status, class_str, rc_str);
             count++;
         }
     }
@@ -541,7 +565,14 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
     jesclose(&jes);
 
     ftpd_log(LOG_INFO, "JES LIST: %d jobs", count);
-    ftpd_session_reply(sess, FTP_250, "List completed successfully.");
+
+    if (count >= 200) {
+        ftpd_session_reply_multi(sess, FTP_250,
+            "JESENTRYLIMIT of 200 reached.  Additional entries not displayed",
+            "List completed successfully.");
+    } else {
+        ftpd_session_reply(sess, FTP_250, "List completed successfully.");
+    }
     return 0;
 }
 
@@ -662,13 +693,44 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
     /* Find the job */
     job = find_job(jobid_arg, &joblist);
     if (!job) {
+        /* z/OS: "550 Jobid J0099999 not found for JESJOBNAME=..., JESSTATUS=..., JESOWNER=..." */
         ftpd_session_reply(sess, FTP_550,
-                           "No job found with ID %s", jobid_arg);
+            "Jobid %s not found for JESJOBNAME=%s, JESSTATUS=ALL, JESOWNER=%s",
+            jobid_arg,
+            sess->jes_jobname[0] ? sess->jes_jobname : "*",
+            sess->jes_owner[0]   ? sess->jes_owner   : sess->user);
         return 0;
     }
 
-    ftpd_session_reply(sess, FTP_125,
-                       "Sending spool output for %s", jobid_arg);
+    /* z/OS 125 response differs for all vs specific spool file */
+    if (dsid_req < 0) {
+        ftpd_session_reply(sess, FTP_125,
+            "Sending all spool files for requested Jobid");
+    } else {
+        /* z/OS: "125 Sending data set owner.jobname.jobid.Dseqno.ddname" */
+        JESDD *target_dd = NULL;
+        int idx = 0;
+        if (job->jesdd) {
+            int j;
+            for (j = 0; job->jesdd[j]; j++) {
+                if (job->jesdd[j]->flag & FLAG_SYSIN) continue;
+                idx++;
+                if (idx == dsid_req) {
+                    target_dd = job->jesdd[j];
+                    break;
+                }
+            }
+        }
+        if (target_dd) {
+            ftpd_session_reply(sess, FTP_125,
+                "Sending data set %s.%s.%s.D%07d.%s",
+                job->owner, job->jobname, job->jobid,
+                target_dd->dsid, target_dd->ddname);
+        } else {
+            ftpd_session_reply(sess, FTP_125,
+                "Sending spool file %d for %s", dsid_req, jobid_arg);
+        }
+    }
 
     if (ftpd_data_open(sess) != 0) {
         jesjobfr(&joblist);
@@ -720,10 +782,10 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
                          rc, dd->dsid);
             }
 
-            /* Separator between spool files (only for "all" mode) */
+            /* z/OS separator: space-prefixed, exact string */
             if (dsid_req < 0) {
                 ftpd_data_printf(sess,
-                    "!! END OF JES SPOOL FILE !!\r\n");
+                    " !! END OF JES SPOOL FILE !!\r\n");
             }
         }
     }
@@ -775,8 +837,12 @@ ftpd_jes_delete(ftpd_session_t *sess, const char *arg)
     /* Find the job to get the jobname (jescanj needs both) */
     job = find_job(jobid_arg, &joblist);
     if (!job) {
+        /* z/OS: "550 Jobid J0099999 not found for JESJOBNAME=..., ..." */
         ftpd_session_reply(sess, FTP_550,
-                           "Job %s not found", jobid_arg);
+            "Jobid %s not found for JESJOBNAME=%s, JESSTATUS=ALL, JESOWNER=%s",
+            jobid_arg,
+            sess->jes_jobname[0] ? sess->jes_jobname : "*",
+            sess->jes_owner[0]   ? sess->jes_owner   : sess->user);
         return 0;
     }
 
@@ -790,17 +856,20 @@ ftpd_jes_delete(ftpd_session_t *sess, const char *arg)
 
     switch (rc) {
     case CANJ_OK:
-        ftpd_session_reply(sess, FTP_250,
-                           "%s cancelled", jobid_arg);
+        /* z/OS: "250 Cancel successful" */
+        ftpd_session_reply(sess, FTP_250, "Cancel successful");
         break;
     case CANJ_NOJB:
     case CANJ_BADI:
         ftpd_session_reply(sess, FTP_550,
-                           "Job %s not found", jobid_arg);
+            "Jobid %s not found for JESJOBNAME=%s, JESSTATUS=ALL, JESOWNER=%s",
+            jobid_arg,
+            sess->jes_jobname[0] ? sess->jes_jobname : "*",
+            sess->jes_owner[0]   ? sess->jes_owner   : sess->user);
         break;
     case CANJ_ICAN:
         ftpd_session_reply(sess, FTP_550,
-                           "Access denied — cannot cancel %s", jobid_arg);
+                           "Access denied - cannot cancel %s", jobid_arg);
         break;
     default:
         ftpd_log(LOG_ERROR, "JES DELE: jescanj rc=%d for %s",
