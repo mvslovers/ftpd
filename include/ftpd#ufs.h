@@ -64,4 +64,60 @@ int ftpd_ufs_cwd(ftpd_session_t *sess, const char *arg)    asm("FTPUFCWD");
 */
 int ftpd_ufs_cdup(ftpd_session_t *sess)                    asm("FTPUFCDU");
 
+/*
+** LIST/NLST — directory listing on data connection.
+** nlst=0: long format (drwxr-xr-x ...), nlst=1: names only.
+*/
+int ftpd_ufs_list(ftpd_session_t *sess, const char *arg,
+                  int nlst)                                 asm("FTPUFLST");
+
+/*
+** RETR — send file to client via data connection.
+** TYPE A: EBCDIC-1047 → ASCII translation.
+** TYPE I: no translation.
+*/
+int ftpd_ufs_retr(ftpd_session_t *sess, const char *arg)   asm("FTPUFRET");
+
+/*
+** STOR — receive file from client via data connection.
+** TYPE A: ASCII → EBCDIC-1047 translation.
+** TYPE I: no translation.
+*/
+int ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)   asm("FTPUFSTO");
+
+/*
+** DELE — delete a UFS file.
+*/
+int ftpd_ufs_dele(ftpd_session_t *sess, const char *arg)   asm("FTPUFDEL");
+
+/*
+** MKD — create a UFS directory.
+*/
+int ftpd_ufs_mkd(ftpd_session_t *sess, const char *arg)    asm("FTPUFMKD");
+
+/*
+** RMD — remove an empty UFS directory.
+*/
+int ftpd_ufs_rmd(ftpd_session_t *sess, const char *arg)    asm("FTPUFRMD");
+
+/*
+** RNFR — store rename source path.
+*/
+int ftpd_ufs_rnfr(ftpd_session_t *sess, const char *arg)   asm("FTPUFRNF");
+
+/*
+** RNTO — execute rename (not supported by libufs → 502).
+*/
+int ftpd_ufs_rnto(ftpd_session_t *sess, const char *arg)   asm("FTPUFRNT");
+
+/*
+** SIZE — return file size.
+*/
+int ftpd_ufs_size(ftpd_session_t *sess, const char *arg)   asm("FTPUFSIZ");
+
+/*
+** MDTM — return file modification time (YYYYMMDDHHMMSS).
+*/
+int ftpd_ufs_mdtm(ftpd_session_t *sess, const char *arg)   asm("FTPUFMDT");
+
 #endif /* FTPD_UFS_H */

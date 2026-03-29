@@ -348,30 +348,33 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     if (strcmp(cmd, "LIST") == 0) {
         if (sess->filetype == FT_JES)
             return ftpd_jes_list(sess, arg);
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_list(sess, arg, 0);
-        ftpd_session_reply(sess, FTP_502, "LIST not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_list(sess, arg, 0);
+        return ftpd_mvs_list(sess, arg, 0);
     }
     if (strcmp(cmd, "NLST") == 0) {
         if (sess->filetype == FT_JES)
             return ftpd_jes_list(sess, arg);
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_list(sess, arg, 1);
-        ftpd_session_reply(sess, FTP_502, "NLST not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_list(sess, arg, 1);
+        return ftpd_mvs_list(sess, arg, 1);
     }
     if (strcmp(cmd, "SIZE") == 0) {
-        if (sess->fsmode == FS_MVS) {
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_size(sess, arg);
+        {
             long sz = ftpd_mvs_size(sess, arg);
-            if (sz >= 0) {
+            if (sz >= 0)
                 ftpd_session_reply(sess, FTP_213, "%ld", sz);
-            } else {
+            else
                 ftpd_session_reply(sess, FTP_550, "Dataset not found");
-            }
             return 0;
         }
-        ftpd_session_reply(sess, FTP_502, "SIZE not implemented for UFS");
+    }
+    if (strcmp(cmd, "MDTM") == 0) {
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_mdtm(sess, arg);
+        ftpd_session_reply(sess, FTP_502, "MDTM not implemented for MVS");
         return 0;
     }
     if (strcmp(cmd, "CDUP") == 0 || strcmp(cmd, "XCUP") == 0) {
@@ -382,56 +385,51 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     if (strcmp(cmd, "RETR") == 0) {
         if (sess->filetype == FT_JES)
             return ftpd_jes_retrieve(sess, arg);
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_retr(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "RETR not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_retr(sess, arg);
+        return ftpd_mvs_retr(sess, arg);
     }
     if (strcmp(cmd, "STOR") == 0) {
         if (sess->filetype == FT_JES)
             return ftpd_jes_submit(sess);
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_stor(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "STOR not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_stor(sess, arg);
+        return ftpd_mvs_stor(sess, arg);
     }
     if (strcmp(cmd, "APPE") == 0) {
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_appe(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "APPE not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS) {
+            ftpd_session_reply(sess, FTP_502,
+                               "APPE not supported for UFS");
+            return 0;
+        }
+        return ftpd_mvs_appe(sess, arg);
     }
     if (strcmp(cmd, "DELE") == 0) {
         if (sess->filetype == FT_JES)
             return ftpd_jes_delete(sess, arg);
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_dele(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "DELE not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_dele(sess, arg);
+        return ftpd_mvs_dele(sess, arg);
     }
     if (strcmp(cmd, "MKD") == 0 || strcmp(cmd, "XMKD") == 0) {
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_mkd(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "MKD not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_mkd(sess, arg);
+        return ftpd_mvs_mkd(sess, arg);
     }
     if (strcmp(cmd, "RMD") == 0 || strcmp(cmd, "XRMD") == 0) {
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_rmd(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "RMD not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_rmd(sess, arg);
+        return ftpd_mvs_rmd(sess, arg);
     }
     if (strcmp(cmd, "RNFR") == 0) {
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_rnfr(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "RNFR not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_rnfr(sess, arg);
+        return ftpd_mvs_rnfr(sess, arg);
     }
     if (strcmp(cmd, "RNTO") == 0) {
-        if (sess->fsmode == FS_MVS)
-            return ftpd_mvs_rnto(sess, arg);
-        ftpd_session_reply(sess, FTP_502, "RNTO not implemented for UFS");
-        return 0;
+        if (sess->fsmode == FS_UFS)
+            return ftpd_ufs_rnto(sess, arg);
+        return ftpd_mvs_rnto(sess, arg);
     }
     if (strcmp(cmd, "SITE") == 0) {
         return ftpd_site_dispatch(sess, arg);

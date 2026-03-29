@@ -2,8 +2,8 @@
 ** FTPD UFS Operations — UFSD Client Integration
 **
 ** Wrapper layer around libufs (UFSD client library).
-** Provides: session handle management, error mapping,
-** path resolution, and CWD/CDUP for UFS mode.
+** Provides: session handle management, error mapping, path resolution,
+** CWD/CDUP, LIST, RETR, STOR, DELE, MKD, RMD, SIZE, MDTM.
 **
 ** Reference implementation: mvsmf/src/ussapi.c
 **
@@ -12,6 +12,7 @@
 */
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "ftpd#dat.h"
 #include "ftpd#ufs.h"
 
 #include "libufs.h"
@@ -309,4 +310,454 @@ int
 ftpd_ufs_cdup(ftpd_session_t *sess)
 {
     return ftpd_ufs_cwd(sess, "..");
+}
+
+/* --------------------------------------------------------------------
+** Month abbreviation table for LIST date formatting
+** ----------------------------------------------------------------- */
+static const char *month_names[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
+
+/* --------------------------------------------------------------------
+** LIST/NLST — directory listing on data connection
+**
+** nlst=0: Unix-style long listing:
+**   drwxr-xr-x  2 owner group  4096 Mar 12 14:30 dirname
+** nlst=1: name-only listing (one per line)
+**
+** LIST output is always translated to ASCII (via ftpd_data_printf).
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_list(ftpd_session_t *sess, const char *arg, int nlst)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    UFSDDESC *dd;
+    UFSDLIST *entry;
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    // Resolve listing path (default: current directory)
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    dd = ufs_diropen(ufs, path, NULL);
+    if (!dd) {
+        ftpd_ufs_error(sess, ufs_last_rc(ufs));
+        return 0;
+    }
+
+    // Open data connection
+    ftpd_session_reply(sess, FTP_150, "Opening data connection for file list");
+    if (ftpd_data_open(sess) != 0) {
+        ftpd_session_reply(sess, FTP_425, "Cannot open data connection");
+        ufs_dirclose(&dd);
+        return 0;
+    }
+
+    // Send entries
+    while ((entry = ufs_dirread(dd)) != NULL) {
+        // Skip . and ..
+        if (strcmp(entry->name, ".") == 0 ||
+            strcmp(entry->name, "..") == 0)
+            continue;
+
+        if (nlst) {
+            // NLST: name only
+            ftpd_data_printf(sess, "%s\r\n", entry->name);
+        } else {
+            // LIST: Unix-style long format
+            struct tm *tm_info;
+            char datebuf[16];
+
+            tm_info = mgmtime64(&entry->mtime);
+            if (tm_info) {
+                // Recent files (< 6 months): "Mon DD HH:MM"
+                // Older files: "Mon DD  YYYY"
+                // Simplified: always use "Mon DD HH:MM" format
+                snprintf(datebuf, sizeof(datebuf), "%s %2d %02d:%02d",
+                         month_names[tm_info->tm_mon],
+                         tm_info->tm_mday,
+                         tm_info->tm_hour, tm_info->tm_min);
+            } else {
+                snprintf(datebuf, sizeof(datebuf), "Jan  1 00:00");
+            }
+
+            ftpd_data_printf(sess,
+                "%s %3u %-8s %-8s %8u %s %s\r\n",
+                entry->attr,
+                (unsigned)entry->nlink,
+                entry->owner,
+                entry->group,
+                entry->filesize,
+                datebuf,
+                entry->name);
+        }
+    }
+
+    ufs_dirclose(&dd);
+    ftpd_data_close(sess);
+    ftpd_session_reply(sess, FTP_226, "Transfer complete");
+    sess->xfer_count++;
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** RETR — send UFS file to client via data connection
+**
+** TYPE A: EBCDIC-1047 → ASCII translation (ftpd_xlat_e2a)
+** TYPE I: no translation (binary)
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_retr(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    UFSFILE *fp;
+    char buf[FTPD_DATA_BUF_SIZE];
+    UINT32 n;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing file path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    fp = ufs_fopen(ufs, path, "r");
+    if (!fp) {
+        ftpd_ufs_error(sess, ufs_last_rc(ufs));
+        return 0;
+    }
+
+    // Open data connection
+    ftpd_session_reply(sess, FTP_150,
+                       "Opening data connection for %s", path);
+    if (ftpd_data_open(sess) != 0) {
+        ftpd_session_reply(sess, FTP_425, "Cannot open data connection");
+        ufs_fclose(&fp);
+        return 0;
+    }
+
+    // Stream file content in chunks
+    while ((n = ufs_fread(buf, 1, sizeof(buf), fp)) > 0) {
+        if (sess->type == XFER_TYPE_A) {
+            // Text mode: EBCDIC-1047 → ASCII
+            ftpd_xlat_e2a((unsigned char *)buf, (int)n);
+        }
+        if (ftpd_data_send(sess, buf, (int)n) < 0)
+            break;
+    }
+
+    ufs_fclose(&fp);
+    ftpd_data_close(sess);
+    ftpd_session_reply(sess, FTP_226, "Transfer complete");
+    sess->xfer_count++;
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** STOR — receive file from client, write to UFS
+**
+** TYPE A: ASCII → EBCDIC-1047 translation (ftpd_xlat_a2e)
+** TYPE I: no translation (binary)
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    UFSFILE *fp;
+    char buf[FTPD_DATA_BUF_SIZE];
+    int n;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing file path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    fp = ufs_fopen(ufs, path, "w");
+    if (!fp) {
+        ftpd_ufs_error(sess, ufs_last_rc(ufs));
+        return 0;
+    }
+
+    // Open data connection
+    ftpd_session_reply(sess, FTP_150,
+                       "Opening data connection for %s", path);
+    if (ftpd_data_open(sess) != 0) {
+        ftpd_session_reply(sess, FTP_425, "Cannot open data connection");
+        ufs_fclose(&fp);
+        return 0;
+    }
+
+    // Receive and write
+    while ((n = ftpd_data_recv(sess, buf, sizeof(buf))) > 0) {
+        if (sess->type == XFER_TYPE_A) {
+            // Text mode: ASCII → EBCDIC-1047
+            ftpd_xlat_a2e((unsigned char *)buf, n);
+        }
+        ufs_fwrite(buf, 1, (UINT32)n, fp);
+    }
+
+    ufs_fclose(&fp);
+    ftpd_data_close(sess);
+    ftpd_session_reply(sess, FTP_226, "Transfer complete");
+    sess->xfer_count++;
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** DELE — delete a UFS file
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_dele(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    int rc;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing file path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    rc = ufs_remove(ufs, path);
+    if (rc != UFSD_RC_OK) {
+        ftpd_ufs_error(sess, rc);
+        return 0;
+    }
+
+    ftpd_session_reply(sess, FTP_250, "File deleted");
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** MKD — create a UFS directory
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_mkd(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    int rc;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing directory path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    rc = ufs_mkdir(ufs, path);
+    if (rc != UFSD_RC_OK) {
+        ftpd_ufs_error(sess, rc);
+        return 0;
+    }
+
+    ftpd_session_reply(sess, FTP_257, "\"%s\" directory created", path);
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** RMD — remove an empty UFS directory
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_rmd(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    int rc;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing directory path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    rc = ufs_rmdir(ufs, path);
+    if (rc != UFSD_RC_OK) {
+        ftpd_ufs_error(sess, rc);
+        return 0;
+    }
+
+    ftpd_session_reply(sess, FTP_250, "Directory removed");
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** RNFR — store rename source path (UFS)
+**
+** Validates the file exists via ufs_stat(), stores path in
+** sess->rnfr_path for subsequent RNTO.
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_rnfr(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    UFSDLIST info;
+    int rc;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing file path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    // Verify file exists
+    rc = ufs_stat(ufs, path, &info);
+    if (rc != UFSD_RC_OK) {
+        ftpd_ufs_error(sess, rc);
+        return 0;
+    }
+
+    strncpy(sess->rnfr_path, path, sizeof(sess->rnfr_path) - 1);
+    sess->rnfr_path[sizeof(sess->rnfr_path) - 1] = '\0';
+    ftpd_session_reply(sess, FTP_350, "File exists, ready for destination");
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** RNTO — execute rename (not supported by libufs)
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_rnto(ftpd_session_t *sess, const char *arg)
+{
+    (void)arg;
+    ftpd_session_reply(sess, FTP_502, "Rename not supported for UFS");
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** SIZE — return file size
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_size(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    UFSDLIST info;
+    int rc;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing file path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    rc = ufs_stat(ufs, path, &info);
+    if (rc != UFSD_RC_OK) {
+        ftpd_ufs_error(sess, rc);
+        return 0;
+    }
+
+    ftpd_session_reply(sess, FTP_213, "%u", info.filesize);
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** MDTM — return file modification time (YYYYMMDDHHMMSS)
+** ----------------------------------------------------------------- */
+int
+ftpd_ufs_mdtm(ftpd_session_t *sess, const char *arg)
+{
+    UFS *ufs;
+    char path[FTPD_MAX_PATH_LEN];
+    UFSDLIST info;
+    int rc;
+    struct tm *tm_info;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501, "Missing file path");
+        return 0;
+    }
+
+    ufs = ftpd_ufs_get(sess);
+    if (!ufs)
+        return 0;
+
+    if (ftpd_ufs_resolve(sess, arg, path, sizeof(path)) != 0) {
+        ftpd_session_reply(sess, FTP_550, "Invalid path");
+        return 0;
+    }
+
+    rc = ufs_stat(ufs, path, &info);
+    if (rc != UFSD_RC_OK) {
+        ftpd_ufs_error(sess, rc);
+        return 0;
+    }
+
+    tm_info = mgmtime64(&info.mtime);
+    if (tm_info) {
+        ftpd_session_reply(sess, FTP_213, "%04d%02d%02d%02d%02d%02d",
+                           tm_info->tm_year + 1900, tm_info->tm_mon + 1,
+                           tm_info->tm_mday, tm_info->tm_hour,
+                           tm_info->tm_min, tm_info->tm_sec);
+    } else {
+        ftpd_session_reply(sess, FTP_213, "19700101000000");
+    }
+    return 0;
 }
