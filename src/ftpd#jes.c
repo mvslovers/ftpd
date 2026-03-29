@@ -698,11 +698,12 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
     if (job->jesdd) {
         for (i = 0; job->jesdd[i]; i++) {
             JESDD *dd = job->jesdd[i];
-            dd_index++;
 
-            /* Skip SYSIN entries */
+            /* Skip SYSIN entries (don't count in index) */
             if (dd->flag & FLAG_SYSIN)
                 continue;
+
+            dd_index++;     /* 1-based index of visible spool files */
 
             /* If specific spool file requested, skip others */
             if (dsid_req >= 0 && dd_index != dsid_req)
