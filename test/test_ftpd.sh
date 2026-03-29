@@ -424,8 +424,10 @@ else
 fi
 
 # Check if the server mentioned a JOB ID in the response
-if grep -qi "JOB[0-9]" "$FTP_OUT"; then
-    JOBID=$(grep -oi "JOB[0-9]*" "$FTP_OUT" | head -1)
+# Server sends: 250-It is known to JES as JOB00119
+# tnftp verbose shows this as-is; extract JOBnnnnn or STCnnnnn or TSUnnnnn
+if grep -o '[JST][OTU][BCS][0-9][0-9][0-9][0-9][0-9]' "$FTP_OUT" > /dev/null 2>&1; then
+    JOBID=$(grep -o '[JST][OTU][BCS][0-9][0-9][0-9][0-9][0-9]' "$FTP_OUT" | head -1)
     pass "JES returned job ID: $JOBID"
 else
     info "JES output:"
