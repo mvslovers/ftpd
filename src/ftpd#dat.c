@@ -118,6 +118,66 @@ ftpd_data_pasv(ftpd_session_t *sess)
 }
 
 /* --------------------------------------------------------------------
+** Open passive listener for EPSV (RFC 2428).
+** Same logic as PASV but sends 229 response with (|||port|) format.
+** Returns 0 on success, -1 on error.
+** ----------------------------------------------------------------- */
+int
+ftpd_data_epsv(ftpd_session_t *sess)
+{
+    struct sockaddr_in addr;
+    int sock;
+    int port;
+
+    /* Close any existing data connection */
+    ftpd_data_close(sess);
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        ftpd_log(LOG_ERROR, "%s: socket() failed, errno=%d", __func__, errno);
+        return -1;
+    }
+
+    /* Try ports in the configured range */
+    for (port = sess->server->config.pasv_lo;
+         port <= sess->server->config.pasv_hi;
+         port++) {
+
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = 0;  /* bind to any address */
+        addr.sin_port = htons(port);
+
+        if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0)
+            break;
+    }
+
+    if (port > sess->server->config.pasv_hi) {
+        ftpd_log(LOG_ERROR, "%s: no port available in range %d-%d",
+                 __func__, sess->server->config.pasv_lo,
+                 sess->server->config.pasv_hi);
+        closesocket(sock);
+        return -1;
+    }
+
+    if (listen(sock, 1) < 0) {
+        ftpd_log(LOG_ERROR, "%s: listen() failed, errno=%d", __func__, errno);
+        closesocket(sock);
+        return -1;
+    }
+
+    sess->pasv_sock = sock;
+    sess->data_mode = DATA_PASV;
+
+    ftpd_session_reply(sess, FTP_229,
+                       "Entering Extended Passive Mode (|||%d|)", port);
+
+    ftpd_trace("EPSV: listening on port %d", port);
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** Establish data connection.
 ** For PORT: connect to client.
 ** For PASV: accept from passive listener.

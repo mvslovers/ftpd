@@ -76,6 +76,7 @@ typedef unsigned char   UCHAR;
 #define FTP_221             221     /* closing control connection    */
 #define FTP_226             226     /* closing data, xfer complete   */
 #define FTP_227             227     /* entering passive mode         */
+#define FTP_229             229     /* entering extended passive mode */
 #define FTP_230             230     /* user logged in                */
 #define FTP_250             250     /* file action okay              */
 #define FTP_257             257     /* pathname created              */
@@ -95,6 +96,7 @@ typedef unsigned char   UCHAR;
 #define FTP_530             530     /* not logged in                 */
 #define FTP_550             550     /* file unavailable              */
 #define FTP_552             552     /* exceeded storage allocation   */
+#define FTP_522             522     /* network proto not supported   */
 #define FTP_553             553     /* file name not allowed         */
 
 /* --- Limits --- */

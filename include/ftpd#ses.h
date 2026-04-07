@@ -57,6 +57,9 @@ struct ftpd_session {
     /* SITE allocation defaults */
     ftpd_alloc_t    alloc;
 
+    /* EPSV ALL lock (RFC 2428) */
+    int             epsv_all;       /* 1 = EPSV ALL active           */
+
     /* Transfer modifiers (SITE toggles) */
     int             trailing;       /* SITE TRAILING (0=keep blanks) */
     int             truncate;       /* SITE TRUNCATE                 */

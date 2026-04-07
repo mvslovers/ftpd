@@ -72,6 +72,7 @@ cmd_feat(ftpd_session_t *sess)
     int len, i;
     len = snprintf(buf, sizeof(buf),
         "211-Features supported\r\n"
+        " EPSV\r\n"
         " SIZE\r\n"
         " MDTM\r\n"
         " SITE FILETYPE\r\n"
@@ -307,6 +308,11 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "PORT") == 0) {
+        if (sess->epsv_all) {
+            ftpd_session_reply(sess, FTP_501,
+                "PORT not allowed after EPSV ALL");
+            return 0;
+        }
         if (ftpd_data_port(sess, arg) == 0) {
             ftpd_session_reply(sess, FTP_200, "PORT command successful");
         } else {
@@ -316,10 +322,35 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         return 0;
     }
     if (strcmp(cmd, "PASV") == 0) {
+        if (sess->epsv_all) {
+            ftpd_session_reply(sess, FTP_501,
+                "PASV not allowed after EPSV ALL");
+            return 0;
+        }
         if (ftpd_data_pasv(sess) != 0) {
             ftpd_session_reply(sess, FTP_425,
                                "Cannot open passive connection");
         }
+        return 0;
+    }
+    if (strcmp(cmd, "EPSV") == 0) {
+        /* EPSV ALL — lock session to EPSV-only mode */
+        if (arg[0] && (strcmp(arg, "ALL") == 0 ||
+                       strcmp(arg, "all") == 0)) {
+            sess->epsv_all = 1;
+            ftpd_session_reply(sess, FTP_200,
+                "EPSV ALL command successful.");
+            return 0;
+        }
+        if (ftpd_data_epsv(sess) != 0) {
+            ftpd_session_reply(sess, FTP_425,
+                               "Cannot open passive connection");
+        }
+        return 0;
+    }
+    if (strcmp(cmd, "EPRT") == 0) {
+        ftpd_session_reply(sess, FTP_522,
+            "Network protocol not supported, use (1)");
         return 0;
     }
     if (strcmp(cmd, "ABOR") == 0) {
