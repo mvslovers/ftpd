@@ -263,6 +263,11 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         if (strcmp(cmd, "HELP") == 0) return cmd_help(sess);
         if (strcmp(cmd, "NOOP") == 0) return cmd_noop(sess);
         if (strcmp(cmd, "STAT") == 0) return cmd_stat(sess);
+        if (strcmp(cmd, "AUTH") == 0) {
+            ftpd_session_reply(sess, FTP_504,
+                "Security mechanism not implemented.");
+            return 0;
+        }
 
         ftpd_session_reply(sess, FTP_530, "Not logged in.");
         return 0;
@@ -470,6 +475,16 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     }
     if (strcmp(cmd, "SITE") == 0) {
         return ftpd_site_dispatch(sess, arg);
+    }
+    if (strcmp(cmd, "OPTS") == 0) {
+        ftpd_session_reply(sess, FTP_202,
+            "UTF8 mode is always enabled.");
+        return 0;
+    }
+    if (strcmp(cmd, "AUTH") == 0) {
+        ftpd_session_reply(sess, FTP_504,
+            "Security mechanism not implemented.");
+        return 0;
     }
 
     /* Unknown command */
