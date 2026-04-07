@@ -417,6 +417,144 @@ send_ds_entry(ftpd_session_t *sess, DSLIST *ds, int nlst,
 }
 
 /* --------------------------------------------------------------------
+** Decode a packed BCD byte to integer (e.g. 0x19 → 19).
+** ----------------------------------------------------------------- */
+static int
+bcd_byte(unsigned char b)
+{
+    return ((b >> 4) & 0x0F) * 10 + (b & 0x0F);
+}
+
+/* --------------------------------------------------------------------
+** Convert day-of-year to month and day-of-month.
+** ----------------------------------------------------------------- */
+static void
+julian_to_cal(int year, int doy, int *mon, int *mday)
+{
+    static const int mdays[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    int leap = (year % 4 == 0);
+    int m, d;
+
+    d = doy;
+    for (m = 0; m < 12; m++) {
+        int md = mdays[m];
+        if (m == 1 && leap) md++;
+        if (d <= md) break;
+        d -= md;
+    }
+    *mon = m + 1;
+    *mday = (d > 0) ? d : 1;
+}
+
+/* --------------------------------------------------------------------
+** Check if a PDS member has valid ISPF statistics in its userdata.
+** Returns 1 if the userdata looks like ISPF format, 0 otherwise.
+** ----------------------------------------------------------------- */
+static int
+has_valid_ispf_stats(PDSLIST *pd)
+{
+    int udata_hw;
+    unsigned char ver, mod;
+
+    udata_hw = pd->idc & PDSLIST_IDC_UDATA;
+
+    /* Minimum 7 halfwords (14 bytes) covers the core ISPF fields
+    ** through modhm[2].  Full stats with userid are 15 hw (30 bytes),
+    ** but older ISPF versions and some utilities store fewer.
+    */
+    if (udata_hw < 7) return 0;
+
+    /* Version: binary 1-99 (NOT packed BCD despite cliblist.h comment) */
+    ver = pd->udata[0];
+    if (ver == 0 || ver > 99) return 0;
+
+    /* Mod: binary 0-99 */
+    mod = pd->udata[1];
+    if (mod > 99) return 0;
+
+    /* Century bytes (offset 4 and 8): must be 0 (1900s) or 1 (2000s).
+    ** Only check if we have enough bytes.
+    */
+    if (udata_hw >= 3 && pd->udata[4] > 1) return 0;  /* crecent */
+    if (udata_hw >= 5 && pd->udata[8] > 1) return 0;  /* modcent */
+
+    return 1;
+}
+
+/* --------------------------------------------------------------------
+** Format ISPF statistics directly from the raw ispfdata struct.
+** Bypasses __fmtisp() which has stricter halfword requirements.
+** Sends the formatted line on the data connection.
+** ----------------------------------------------------------------- */
+static void
+send_ispf_stats(ftpd_session_t *sess, PDSLIST *pd, const char *name)
+{
+    ISPFDATA *isp = (ISPFDATA *)pd->udata;
+    int udata_hw = pd->idc & PDSLIST_IDC_UDATA;
+    int vv, mm;
+    int cyy, cddd, myy, mddd;
+    int cyear, myear;
+    int cmon, cmday, mmon, mmday;
+    int hh, mi;
+    unsigned curlines, initlines, modlines;
+    char userid[9];
+
+    /* Version and mod are binary (not packed BCD) */
+    vv = isp->ver;
+    mm = isp->mod;
+
+    /* Decode created julian date: 3 bytes packed = YYDDD+ */
+    cyy = bcd_byte(isp->creydd[0]);
+    cddd = ((isp->creydd[1] >> 4) & 0x0F) * 100
+         + (isp->creydd[1] & 0x0F) * 10
+         + ((isp->creydd[2] >> 4) & 0x0F);
+    cyear = (isp->crecent == 0) ? 1900 + cyy : 2000 + cyy;
+    julian_to_cal(cyear, cddd, &cmon, &cmday);
+
+    /* Decode modified julian date */
+    myy = bcd_byte(isp->modydd[0]);
+    mddd = ((isp->modydd[1] >> 4) & 0x0F) * 100
+         + (isp->modydd[1] & 0x0F) * 10
+         + ((isp->modydd[2] >> 4) & 0x0F);
+    myear = (isp->modcent == 0) ? 1900 + myy : 2000 + myy;
+    julian_to_cal(myear, mddd, &mmon, &mmday);
+
+    /* Decode packed time */
+    hh = bcd_byte(isp->modhm[0]);
+    mi = bcd_byte(isp->modhm[1]);
+
+    /* Line counts (need at least 10 hw = 20 bytes) */
+    if (udata_hw >= 10) {
+        curlines = isp->curlines;
+        initlines = isp->initlines;
+        modlines = isp->modlines;
+    } else {
+        curlines = initlines = modlines = 0;
+    }
+
+    /* Userid (need at least 14 hw = 28 bytes) */
+    if (udata_hw >= 14) {
+        memcpy(userid, isp->userid, 8);
+        userid[8] = '\0';
+        {
+            int j = 7;
+            while (j >= 0 && userid[j] == ' ')
+                userid[j--] = '\0';
+        }
+    } else {
+        userid[0] = '\0';
+    }
+
+    ftpd_data_printf(sess,
+        "%-8s  %2d.%02d %4d/%02d/%02d %4d/%02d/%02d %02d:%02d"
+        " %5u %5u %5u %-8s\r\n",
+        name, vv, mm,
+        cyear, cmon, cmday,
+        myear, mmon, mmday, hh, mi,
+        curlines, initlines, modlines, userid);
+}
+
+/* --------------------------------------------------------------------
 ** Format and send PDS member list entry
 ** ----------------------------------------------------------------- */
 static void
@@ -549,40 +687,15 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
             ftpd_data_printf(sess, "%-8s\r\n", name);
         }
     } else {
-        /* Text member — use __fmtisp() */
-        ISPFSTAT ist;
-        if (__fmtisp(pd, &ist) == 0) {
-            /* Reformat dates: yy-mm-dd → YYYY/MM/DD
-            ** and yy-mm-dd hh:mm:ss → YYYY/MM/DD HH:MM
-            */
-            char cdate[11];
-            char mdate[17];
-            int yy, mm, dd, hh, mi;
-
-            if (sscanf(ist.created, "%d-%d-%d", &yy, &mm, &dd) == 3) {
-                snprintf(cdate, sizeof(cdate), "%4d/%02d/%02d",
-                         yy < 70 ? 2000 + yy : 1900 + yy, mm, dd);
-            } else {
-                strncpy(cdate, ist.created, sizeof(cdate) - 1);
-                cdate[sizeof(cdate) - 1] = '\0';
-            }
-
-            if (sscanf(ist.changed, "%d-%d-%d %d:%d",
-                       &yy, &mm, &dd, &hh, &mi) == 5) {
-                snprintf(mdate, sizeof(mdate), "%4d/%02d/%02d %02d:%02d",
-                         yy < 70 ? 2000 + yy : 1900 + yy,
-                         mm, dd, hh, mi);
-            } else {
-                strncpy(mdate, ist.changed, sizeof(mdate) - 1);
-                mdate[sizeof(mdate) - 1] = '\0';
-            }
-
-            ftpd_data_printf(sess,
-                "%-8s  %5s %10s %16s %5s %5s %5s %-8s\r\n",
-                ist.name, ist.ver, cdate, mdate,
-                ist.size, ist.init, ist.mod, ist.userid);
+        /* Text member — decode ISPF stats directly from raw ispfdata.
+        ** Bypasses __fmtisp() which rejects members with < 15 halfwords.
+        ** System utilities (IEBUPDTE, IEBCOPY) write non-ISPF userdata;
+        ** has_valid_ispf_stats() filters those out.
+        */
+        if (has_valid_ispf_stats(pd)) {
+            send_ispf_stats(sess, pd, name);
         } else {
-            ftpd_data_printf(sess, " %-8s\r\n", name);
+            ftpd_data_printf(sess, "%-8s\r\n", name);
         }
     }
 }
