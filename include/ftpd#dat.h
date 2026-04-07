@@ -18,6 +18,12 @@ int ftpd_data_port(ftpd_session_t *sess, const char *arg)
 int ftpd_data_pasv(ftpd_session_t *sess)                    asm("FTPDTPSV");
 
 /*
+** Open passive listener, send 229 reply (RFC 2428).
+** Returns 0 on success, -1 on error.
+*/
+int ftpd_data_epsv(ftpd_session_t *sess)                    asm("FTPDTEPV");
+
+/*
 ** Establish data connection (accept for PASV, connect for PORT).
 ** Returns 0 on success, -1 on error.
 */
