@@ -593,7 +593,7 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
 ** z/OS behavior:
 ** - In PDS context, arg is a member filter (e.g. "R*")
 ** - In dataset context, arg with wildcards filters the listing
-** - Empty result → 550, no data connection opened
+** - Empty dataset result → empty listing with header (z/OS compat)
 ** ----------------------------------------------------------------- */
 int
 ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
@@ -731,7 +731,6 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         int has_filter;
         int has_wildcard;
         int i;
-        int count;
 
         /* Determine if we need to filter results.
         ** "ls *" was normalized to no-arg above (prefix == cwd).
@@ -744,42 +743,30 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                         (strchr(arg, '*') || strchr(arg, '%')));
 
         dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
-        if (!dsl || !dsl[0]) {
-            if (dsl) __freeds(&dsl);
-            ftpd_session_reply(sess, FTP_550,
-                               "No data sets found.");
-            return 0;
-        }
 
-        /* Count matching results — if filter active, check matches */
-        if (has_filter) {
-            count = 0;
-            for (i = 0; dsl[i]; i++) {
-                if (has_wildcard) {
-                    if (dsn_match(prefix, dsl[i]->dsn))
-                        count++;
-                } else {
-                    /* Exact or prefix match for non-wildcard arg */
-                    if (strcmp(prefix, dsl[i]->dsn) == 0 ||
-                        (strncmp(prefix, dsl[i]->dsn,
-                                 strlen(prefix)) == 0 &&
-                         dsl[i]->dsn[strlen(prefix)] == '.'))
-                        count++;
-                }
-            }
-            if (count == 0) {
-                __freeds(&dsl);
+        /* __listds() returns NULL both for "prefix not cataloged" and
+        ** "prefix exists but has no children".  Use __locate() to tell
+        ** them apart: if the prefix itself is cataloged, the level is
+        ** valid → return empty listing with header (z/OS behavior).
+        ** If __locate() also fails → prefix doesn't exist → 550.
+        */
+        if (!dsl || !dsl[0]) {
+            LOCWORK lw;
+            if (dsl) __freeds(&dsl);
+            memset(&lw, 0, sizeof(lw));
+            if (__locate(cwd_notrail, &lw) != 0) {
                 ftpd_session_reply(sess, FTP_550,
                                    "No data sets found.");
                 return 0;
             }
+            dsl = NULL;  /* valid prefix, empty result */
         }
 
         /* Open data connection */
         ftpd_session_reply(sess, FTP_150,
                            "Opening data connection for file list");
         if (ftpd_data_open(sess) != 0) {
-            __freeds(&dsl);
+            if (dsl) __freeds(&dsl);
             ftpd_session_reply(sess, FTP_425,
                                "Cannot open data connection");
             return 0;
@@ -792,22 +779,24 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                 "Lrecl BlkSz Dsorg Dsname\r\n");
         }
 
-        for (i = 0; dsl[i]; i++) {
-            if (has_filter) {
-                if (has_wildcard) {
-                    if (!dsn_match(prefix, dsl[i]->dsn))
-                        continue;
-                } else {
-                    if (strcmp(prefix, dsl[i]->dsn) != 0 &&
-                        !(strncmp(prefix, dsl[i]->dsn,
-                                  strlen(prefix)) == 0 &&
-                          dsl[i]->dsn[strlen(prefix)] == '.'))
-                        continue;
+        if (dsl) {
+            for (i = 0; dsl[i]; i++) {
+                if (has_filter) {
+                    if (has_wildcard) {
+                        if (!dsn_match(prefix, dsl[i]->dsn))
+                            continue;
+                    } else {
+                        if (strcmp(prefix, dsl[i]->dsn) != 0 &&
+                            !(strncmp(prefix, dsl[i]->dsn,
+                                      strlen(prefix)) == 0 &&
+                              dsl[i]->dsn[strlen(prefix)] == '.'))
+                            continue;
+                    }
                 }
+                send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
             }
-            send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
+            __freeds(&dsl);
         }
-        __freeds(&dsl);
     }
 
     ftpd_data_close(sess);
