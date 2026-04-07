@@ -263,6 +263,10 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         if (strcmp(cmd, "HELP") == 0) return cmd_help(sess);
         if (strcmp(cmd, "NOOP") == 0) return cmd_noop(sess);
         if (strcmp(cmd, "STAT") == 0) return cmd_stat(sess);
+        if (strcmp(cmd, "AUTH") == 0) {
+            ftpd_session_reply(sess, FTP_502, "Command not implemented");
+            return 0;
+        }
 
         ftpd_session_reply(sess, FTP_530, "Not logged in.");
         return 0;
