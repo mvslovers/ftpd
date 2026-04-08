@@ -26,8 +26,6 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     strcpy(cfg->pasv_addr, "127.0.0.1");
     cfg->pasv_lo = 22000;
     cfg->pasv_hi = 22200;
-    cfg->insecure = 0;
-
     /* Limits */
     cfg->max_sessions = 10;
     cfg->idle_timeout = 300;
@@ -160,9 +158,6 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
             cfg->pasv_lo = atoi(value);
             cfg->pasv_hi = atoi(dash + 1);
         }
-    }
-    else if (strcmp(key, "INSECURE") == 0) {
-        cfg->insecure = atoi(value);
     }
     else if (strcmp(key, "MAXSESSIONS") == 0) {
         cfg->max_sessions = atoi(value);

@@ -529,8 +529,6 @@ typedef struct ftpd_config {
     int                 jes_level;       /* Default JES interface level  */
     char                banner[80];      /* Custom 220 banner text       */
     char                authuser[9];     /* User allowed to TERM server  */
-    int                 insecure;        /* Allow non-localhost connects */
-
     /* Default allocation parameters for new datasets */
     struct {
         char            recfm[4];
@@ -760,7 +758,6 @@ SRVPORT=21
 SRVIP=ANY
 PASVADR=127,0,0,1
 PASVPORTS=22000-22200
-INSECURE=0
 
 # Limits
 MAXSESSIONS=10

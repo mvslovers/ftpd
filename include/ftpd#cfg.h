@@ -20,8 +20,6 @@ typedef struct ftpd_config {
     char            pasv_addr[16];  /* PASV address for responses    */
     int             pasv_lo;        /* PASV port range low           */
     int             pasv_hi;        /* PASV port range high          */
-    int             insecure;       /* allow non-localhost connects  */
-
     /* Limits */
     int             max_sessions;   /* max concurrent sessions       */
     int             idle_timeout;   /* idle timeout in seconds       */

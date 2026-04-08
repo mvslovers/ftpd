@@ -97,7 +97,6 @@ dsn_match(const char *pattern, const char *name)
 /* --------------------------------------------------------------------
 ** Helper: check RACF dataset access for the current session.
 **
-** In INSECURE mode (no ACEE), access is always granted.
 ** Returns 0 if access is permitted, -1 if denied.
 ** On denial, sends a 550 reply with the dataset name.
 ** ----------------------------------------------------------------- */
@@ -105,7 +104,7 @@ static int
 check_dataset_access(ftpd_session_t *sess, const char *dsn, int attr)
 {
     if (!sess->acee)
-        return 0;   /* INSECURE mode — no ACEE, no check */
+        return 0;   /* no ACEE available — skip check */
 
     if (racf_auth(sess->acee, "DATASET", dsn, attr) != 0) {
         ftpd_log(LOG_WARN, "%s: %s access denied to %s for %s",
