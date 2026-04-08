@@ -146,6 +146,41 @@ initialize(ftpd_server_t *server, int argc, char **argv)
         }
     }
 
+    /* STC identity switch: RACINIT ENVIR=CREATE for FTPD/USER
+    ** Replaces the default STC security environment (PROD/PRDGROUP)
+    ** with a dedicated FTPD identity.  Requires APF authorization.
+    ** Equivalent to the old FTPDXCTL.hlasm wrapper but done inline.
+    */
+    {
+        unsigned char savekey;
+        ACEE *old_acee;
+        ACEE *new_acee;
+        int racf_rc = 0;
+
+        if (__super(PSWKEY0, &savekey)) {
+            ftpd_log_wto("FTPD004W RACINIT failed: "
+                         "cannot enter supervisor state");
+        } else {
+            /* Delete current security environment */
+            old_acee = racf_get_acee();
+            if (old_acee)
+                racf_logout(&old_acee);
+
+            /* Create new ACEE: PASSCHK=NO (pass=NULL) */
+            new_acee = racf_login("FTPD", NULL, "USER", &racf_rc);
+            if (new_acee) {
+                racf_set_acee(new_acee);
+                ftpd_log_wto("FTPD004I STC identity set to "
+                             "FTPD/USER via RACINIT");
+            } else {
+                ftpd_log_wto("FTPD004W RACINIT ENVIR=CREATE "
+                             "failed RC=%d", racf_rc);
+            }
+
+            __prob(savekey, NULL);
+        }
+    }
+
     /* Initialize trace ring buffer */
     ftpd_trace_init(512);
 
