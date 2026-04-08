@@ -95,6 +95,33 @@ dsn_match(const char *pattern, const char *name)
 }
 
 /* --------------------------------------------------------------------
+** Helper: check RACF dataset access for the current session.
+**
+** In INSECURE mode (no ACEE), access is always granted.
+** Returns 0 if access is permitted, -1 if denied.
+** On denial, sends a 550 reply with the dataset name.
+** ----------------------------------------------------------------- */
+static int
+check_dataset_access(ftpd_session_t *sess, const char *dsn, int attr)
+{
+    if (!sess->acee)
+        return 0;   /* INSECURE mode — no ACEE, no check */
+
+    if (racf_auth(sess->acee, "DATASET", dsn, attr) != 0) {
+        ftpd_log(LOG_WARN, "%s: %s access denied to %s for %s",
+                 __func__, attr == RACF_ATTR_READ    ? "READ"    :
+                           attr == RACF_ATTR_UPDATE  ? "UPDATE"  :
+                           attr == RACF_ATTR_CONTROL ? "CONTROL" :
+                           "ALTER",
+                 dsn, sess->user);
+        ftpd_session_reply(sess, FTP_550,
+            "Access denied to %s", dsn);
+        return -1;
+    }
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: build a fully-qualified dataset name from CWD + argument.
 **
 ** Quoting rules (z/OS FTP compatible):
@@ -1042,7 +1069,16 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     ftpd_log(LOG_INFO, "RETR: arg='%s' dsn='%s' member='%s' fname='%s'",
              arg, dsn, member, fname);
 
-    fp = fopen(fname, "rb");
+    /* RACF access check */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_READ) != 0)
+        return 0;
+
+    /* Switch to user's security environment for fopen */
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        fp = fopen(fname, "rb");
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (fp == NULL) {
         ftpd_log(LOG_INFO, "RETR: fopen('%s') failed", fname);
         if (member[0])
@@ -1439,6 +1475,10 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     allocated_new = 0;
     ddname[0] = '\0';
 
+    /* RACF access check */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_UPDATE) != 0)
+        return 0;
+
     /* Check if dataset exists */
     memset(&lw, 0, sizeof(lw));
     ds_exists = (__locate(dsn, &lw) == 0);
@@ -1488,7 +1528,12 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 
     ftpd_log(LOG_INFO, "STOR: fopen('%s', 'wb') new=%d", fname, allocated_new);
 
-    fp = fopen(fname, "wb");
+    /* Switch to user's security environment for fopen */
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        fp = fopen(fname, "wb");
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (fp == NULL) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot open dataset %s for writing", dsn);
@@ -1731,6 +1776,10 @@ ftpd_mvs_dele(ftpd_session_t *sess, const char *arg)
 
     split_member(dsn, member, sizeof(member));
 
+    /* RACF access check */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
+        return 0;
+
     /* Verify existence */
     memset(&lw, 0, sizeof(lw));
     rc = __locate(dsn, &lw);
@@ -1748,7 +1797,12 @@ ftpd_mvs_dele(ftpd_session_t *sess, const char *arg)
         snprintf(cmd, sizeof(cmd), " DELETE '%s'", dsn);
     }
 
-    rc = idcams(cmd);
+    /* Switch to user's security environment for IDCAMS */
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        rc = idcams(cmd);
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "DELE fails: %s could not be deleted.", dsn);
@@ -1787,6 +1841,10 @@ ftpd_mvs_mkd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* RACF access check */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
+        return 0;
+
     /* Check if it already exists */
     memset(&lw, 0, sizeof(lw));
     if (__locate(dsn, &lw) == 0) {
@@ -1795,8 +1853,12 @@ ftpd_mvs_mkd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    /* Allocate new PDS */
-    rc = alloc_new_dataset(sess, dsn, 1, ddname);
+    /* Allocate new PDS under user's security environment */
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        rc = alloc_new_dataset(sess, dsn, 1, ddname);
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot create %s", dsn);
@@ -1834,6 +1896,10 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* RACF access check */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
+        return 0;
+
     /* Verify existence */
     memset(&lw, 0, sizeof(lw));
     if (__locate(dsn, &lw) != 0) {
@@ -1843,7 +1909,13 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
     }
 
     snprintf(cmd, sizeof(cmd), " DELETE '%s'", dsn);
-    rc = idcams(cmd);
+
+    /* Switch to user's security environment for IDCAMS */
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        rc = idcams(cmd);
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot remove %s", dsn);
@@ -1875,6 +1947,10 @@ ftpd_mvs_rnfr(ftpd_session_t *sess, const char *arg)
         ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
         return 0;
     }
+
+    /* RACF access check (ALTER needed for rename) */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
+        return 0;
 
     /* Verify existence */
     memset(&lw, 0, sizeof(lw));
@@ -1931,11 +2007,15 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    /* Rename via IDCAMS ALTER */
+    /* Rename via IDCAMS ALTER under user's security environment */
     snprintf(cmd, sizeof(cmd),
              " ALTER '%s' NEWNAME('%s')", sess->rnfr_path, dsn);
 
-    rc = idcams(cmd);
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        rc = idcams(cmd);
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "Rename of %s to %s failed.", sess->rnfr_path, dsn);
