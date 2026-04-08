@@ -39,7 +39,7 @@ blksize = 19069
 space = ["TRK", 10, 5, 5]
 
 [dependencies]
-"mvslovers/crent370" = ">=1.0.7"
+"mvslovers/crent370" = ">=1.0.8"
 "mvslovers/ufsd" = "=1.0.0-dev"
 
 [[link.module]]
