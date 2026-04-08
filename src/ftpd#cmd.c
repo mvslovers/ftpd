@@ -302,9 +302,15 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     }
     if (strcmp(cmd, "PWD") == 0 || strcmp(cmd, "XPWD") == 0) {
         if (sess->fsmode == FS_MVS) {
-            ftpd_session_reply(sess, FTP_257,
-                               "\"'%s'\" is working directory.",
-                               sess->mvs_cwd);
+            if (sess->in_pds) {
+                ftpd_session_reply(sess, FTP_257,
+                    "\"'%s'\" partitioned data set is working directory.",
+                    sess->pds_name);
+            } else {
+                ftpd_session_reply(sess, FTP_257,
+                    "\"'%s'\" is working directory.",
+                    sess->mvs_cwd);
+            }
         } else {
             ftpd_session_reply(sess, FTP_257,
                                "\"%s\" is the HFS working directory.",
