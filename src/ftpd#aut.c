@@ -3,7 +3,6 @@
 **
 ** RAKF-based authentication via crent370 racf module.
 ** Verifies userid/password and checks FACILITY class FTPAUTH.
-** When INSECURE=1, authentication is bypassed (any password accepted).
 */
 #include "ftpd.h"
 #include "ftpd#ses.h"
@@ -34,13 +33,6 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
         for (i = 0; i < 8 && password[i]; i++)
             pass[i] = (char)toupper((unsigned char)password[i]);
         pass[i] = '\0';
-    }
-
-    /* INSECURE mode: skip RAKF, accept any password */
-    if (sess->server->config.insecure) {
-        ftpd_log(LOG_WARN, "%s: INSECURE mode, skipping RAKF for %s",
-                 __func__, user);
-        goto accept;
     }
 
     /* Verify credentials via RAKF */
@@ -91,10 +83,6 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
     /* Store ACEE in session */
     sess->acee = acee;
 
-accept:
-    /* Clear password from stack */
-    memset(pass, 0, sizeof(pass));
-
     sess->authenticated = 1;
     sess->auth_attempts = 0;
 
@@ -118,8 +106,7 @@ accept:
         "%s is logged on.  Working directory is \"%s\".",
         sess->user, sess->hlq);
 
-    ftpd_log(LOG_INFO, "%s: %s logged in%s", __func__, user,
-             sess->server->config.insecure ? " (INSECURE)" : "");
+    ftpd_log(LOG_INFO, "%s: %s logged in", __func__, user);
 
     return 0;
 }
