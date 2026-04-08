@@ -149,8 +149,12 @@ ftpd_jes_submit(ftpd_session_t *sess)
         return 0;
     }
 
-    /* Open JES2 internal reader */
-    rc = jesiropn(&intrdr);
+    /* Open JES2 internal reader under user's security environment */
+    {
+        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+        rc = jesiropn(&intrdr);
+        if (sess->acee) racf_set_acee(oldacee);
+    }
     if (rc < 0) {
         ftpd_log(LOG_ERROR, "JES: jesiropn() failed rc=%d", rc);
         ftpd_data_close(sess);
