@@ -5,6 +5,7 @@ override C standard and use gnu99
 ## Project: FTPD — Standalone FTP Server for MVS 3.8j
 
 Concept & architecture: `doc/FTPD_CONCEPT.md`
+RAKF setup guide: `doc/FTPD_RAKF_SETUP.md`
 Phase 1 implementation plan: `doc/FTPD_PHASE1_PLAN.md`
 
 ### What This Is

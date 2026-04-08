@@ -729,14 +729,32 @@ Operations via UFSD client:
 
 If UFSD is not running, UFS commands return `550 UFS service not available`.
 
-### 4.5 Authentication
+### 4.5 Authentication and Access Control
 
-Authentication uses crent370's `racf/` module (which integrates with RAKF on MVS/CE):
+Authentication uses crent370's `racf/` module (which integrates with RAKF on MVS/CE).
+RAKF is required — there is no insecure bypass mode.
+
+**Login flow:**
 
 1. `USER userid` → save userid
-2. `PASS password` → verify via RAKF (SVC 244)
+2. `PASS password` → verify via RACINIT (SVC 244)
 3. Check FACILITY class resource `FTPAUTH` for authorization
-4. On success: set HLQ = userid, session ready
+4. On success: set HLQ = userid, create session ACEE, session ready
+
+**Dataset access control:**
+
+Before every dataset I/O operation, FTPD performs a RACHECK against
+the `DATASET` class using the session's ACEE.  The fopen/idcams calls
+run under the user's security environment (racf_set_acee), not the
+STC identity.
+
+**STC identity:**
+
+At startup, FTPD switches from the default STC identity to `FTPD/USER`
+via an inline RACINIT (PASSCHK=NO).  This requires the FTPD user
+to be defined in RAKF.
+
+See `doc/FTPD_RAKF_SETUP.md` for the complete RAKF configuration guide.
 
 ---
 
