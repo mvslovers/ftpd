@@ -8,9 +8,8 @@ compile_commands.json
 
 .env
 
-# Ignore .mbt/ contents but keep the committed dependency lock.
-.mbt/*
-!.mbt/deps.lock
+# Generated build state -- the committed lock lives at the root (mbt.lock).
+.mbt/
 contrib/
 dist/
 build/
