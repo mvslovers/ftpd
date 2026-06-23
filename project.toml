@@ -4,71 +4,26 @@ version = "1.0.0-dev"
 type = "application"
 
 [build]
-cflags = ["-std=gnu99"]
+cflags = ["-I", "include"]
 
-[mvs.build.datasets.source]
-suffix = "SOURCE"
-dsorg = "PO"
-recfm = "FB"
-lrecl = 80
-blksize = 19040
-space = ["TRK", 30, 10, 30]
-
-[mvs.build.datasets.punch]
-suffix = "OBJECT"
-dsorg = "PO"
-recfm = "FB"
-lrecl = 80
-blksize = 19040
-space = ["TRK", 30, 10, 30]
-
-[mvs.build.datasets.ncalib]
-suffix = "NCALIB"
-dsorg = "PO"
-recfm = "U"
-lrecl = 0
-blksize = 19069
-space = ["TRK", 30, 10, 30]
-
-[mvs.build.datasets.syslmod]
-suffix = "LOAD"
-dsorg = "PO"
-recfm = "U"
-lrecl = 0
-blksize = 19069
-space = ["TRK", 10, 5, 5]
-
-[dependencies]
-"mvslovers/crent370" = ">=1.0.8"
-"mvslovers/ufsd" = "=1.0.0-dev"
-
-[[link.module]]
+# ── Load module ──────────────────────────────────────────
+# FTPD — FTP server STC (threading runtime → crt1, APF-authorized AC(1)).
+[[module]]
 name = "FTPD"
+startup = "crt1"
 entry = "@@CRT0"
-options = ["SIZE=(4000K,40K)", "LIST", "MAP", "XREF", "RENT"]
-include = [
-  "@@CRT1",
-  "FTPD",
-  "FTPD#AUT",
-  "FTPD#CFG",
-  "FTPD#CMD",
-  "FTPD#CON",
-  "FTPD#DAT",
-  "FTPD#JES",
-  "FTPD#LOG",
-  "FTPD#MVS",
-  "FTPD#SES",
-  "FTPD#SIT",
-  "FTPD#UFS",
-  "FTPD#XLT",
-]
-setcode = "AC(1)"
+sources = ["src/ftpd*.c"]
+ac = 1                    # APF authorization (SETCODE AC(1));
+# ld370 supports --ac -- mbt wiring pending.
 
-[link.module.dep_includes]
-"mvslovers/ufsd" = "*"
+# ── Dependencies ─────────────────────────────────────────
+# Only ufsd remains a real dependency: libufs.h / libufs.a are ufsd-specific.
+# crent370 was dropped -- every crent370 header ftpd uses (clib*.h, racf.h,
+# mvssupa.h, haspjqe.h, socket.h, ...) and its runtime routines are now in
+# the cc370 sysroot (libc370), same as the ufsd v2 migration.
+[dependencies]
+"mvslovers/ufsd" = ">=1.0.0-dev"
 
+# ── Release ──────────────────────────────────────────────
 [release]
 version_files = ["VERSION"]
-
-[artifacts]
-loads = true
