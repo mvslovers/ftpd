@@ -8,9 +8,12 @@ compile_commands.json
 
 .env
 
-.mbt/
+# Ignore .mbt/ contents but keep the committed dependency lock.
+.mbt/*
+!.mbt/deps.lock
 contrib/
 dist/
+build/
 *.xmit
 
 .cache/
