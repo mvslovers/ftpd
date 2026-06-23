@@ -72,7 +72,7 @@ ftpd_data_pasv(ftpd_session_t *sess)
         addr.sin_addr.s_addr = 0;  /* bind to any address */
         addr.sin_port = htons(port);
 
-        if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0)
+        if (bind(sock, &addr, sizeof(addr)) == 0)
             break;
     }
 
@@ -148,7 +148,7 @@ ftpd_data_epsv(ftpd_session_t *sess)
         addr.sin_addr.s_addr = 0;  /* bind to any address */
         addr.sin_port = htons(port);
 
-        if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0)
+        if (bind(sock, &addr, sizeof(addr)) == 0)
             break;
     }
 
@@ -210,7 +210,7 @@ ftpd_data_open(ftpd_session_t *sess)
         }
 
         len = sizeof(addr);
-        sock = accept(sess->pasv_sock, (struct sockaddr *)&addr, &len);
+        sock = accept(sess->pasv_sock, &addr, &len);
         closesocket(sess->pasv_sock);
         sess->pasv_sock = -1;
 
@@ -239,7 +239,7 @@ ftpd_data_open(ftpd_session_t *sess)
         addr.sin_addr.s_addr = htonl(sess->data_addr);
         addr.sin_port = htons(sess->data_port);
 
-        if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        if (connect(sock, &addr, sizeof(addr)) < 0) {
             ftpd_log(LOG_ERROR, "%s: connect() failed, errno=%d", __func__,
                      errno);
             closesocket(sock);

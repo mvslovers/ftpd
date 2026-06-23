@@ -279,15 +279,14 @@ socket_thread(void *arg1, void *arg2)
         }
     }
 
-    if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+    if (bind(sock, &saddr, sizeof(saddr)) < 0) {
         int err = errno;
         ftpd_log_wto("FTPD051E bind() failed on port %d, errno=%d",
                      server->config.port, err);
         if (err == EADDRINUSE) {
             ftpd_log_wto("FTPD051I EADDRINUSE, retrying in 10s");
             __asm__("STIMER WAIT,BINTVL==F'1000'");
-            if (bind(sock, (struct sockaddr *)&saddr,
-                     sizeof(saddr)) < 0) {
+            if (bind(sock, &saddr, sizeof(saddr)) < 0) {
                 ftpd_log_wto("FTPD051E bind() retry failed, errno=%d",
                              errno);
                 closesocket(sock);
@@ -336,7 +335,7 @@ socket_thread(void *arg1, void *arg2)
 
         /* Try accept — non-blocking, returns <0 if no connection */
         len = sizeof(caddr);
-        rc = accept(sock, (struct sockaddr *)&caddr, &len);
+        rc = accept(sock, &caddr, &len);
         if (rc < 0)
             continue;   /* EWOULDBLOCK — no pending connection */
 
