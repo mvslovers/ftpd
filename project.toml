@@ -4,7 +4,9 @@ version = "1.0.0-dev"
 type = "application"
 
 [build]
-cflags = ["-I", "include"]
+# -DVERSION from the project version (v1's mbt injected it automatically;
+# v2 does not). Kept consistent across the ecosystem's projects.
+cflags = ["-I", "include", '-DVERSION=\"$(PROJECT_VERSION)\"']
 
 # ── Load module ──────────────────────────────────────────
 # FTPD — FTP server STC (threading runtime → crt1, APF-authorized AC(1)).
