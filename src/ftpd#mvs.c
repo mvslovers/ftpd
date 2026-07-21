@@ -160,11 +160,32 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
             return -1;
         memcpy(buf, src, len);
         buf[len] = '\0';
-    } else if (sess->in_pds && !strchr(arg, '.') && !strchr(arg, '(')) {
-        /* Inside a PDS: unquoted simple name = member reference */
-        len = snprintf(buf, bufsz, "%s(%s)", sess->pds_name, arg);
+    } else if (sess->in_pds && arg[0] != '\'' && !strchr(arg, '(')) {
+        /* Inside a PDS: an unquoted argument is a MEMBER reference.
+        ** A dot here is a filename extension, not a qualifier separator.
+        ** Derive an MVS member name from the client filename:
+        **   strip leading path, strip extension (from first '.'),
+        **   uppercase, truncate to 8 chars. */
+        char member[9];
+        const char *base = arg;
+        const char *slash;
+        int m = 0;
+
+        slash = strrchr(base, '/');
+        if (slash) base = slash + 1;
+
+        for (i = 0; base[i] && base[i] != '.' && m < 8; i++)
+            member[m++] = (char)toupper((unsigned char)base[i]);
+        member[m] = '\0';
+
+        if (m == 0)
+            return -1;   /* no usable member name, e.g. ".foo" */
+
+        len = snprintf(buf, bufsz, "%s(%s)", sess->pds_name, member);
         if (len >= bufsz)
             return -1;
+
+        return 0;        /* member already clean; skip uppercase/dot-strip */
     } else {
         /* Relative: prepend CWD prefix */
         len = snprintf(buf, bufsz, "%s%s", sess->mvs_cwd, arg);
@@ -1507,14 +1528,25 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             sess->alloc.secondary > 0 ? sess->alloc.secondary : 50);
 
         ftpd_log(LOG_INFO, "STOR: __dsalcf opts='%s'", opts);
-        rc = __dsalcf(ddname, "%s", opts);
+
+        /* Allocate under the logged-in user's security environment, not
+        ** the STC identity — the subsequent fopen()/OPEN runs under the
+        ** same ACEE. Running SVC 99 under FTPD would authorize against
+        ** the STC, then OPEN under the user ACEE would ABEND S130. */
+        {
+            ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+            rc = __dsalcf(ddname, "%s", opts);
+            if (rc == 0)
+                __dsfree(ddname);   /* release DD — fopen will re-allocate */
+            if (sess->acee) racf_set_acee(oldacee);   /* restore STC identity */
+        }
+
         if (rc != 0) {
             ftpd_log(LOG_ERROR, "STOR: __dsalcf failed rc=%d", rc);
             ftpd_session_reply(sess, FTP_550,
                 "Cannot allocate dataset %s", dsn);
             return 0;
         }
-        __dsfree(ddname);       /* release DD — fopen will re-allocate */
         allocated_new = 1;
     }
 
