@@ -121,6 +121,32 @@ check_dataset_access(ftpd_session_t *sess, const char *dsn, int attr)
 }
 
 /* --------------------------------------------------------------------
+** Helper: sanitize a client-supplied PDS member name into a valid MVS
+** member name:
+**   - strip any extension (everything from the first '.')
+**   - uppercase
+**   - truncate to 8 characters (FTPD_MAX_MBR_LEN)
+** Writes at most FTPD_MAX_MBR_LEN + 1 bytes to out.
+** Returns 0 on success, -1 if no usable name remains (e.g. ".foo").
+** ----------------------------------------------------------------- */
+static int
+sanitize_member(const char *in, char *out, int outsz)
+{
+    int m = 0;
+    int i;
+
+    if (outsz < 1)
+        return -1;
+
+    for (i = 0; in[i] && in[i] != '.' &&
+                m < FTPD_MAX_MBR_LEN && m < outsz - 1; i++)
+        out[m++] = (char)toupper((unsigned char)in[i]);
+    out[m] = '\0';
+
+    return (m > 0) ? 0 : -1;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: build a fully-qualified dataset name from CWD + argument.
 **
 ** Quoting rules (z/OS FTP compatible):
@@ -163,22 +189,19 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
     } else if (sess->in_pds && arg[0] != '\'' && !strchr(arg, '(')) {
         /* Inside a PDS: an unquoted argument is a MEMBER reference.
         ** A dot here is a filename extension, not a qualifier separator.
-        ** Derive an MVS member name from the client filename:
-        **   strip leading path, strip extension (from first '.'),
-        **   uppercase, truncate to 8 chars. */
-        char member[9];
+        ** Strip any leading path, then sanitize the filename into a
+        ** valid member (extension stripped, uppercased, max 8 chars).
+        ** Arguments that already contain '(' are an explicit member
+        ** form and fall through to the branch below, where split_member()
+        ** applies the same sanitization. */
+        char member[FTPD_MAX_MBR_LEN + 1];
         const char *base = arg;
         const char *slash;
-        int m = 0;
 
         slash = strrchr(base, '/');
         if (slash) base = slash + 1;
 
-        for (i = 0; base[i] && base[i] != '.' && m < 8; i++)
-            member[m++] = (char)toupper((unsigned char)base[i]);
-        member[m] = '\0';
-
-        if (m == 0)
+        if (sanitize_member(base, member, sizeof(member)) != 0)
             return -1;   /* no usable member name, e.g. ".foo" */
 
         len = snprintf(buf, bufsz, "%s(%s)", sess->pds_name, member);
@@ -1017,20 +1040,28 @@ split_member(char *dsn, char *member, int mbrsz)
 {
     char *lp = strchr(dsn, '(');
     char *rp;
-    int mlen;
+    char raw[FTPD_MAX_DSN_LEN + 1];
+    int rlen;
 
     member[0] = '\0';
     if (!lp)
         return;
 
+    /* Extract the raw text between the parentheses */
     rp = strchr(lp, ')');
-    mlen = (rp ? rp : lp + strlen(lp)) - (lp + 1);
-    if (mlen >= mbrsz)
-        mlen = mbrsz - 1;
-    memcpy(member, lp + 1, mlen);
-    member[mlen] = '\0';
+    rlen = (rp ? rp : lp + strlen(lp)) - (lp + 1);
+    if (rlen >= (int)sizeof(raw))
+        rlen = sizeof(raw) - 1;
+    memcpy(raw, lp + 1, rlen);
+    raw[rlen] = '\0';
 
-    /* Remove member from dsn */
+    /* Sanitize: strip extension, uppercase, max 8 chars. A client may
+    ** send 'DSN(name.ext)' (e.g. FileZilla) — without this the extension
+    ** and its dot would leak into the physical member name. */
+    if (sanitize_member(raw, member, mbrsz) != 0)
+        member[0] = '\0';
+
+    /* Remove member part from dsn */
     *lp = '\0';
 }
 
