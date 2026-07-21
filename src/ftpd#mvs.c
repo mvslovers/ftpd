@@ -833,6 +833,14 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         /* Uppercase member filter */
         char filter_buf[9];
         const char *filter = NULL;
+
+        /* Authorize READ against the logged-in user before opening the
+        ** PDS directory. __listpd() OPENs the PDS with BPAM; without this
+        ** the OPEN runs under the STC identity (FTPD), so a RAKF denial
+        ** escalates to ABEND S913. Mirrors the RETR/STOR access check. */
+        if (check_dataset_access(sess, prefix, RACF_ATTR_READ) != 0)
+            return 0;   /* 550 already sent — do NOT open the PDS */
+
         if (member_filter) {
             for (i = 0; i < 8 && member_filter[i]; i++)
                 filter_buf[i] = (char)toupper(
@@ -841,7 +849,13 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             filter = filter_buf;
         }
 
-        pds = __listpd(prefix, filter);
+        /* Open the PDS directory under the user's security environment,
+        ** so the RAKF authorization check evaluates against the user. */
+        {
+            ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+            pds = __listpd(prefix, filter);
+            if (sess->acee) racf_set_acee(oldacee);
+        }
         if (!pds || !pds[0]) {
             if (pds) __freepd(&pds);
             ftpd_session_reply(sess, FTP_550,
@@ -925,6 +939,12 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         has_wildcard = (has_filter &&
                         (strchr(arg, '*') || strchr(arg, '%')));
 
+        /* __listds() is a catalog/VTOC operation (LISTCAT-style): it reads
+        ** catalog entries for the prefix with no dataset OPEN, so unlike
+        ** the __listpd() OPEN above it should neither ABEND on a protected
+        ** prefix nor need a user-ACEE switch -- confirm on TK5. A prefix
+        ** such as "SYS1." spans many datasets and is not a single RACF
+        ** DATASET resource, so there is no per-dataset READ check here. */
         dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
 
         /* __listds() returns NULL both for "prefix not cataloged" and
