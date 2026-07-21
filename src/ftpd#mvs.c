@@ -121,6 +121,32 @@ check_dataset_access(ftpd_session_t *sess, const char *dsn, int attr)
 }
 
 /* --------------------------------------------------------------------
+** Helper: sanitize a client-supplied PDS member name into a valid MVS
+** member name:
+**   - strip any extension (everything from the first '.')
+**   - uppercase
+**   - truncate to 8 characters (FTPD_MAX_MBR_LEN)
+** Writes at most FTPD_MAX_MBR_LEN + 1 bytes to out.
+** Returns 0 on success, -1 if no usable name remains (e.g. ".foo").
+** ----------------------------------------------------------------- */
+static int
+sanitize_member(const char *in, char *out, int outsz)
+{
+    int m = 0;
+    int i;
+
+    if (outsz < 1)
+        return -1;
+
+    for (i = 0; in[i] && in[i] != '.' &&
+                m < FTPD_MAX_MBR_LEN && m < outsz - 1; i++)
+        out[m++] = (char)toupper((unsigned char)in[i]);
+    out[m] = '\0';
+
+    return (m > 0) ? 0 : -1;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: build a fully-qualified dataset name from CWD + argument.
 **
 ** Quoting rules (z/OS FTP compatible):
@@ -160,11 +186,29 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
             return -1;
         memcpy(buf, src, len);
         buf[len] = '\0';
-    } else if (sess->in_pds && !strchr(arg, '.') && !strchr(arg, '(')) {
-        /* Inside a PDS: unquoted simple name = member reference */
-        len = snprintf(buf, bufsz, "%s(%s)", sess->pds_name, arg);
+    } else if (sess->in_pds && arg[0] != '\'' && !strchr(arg, '(')) {
+        /* Inside a PDS: an unquoted argument is a MEMBER reference.
+        ** A dot here is a filename extension, not a qualifier separator.
+        ** Strip any leading path, then sanitize the filename into a
+        ** valid member (extension stripped, uppercased, max 8 chars).
+        ** Arguments that already contain '(' are an explicit member
+        ** form and fall through to the branch below, where split_member()
+        ** applies the same sanitization. */
+        char member[FTPD_MAX_MBR_LEN + 1];
+        const char *base = arg;
+        const char *slash;
+
+        slash = strrchr(base, '/');
+        if (slash) base = slash + 1;
+
+        if (sanitize_member(base, member, sizeof(member)) != 0)
+            return -1;   /* no usable member name, e.g. ".foo" */
+
+        len = snprintf(buf, bufsz, "%s(%s)", sess->pds_name, member);
         if (len >= bufsz)
             return -1;
+
+        return 0;        /* member already clean; skip uppercase/dot-strip */
     } else {
         /* Relative: prepend CWD prefix */
         len = snprintf(buf, bufsz, "%s%s", sess->mvs_cwd, arg);
@@ -789,6 +833,14 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         /* Uppercase member filter */
         char filter_buf[9];
         const char *filter = NULL;
+
+        /* Authorize READ against the logged-in user before opening the
+        ** PDS directory. __listpd() OPENs the PDS with BPAM; without this
+        ** the OPEN runs under the STC identity (FTPD), so a RAKF denial
+        ** escalates to ABEND S913. Mirrors the RETR/STOR access check. */
+        if (check_dataset_access(sess, prefix, RACF_ATTR_READ) != 0)
+            return 0;   /* 550 already sent — do NOT open the PDS */
+
         if (member_filter) {
             for (i = 0; i < 8 && member_filter[i]; i++)
                 filter_buf[i] = (char)toupper(
@@ -797,7 +849,13 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             filter = filter_buf;
         }
 
-        pds = __listpd(prefix, filter);
+        /* Open the PDS directory under the user's security environment,
+        ** so the RAKF authorization check evaluates against the user. */
+        {
+            ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+            pds = __listpd(prefix, filter);
+            if (sess->acee) racf_set_acee(oldacee);
+        }
         if (!pds || !pds[0]) {
             if (pds) __freepd(&pds);
             ftpd_session_reply(sess, FTP_550,
@@ -881,6 +939,12 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         has_wildcard = (has_filter &&
                         (strchr(arg, '*') || strchr(arg, '%')));
 
+        /* __listds() is a catalog/VTOC operation (LISTCAT-style): it reads
+        ** catalog entries for the prefix with no dataset OPEN, so unlike
+        ** the __listpd() OPEN above it should neither ABEND on a protected
+        ** prefix nor need a user-ACEE switch -- confirm on TK5. A prefix
+        ** such as "SYS1." spans many datasets and is not a single RACF
+        ** DATASET resource, so there is no per-dataset READ check here. */
         dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
 
         /* __listds() returns NULL both for "prefix not cataloged" and
@@ -996,20 +1060,28 @@ split_member(char *dsn, char *member, int mbrsz)
 {
     char *lp = strchr(dsn, '(');
     char *rp;
-    int mlen;
+    char raw[FTPD_MAX_DSN_LEN + 1];
+    int rlen;
 
     member[0] = '\0';
     if (!lp)
         return;
 
+    /* Extract the raw text between the parentheses */
     rp = strchr(lp, ')');
-    mlen = (rp ? rp : lp + strlen(lp)) - (lp + 1);
-    if (mlen >= mbrsz)
-        mlen = mbrsz - 1;
-    memcpy(member, lp + 1, mlen);
-    member[mlen] = '\0';
+    rlen = (rp ? rp : lp + strlen(lp)) - (lp + 1);
+    if (rlen >= (int)sizeof(raw))
+        rlen = sizeof(raw) - 1;
+    memcpy(raw, lp + 1, rlen);
+    raw[rlen] = '\0';
 
-    /* Remove member from dsn */
+    /* Sanitize: strip extension, uppercase, max 8 chars. A client may
+    ** send 'DSN(name.ext)' (e.g. FileZilla) — without this the extension
+    ** and its dot would leak into the physical member name. */
+    if (sanitize_member(raw, member, mbrsz) != 0)
+        member[0] = '\0';
+
+    /* Remove member part from dsn */
     *lp = '\0';
 }
 
@@ -1507,14 +1579,25 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             sess->alloc.secondary > 0 ? sess->alloc.secondary : 50);
 
         ftpd_log(LOG_INFO, "STOR: __dsalcf opts='%s'", opts);
-        rc = __dsalcf(ddname, "%s", opts);
+
+        /* Allocate under the logged-in user's security environment, not
+        ** the STC identity — the subsequent fopen()/OPEN runs under the
+        ** same ACEE. Running SVC 99 under FTPD would authorize against
+        ** the STC, then OPEN under the user ACEE would ABEND S130. */
+        {
+            ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
+            rc = __dsalcf(ddname, "%s", opts);
+            if (rc == 0)
+                __dsfree(ddname);   /* release DD — fopen will re-allocate */
+            if (sess->acee) racf_set_acee(oldacee);   /* restore STC identity */
+        }
+
         if (rc != 0) {
             ftpd_log(LOG_ERROR, "STOR: __dsalcf failed rc=%d", rc);
             ftpd_session_reply(sess, FTP_550,
                 "Cannot allocate dataset %s", dsn);
             return 0;
         }
-        __dsfree(ddname);       /* release DD — fopen will re-allocate */
         allocated_new = 1;
     }
 
