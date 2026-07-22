@@ -86,6 +86,12 @@ struct ftpd_session {
     struct libufs_file *cur_ufs_file; /* open UFSD file during a UFS
                                     ** RETR/STOR transfer; NULL else.
                                     ** ufs_fclose() releases it.        */
+#ifdef FTPD_DEBUG_ABEND
+    int             debug_abend_xfer; /* armed by SITE ABEND=XFER: the
+                                    ** next MVS RETR ABENDs mid-transfer
+                                    ** (cur_file set, data conn open) —
+                                    ** debug builds only.               */
+#endif
 
     /* Idle tracking (heap — immune to SVC stack corruption) */
     time_t          idle_start;     /* getline idle timer start       */

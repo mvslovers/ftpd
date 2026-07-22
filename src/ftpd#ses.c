@@ -273,7 +273,15 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     ** possibly at an ACEE that is about to be freed.  Restoring the STC
     ** identity re-establishes the AS's normal resting state and is fail-
     ** closed: FTPD/USER is least-privilege, so any concurrent session
-    ** transiently pulled onto it can only lose authority, never gain it. */
+    ** transiently pulled onto it can only lose authority, never gain it.
+    **
+    ** ORDER IS LOAD-BEARING: this set_acee(STC) MUST precede the
+    ** unlock(asxb) in step 2.  If the lock were released first, a worker
+    ** waiting in racf_auth() would acquire it and capture THIS session's
+    ** user ACEE (still in ASXBSENV) as its own oldacee, then restore that
+    ** ACEE on exit — leaving ASXBSENV dangling once this session ends and
+    ** racf_logout() frees it.  That is precisely the dangling-ACEE hazard
+    ** this reset exists to remove.  Do not reorder. */
     racf_set_acee(sess->server->stc_acee);
 
     /* 2. Release the ASXB ENQ if this task ABENDed inside racf_auth()'s

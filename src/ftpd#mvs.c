@@ -1191,6 +1191,19 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
     total = 0;
 
+#ifdef FTPD_DEBUG_ABEND
+    /* SITE ABEND=XFER injection (#63): ABEND here with cur_file set and the
+    ** data connection open, to exercise recovery's fclose(cur_file) +
+    ** clear-before-close idempotency.  One-shot: disarm before firing. */
+    if (sess->debug_abend_xfer) {
+        volatile int *trap = (volatile int *)0;
+        sess->debug_abend_xfer = 0;
+        ftpd_log_wto("FTPD072W DEBUG ABEND=XFER firing mid-RETR socket=%d",
+                     sess->ctrl_sock);
+        *trap = 0;                     /* force S0C4 */
+    }
+#endif
+
     ftpd_log(LOG_INFO, "RETR: dsn=%s type=%c lrecl=%d blksize=%d recfm=0x%02X",
              dsn, sess->type == XFER_TYPE_I ? 'I' :
                   sess->type == XFER_TYPE_A ? 'A' : 'E',
