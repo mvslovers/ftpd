@@ -7,6 +7,7 @@
 
 /* Forward declaration — full definition in libufs.h */
 struct libufs_ufs;
+struct libufs_file;
 
 /* --- Session structure --- */
 struct ftpd_session {
@@ -72,6 +73,19 @@ struct ftpd_session {
     /* Command buffer */
     char            cmd[FTPD_MAX_CMD_LEN]; /* current command line   */
     int             cmdlen;         /* command length                 */
+    int             dispatch_rc;    /* rc stashed by the try()-wrapped
+                                    ** command dispatch (try() itself
+                                    ** returns the ABEND code, not the
+                                    ** handler's rc)                   */
+
+    /* In-flight resources released by ABEND recovery */
+    FILE            *cur_file;      /* open dataset FILE* during a
+                                    ** RETR/STOR/APPE transfer; NULL
+                                    ** otherwise. fclose() releases the
+                                    ** DCB + fopen's dynalloc DD.       */
+    struct libufs_file *cur_ufs_file; /* open UFSD file during a UFS
+                                    ** RETR/STOR transfer; NULL else.
+                                    ** ufs_fclose() releases it.        */
 
     /* Idle tracking (heap — immune to SVC stack corruption) */
     time_t          idle_start;     /* getline idle timer start       */

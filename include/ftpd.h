@@ -22,6 +22,7 @@
 #include "clibcib.h"                /* console information blocks   */
 #include "socket.h"                 /* sockets via DYN75            */
 #include "racf.h"                   /* security environment         */
+#include "clibtry.h"                /* try(), tryrc() ESTAE recovery */
 
 #include "ftpd#cfg.h"               /* configuration                */
 #include "ftpd#log.h"               /* logging & trace              */
@@ -107,6 +108,12 @@ typedef unsigned char   UCHAR;
 #define FTPD_MAX_USER_LEN   8       /* max userid length             */
 #define FTPD_DATA_BUF_SIZE  4096    /* data transfer buffer size     */
 
+/* --- ABEND recovery --- */
+#define FTPD_MAX_RECOVER    3       /* consecutive per-command ABEND
+                                    ** recoveries before the session is
+                                    ** closed (guards against a wedged
+                                    ** session recovering forever)     */
+
 /* --- Allocation defaults for new datasets --- */
 typedef struct ftpd_alloc {
     char            recfm[4];       /* RECFM for new datasets        */
@@ -135,6 +142,9 @@ struct ftpd_server {
 #define FTPD_QUIESCE        0x02    /* shutdown in progress          */
 
     ftpd_config_t   config;         /* server configuration          */
+    ACEE            *stc_acee;      /* STC identity ACEE, captured at
+                                    ** init; recovery resets ASXBSENV
+                                    ** to this after an ABEND          */
     int             listen_sock;    /* listening socket fd            */
     CTHDMGR         *mgr;          /* thread manager                */
     CTHDTASK        *sock_task;    /* socket listener thread         */
@@ -143,6 +153,9 @@ struct ftpd_server {
     long            total_sessions; /* total sessions since start     */
     long            total_bytes_in; /* total bytes received           */
     long            total_bytes_out;/* total bytes sent               */
+    unsigned        total_recover;  /* ABEND recoveries since start
+                                    ** (STC-lifetime; observability for
+                                    ** documented residual leaks)      */
 };
 
 extern ftpd_server_t *ftpd_server;
