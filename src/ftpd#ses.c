@@ -280,7 +280,16 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     ** lock(asxb)/unlock(asxb) critical section.  MVS DEQs a task's ENQs
     ** at task termination, but recovery keeps the task alive, so an
     ** orphaned AS-wide ENQ would stall every session's racf_auth() until
-    ** this worker's next command.  unlock() is safe when not held. */
+    ** this worker's next command.
+    **
+    ** This is ownership-safe WITHOUT a tracking flag, and cannot break
+    ** racf_auth()'s cross-task serialization (the property #64 relies on):
+    ** unlock() is DEQ RET=HAVE (@@lkunlk.c -> @@enqdeq.c: pl.opt=HAVE,
+    ** SVC 48, returns pl.rc — never ABENDs), and MVS ENQ ownership is
+    ** per-TCB, so a DEQ from THIS task can only release an ENQ THIS task
+    ** owns.  Outside the window (the common case) we don't own it: DEQ
+    ** RET=HAVE returns RC=8 and releases nothing — it can never touch a
+    ** concurrent worker's lock. */
     {
         unsigned *psa  = (unsigned *)0;
         unsigned *ascb = (unsigned *)psa[0x224/4];  /* PSAAOLD  -> ASCB */
@@ -326,6 +335,13 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     if (sess->cur_ufs_file) {
         UFSFILE *uf = sess->cur_ufs_file;
         sess->cur_ufs_file = NULL;
+        /* KNOWN LIMITATION: ufs_fclose() is a cross-AS request to UFSD
+        ** with no timeout in the libufs API.  If UFSD is dead/hung this
+        ** can BLOCK — the inner try() catches ABENDs, not hangs — and
+        ** wedge the worker.  The 451 was already sent, so the client is
+        ** not left hanging.  This is not worse than normal operation
+        ** (ufsfree() at session teardown would block on a dead UFSD too);
+        ** bounding it needs a timeout that libufs does not yet expose. */
         ufs_fclose(&uf);
     }
 

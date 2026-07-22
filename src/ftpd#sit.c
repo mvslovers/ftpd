@@ -11,6 +11,9 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#sit.h"
+#ifdef FTPD_DEBUG_ABEND
+#include "cliblock.h"               /* lock() — debug ABEND injection  */
+#endif
 
 /* --------------------------------------------------------------------
 ** Helper: parse "KEY=VALUE" from token.
@@ -254,6 +257,30 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
             "SITE not necessary; you may proceed");
         return 0;
     }
+
+#ifdef FTPD_DEBUG_ABEND
+    /* Debug-only ABEND injection for per-command recovery testing (#63).
+    ** NOT compiled into production builds — enable with -DFTPD_DEBUG_ABEND.
+    ** Keyword must be upper-case:
+    **   SITE ABEND        -> ABEND (S0C4) OUTSIDE any lock window; recovery's
+    **                        unlock(asxb) must be a no-op and leave every
+    **                        concurrent session's racf_auth() undisturbed.
+    **   SITE ABEND=LOCK   -> acquire the ASXB ENQ, then ABEND holding it;
+    **                        recovery must DEQ the orphaned ENQ (a concurrent
+    **                        session parked in racf_auth() then proceeds).
+    ** Both must yield: client gets 451, worker stays up, next command works. */
+    if (strncmp(arg, "ABEND", 5) == 0) {
+        volatile int *trap = (volatile int *)0;
+        if (arg[5] == '=' && (arg[6] == 'L' || arg[6] == 'l')) {
+            unsigned *psa  = (unsigned *)0;
+            unsigned *ascb = (unsigned *)psa[0x224/4];
+            unsigned *asxb = (unsigned *)ascb[0x6C/4];
+            lock(asxb, 0);              /* hold the ASXB ENQ across the ABEND */
+        }
+        ftpd_log_wto("FTPD072W DEBUG ABEND injection: SITE %s", arg);
+        *trap = 0;                     /* force S0C4 */
+    }
+#endif
 
     warn[0] = '\0';
     n_tokens = 0;
