@@ -181,6 +181,14 @@ initialize(ftpd_server_t *server, int argc, char **argv)
         }
     }
 
+    /* Capture the STC identity ACEE now, before any worker subtask is
+    ** attached.  racf_set_acee() stores into the address-space-wide
+    ** ASXBSENV, so this is the AS's normal resting identity; ABEND
+    ** recovery resets ASXBSENV to it so a worker never continues under
+    ** a user (or freed) ACEE after an unexpected ABEND.  May be NULL if
+    ** RACINIT above failed — that is still the correct value to restore. */
+    server->stc_acee = racf_get_acee();
+
     /* Initialize trace ring buffer */
     ftpd_trace_init(512);
 

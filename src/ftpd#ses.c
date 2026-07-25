@@ -7,7 +7,10 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#cmd.h"
+#include "ftpd#dat.h"
 #include "ftpd#ufs.h"
+#include "libufs.h"                 /* UFSFILE, ufs_fclose()          */
+#include "cliblock.h"               /* unlock() — release orphaned ENQ */
 
 /* --------------------------------------------------------------------
 ** Allocate and initialize a new session
@@ -225,6 +228,137 @@ ftpd_session_getline(ftpd_session_t *sess)
 }
 
 /* --------------------------------------------------------------------
+** try()-wrapped command dispatch.
+**
+** try() returns the ABEND code (0 on clean completion) and discards the
+** wrapped function's own return value, so ftpd_cmd_dispatch()'s rc — which
+** signals the command loop to exit (QUIT, auth failure, fatal I/O) — is
+** stashed in the session and read by the caller after try() returns.
+** ----------------------------------------------------------------- */
+static int
+ftpd_run_command(ftpd_session_t *sess, const char *cmd, const char *arg)
+{
+    sess->dispatch_rc = ftpd_cmd_dispatch(sess, cmd, arg);
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** Per-command ABEND recovery.
+**
+** Runs after try() catches an ABEND in ftpd_run_command().  crent370's
+** try() is SDWA-retry that unwinds the stack back to the try() frame and
+** resumes in normal task mode, so this handler runs on a valid stack and
+** may use ordinary services (racf_set_acee, fclose, send, WTO).  The
+** session struct is heap-allocated and survives; only stack frames below
+** try() are gone.
+**
+** This function is itself run under try() by the caller, so a re-ABEND in
+** a cleanup step is contained.  Ordering is therefore deliberate: restore
+** identity and release the ASXB ENQ first (so they hold even on a re-
+** ABEND); WTO + tell the client next; and only then perform the one step
+** that can plausibly re-ABEND (fclose on a possibly-corrupt DCB), so a
+** cleanup failure can never leave the client hanging.
+**
+** 'verb' is the parsed FTP command word only (no arguments) — never the
+** raw command line, which for PASS would contain the password.
+** ----------------------------------------------------------------- */
+static int
+ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
+{
+    FILE *fp;
+
+    /* 1. Reset the address-space-wide ASXBSENV to the STC identity.  If
+    ** the ABEND struck while switched to the user's ACEE (inside a
+    ** RETR/STOR/LIST OPEN), the shared field still points at the user —
+    ** possibly at an ACEE that is about to be freed.  Restoring the STC
+    ** identity re-establishes the AS's normal resting state and is fail-
+    ** closed: FTPD/USER is least-privilege, so any concurrent session
+    ** transiently pulled onto it can only lose authority, never gain it.
+    **
+    ** ORDER IS LOAD-BEARING: this set_acee(STC) MUST precede the
+    ** unlock(asxb) in step 2.  If the lock were released first, a worker
+    ** waiting in racf_auth() would acquire it and capture THIS session's
+    ** user ACEE (still in ASXBSENV) as its own oldacee, then restore that
+    ** ACEE on exit — leaving ASXBSENV dangling once this session ends and
+    ** racf_logout() frees it.  That is precisely the dangling-ACEE hazard
+    ** this reset exists to remove.  Do not reorder. */
+    racf_set_acee(sess->server->stc_acee);
+
+    /* 2. Release the ASXB ENQ if this task ABENDed inside racf_auth()'s
+    ** lock(asxb)/unlock(asxb) critical section.  MVS DEQs a task's ENQs
+    ** at task termination, but recovery keeps the task alive, so an
+    ** orphaned AS-wide ENQ would stall every session's racf_auth() until
+    ** this worker's next command.
+    **
+    ** This is ownership-safe WITHOUT a tracking flag, and cannot break
+    ** racf_auth()'s cross-task serialization (the property #64 relies on):
+    ** unlock() is DEQ RET=HAVE (@@lkunlk.c -> @@enqdeq.c: pl.opt=HAVE,
+    ** SVC 48, returns pl.rc — never ABENDs), and MVS ENQ ownership is
+    ** per-TCB, so a DEQ from THIS task can only release an ENQ THIS task
+    ** owns.  Outside the window (the common case) we don't own it: DEQ
+    ** RET=HAVE returns RC=8 and releases nothing — it can never touch a
+    ** concurrent worker's lock. */
+    {
+        unsigned *psa  = (unsigned *)0;
+        unsigned *ascb = (unsigned *)psa[0x224/4];  /* PSAAOLD  -> ASCB */
+        unsigned *asxb = (unsigned *)ascb[0x6C/4];  /* ASCBASXB -> ASXB */
+        unlock(asxb, 0);
+    }
+
+    /* 3. Count + WTO now, before the risky cleanup, so the diagnostic
+    ** survives even a cleanup re-ABEND.  total_recover accumulates over
+    ** the STC lifetime (per-session growth is bounded by FTPD_MAX_RECOVER)
+    ** so leaked-resource accumulation from the documented residual windows
+    ** stays observable in the operator log. */
+    sess->server->total_recover++;
+    if (abcode == 0)
+        ftpd_log_wto("FTPD070E ABEND recovery (ESTAE create failed) "
+                     "cmd=%s socket=%d total=%u",
+                     verb, sess->ctrl_sock, sess->server->total_recover);
+    else if (abcode > 0xFFF)
+        ftpd_log_wto("FTPD070E ABEND S%03X recovered cmd=%s socket=%d "
+                     "total=%u", (abcode >> 12) & 0xFFF, verb,
+                     sess->ctrl_sock, sess->server->total_recover);
+    else
+        ftpd_log_wto("FTPD070E ABEND U%04u recovered cmd=%s socket=%d "
+                     "total=%u", abcode, verb, sess->ctrl_sock,
+                     sess->server->total_recover);
+
+    /* 4. Tell the client before touching in-flight resources, so a
+    ** re-ABEND in cleanup cannot leave it hanging until timeout. */
+    ftpd_session_reply(sess, FTP_451,
+        "Requested action aborted: local error in processing.");
+
+    /* 5. Release the in-flight transfer handle.  Clear the tracking field
+    ** BEFORE closing so a re-ABEND in the close (contained by the caller's
+    ** try()) can never cause a double close on a subsequent recovery.  At
+    ** most one of these is set (a session is in MVS or UFS mode, one
+    ** transfer at a time).  MVS fclose releases the DCB + fopen's SVC 99
+    ** DD; UFS ufs_fclose releases the cross-AS UFSD file. */
+    fp = sess->cur_file;
+    sess->cur_file = NULL;
+    if (fp)
+        fclose(fp);
+
+    if (sess->cur_ufs_file) {
+        UFSFILE *uf = sess->cur_ufs_file;
+        sess->cur_ufs_file = NULL;
+        /* KNOWN LIMITATION: ufs_fclose() is a cross-AS request to UFSD
+        ** with no timeout in the libufs API.  If UFSD is dead/hung this
+        ** can BLOCK — the inner try() catches ABENDs, not hangs — and
+        ** wedge the worker.  The 451 was already sent, so the client is
+        ** not left hanging.  This is not worse than normal operation
+        ** (ufsfree() at session teardown would block on a dead UFSD too);
+        ** bounding it needs a timeout that libufs does not yet expose. */
+        ufs_fclose(&uf);
+    }
+
+    ftpd_data_close(sess);
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** Main session loop -- thdmgr worker thread entry point.
 **
 ** This function is called by cthread_worker_wait() with the session
@@ -237,6 +371,8 @@ ftpd_session_run(void *udata, CTHDWORK *work)
     ftpd_session_t *sess = NULL;
     char *data = NULL;
     int rc;
+    int try_rc;
+    int recover_count;
     char cmd[8];
     char *arg;
     char *p;
@@ -269,6 +405,10 @@ ftpd_session_run(void *udata, CTHDWORK *work)
         ftpd_session_reply(sess, FTP_220, "%s", server->config.banner);
         sess->state = SESS_AUTH_USER;
 
+        /* Consecutive per-command ABEND recoveries; reset on any clean
+        ** command so the guard only trips on a wedged session. */
+        recover_count = 0;
+
         /* Command loop */
         while (sess->state != SESS_CLOSING) {
             if (work->state == CTHDWORK_STATE_SHUTDOWN)
@@ -299,9 +439,37 @@ ftpd_session_run(void *udata, CTHDWORK *work)
                 p++;
             arg = p;
 
-            /* Dispatch */
-            rc = ftpd_cmd_dispatch(sess, cmd, arg);
-            if (rc < 0)
+            /* Dispatch under ESTAE recovery.  try() returns the ABEND
+            ** code (0 = clean); the handler's real rc is stashed in
+            ** sess->dispatch_rc.  A negative try_rc means the ESTAE could
+            ** not be created (the command did not run); treat it like a
+            ** recovery so the client is answered and the guard advances. */
+            sess->dispatch_rc = 0;
+            try_rc = try(ftpd_run_command, sess, cmd, arg);
+
+            if (try_rc != 0) {
+                unsigned abcode = (try_rc > 0) ? (unsigned)try_rc : 0;
+
+                recover_count++;
+
+                /* Contain a re-ABEND during recovery itself. */
+                try(ftpd_session_recover, sess, abcode, cmd);
+
+                /* A session that ABENDs every command is wedged (e.g.
+                ** corrupt state); stop recovering and close it cleanly.
+                ** The worker survives and serves the next connection. */
+                if (recover_count >= FTPD_MAX_RECOVER) {
+                    ftpd_log_wto("FTPD071E session socket=%d closed after "
+                                 "%d consecutive ABENDs", sess->ctrl_sock,
+                                 recover_count);
+                    break;
+                }
+                continue;
+            }
+
+            recover_count = 0;
+
+            if (sess->dispatch_rc < 0)
                 break;
         }
 

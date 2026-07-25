@@ -1162,6 +1162,10 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Track the open handle so ABEND recovery can release it (DCB +
+    ** fopen's dynalloc DD) if the transfer below ABENDs. */
+    sess->cur_file = fp;
+
     /* Read LRECL/RECFM from file handle — crent370 populates from DCB.
     ** For RECFM=U, lrecl is 0; use blksize instead (mvsmf pattern). */
     is_fixed = (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_F;
@@ -1178,6 +1182,7 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         recfm_label(fp->recfm), lrecl);
 
     if (ftpd_data_open(sess) != 0) {
+        sess->cur_file = NULL;
         fclose(fp);
         ftpd_session_reply(sess, FTP_425,
                            "Cannot open data connection");
@@ -1185,6 +1190,19 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     }
 
     total = 0;
+
+#ifdef FTPD_DEBUG_ABEND
+    /* SITE ABEND=XFER injection (#63): ABEND here with cur_file set and the
+    ** data connection open, to exercise recovery's fclose(cur_file) +
+    ** clear-before-close idempotency.  One-shot: disarm before firing. */
+    if (sess->debug_abend_xfer) {
+        volatile int *trap = (volatile int *)0;
+        sess->debug_abend_xfer = 0;
+        ftpd_log_wto("FTPD072W DEBUG ABEND=XFER firing mid-RETR socket=%d",
+                     sess->ctrl_sock);
+        *trap = 0;                     /* force S0C4 */
+    }
+#endif
 
     ftpd_log(LOG_INFO, "RETR: dsn=%s type=%c lrecl=%d blksize=%d recfm=0x%02X",
              dsn, sess->type == XFER_TYPE_I ? 'I' :
@@ -1246,6 +1264,7 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     }
 
     ftpd_log(LOG_INFO, "RETR: closing %s", fname);
+    sess->cur_file = NULL;
     fclose(fp);
     ftpd_data_close(sess);
 
@@ -1583,7 +1602,16 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         /* Allocate under the logged-in user's security environment, not
         ** the STC identity — the subsequent fopen()/OPEN runs under the
         ** same ACEE. Running SVC 99 under FTPD would authorize against
-        ** the STC, then OPEN under the user ACEE would ABEND S130. */
+        ** the STC, then OPEN under the user ACEE would ABEND S130.
+        **
+        ** NOTE (ABEND-recovery residual): this __dsalcf/__dsfree pair
+        ** completes before cur_file is set, so an ABEND in this narrow
+        ** window is NOT caught by recovery's fclose(cur_file).  It would
+        ** leak the DD and, because DISP=(NEW,CATLG,DELETE) catalogs on
+        ** normal disposition, leave an empty catalogued dataset behind.
+        ** The window is a few instructions (two SVC 99 calls) and is not
+        ** instrumented; total_recover in the operator log makes any such
+        ** accumulation observable. */
         {
             ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
             rc = __dsalcf(ddname, "%s", opts);
@@ -1622,10 +1650,15 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Track the open handle so ABEND recovery can release it (DCB +
+    ** fopen's dynalloc DD) if the transfer below ABENDs. */
+    sess->cur_file = fp;
+
     ftpd_session_reply(sess, FTP_125, "Storing data set %s",
                        member[0] ? arg : dsn);
 
     if (ftpd_data_open(sess) != 0) {
+        sess->cur_file = NULL;
         fclose(fp);
         ftpd_session_reply(sess, FTP_425,
                            "Cannot open data connection");
@@ -1656,6 +1689,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         int recnum = 0;
 
         if (eff_lrecl == 0) {
+            sess->cur_file = NULL;
             fclose(fp);
             ftpd_data_close(sess);
             ftpd_session_reply(sess, FTP_550,
@@ -1665,6 +1699,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 
         record_buffer = calloc(1, eff_lrecl);
         if (!record_buffer) {
+            sess->cur_file = NULL;
             fclose(fp);
             ftpd_data_close(sess);
             ftpd_session_reply(sess, FTP_550,
@@ -1804,6 +1839,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     }
 
     ftpd_log(LOG_INFO, "STOR: closing %s", fname);
+    sess->cur_file = NULL;
     fclose(fp);
     ftpd_data_close(sess);
 

@@ -11,6 +11,9 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#sit.h"
+#ifdef FTPD_DEBUG_ABEND
+#include "cliblock.h"               /* lock() — debug ABEND injection  */
+#endif
 
 /* --------------------------------------------------------------------
 ** Helper: parse "KEY=VALUE" from token.
@@ -254,6 +257,52 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
             "SITE not necessary; you may proceed");
         return 0;
     }
+
+#ifdef FTPD_DEBUG_ABEND
+    /* Debug-only ABEND injection for per-command recovery testing (#63).
+    ** NOT compiled into production builds — enable with -DFTPD_DEBUG_ABEND.
+    ** Requires an authenticated session (SITE is already post-auth; the
+    ** explicit check keeps this from ever being a pre-auth DoS).  Keyword
+    ** must be upper-case:
+    **   SITE ABEND        -> ABEND (S0C4) OUTSIDE any lock window; recovery's
+    **                        unlock(asxb) must be a no-op and leave every
+    **                        concurrent session's racf_auth() undisturbed.
+    **   SITE ABEND=LOCK   -> acquire the ASXB ENQ, then ABEND holding it;
+    **                        recovery must DEQ the orphaned ENQ (a concurrent
+    **                        session parked in racf_auth() then proceeds).
+    **   SITE ABEND=XFER   -> arm the next MVS RETR to ABEND mid-transfer
+    **                        (cur_file set + data connection open); exercises
+    **                        recovery's fclose(cur_file) + clear-before-close.
+    ** All must yield: client gets 451, worker stays up, next command works.
+    ** NB: S0C4 is a clean program check at a defined instruction; the messier
+    ** realistic cases (S013/S001/S878) are not reproduced here — this proves
+    ** the recovery MECHANISM, not the hardest DCB/buffer states. */
+    if (sess->authenticated && strncmp(arg, "ABEND", 5) == 0) {
+        volatile int *trap = (volatile int *)0;
+
+        /* ABEND=XFER: arm, do not ABEND now. */
+        if (arg[5] == '=' && (arg[6] == 'X' || arg[6] == 'x')) {
+            sess->debug_abend_xfer = 1;
+            ftpd_log_wto("FTPD072W DEBUG ABEND=XFER armed socket=%d",
+                         sess->ctrl_sock);
+            ftpd_session_reply(sess, FTP_200,
+                "DEBUG: next RETR will ABEND mid-transfer");
+            return 0;
+        }
+
+        /* ABEND=LOCK: hold the ASXB ENQ across the ABEND. */
+        if (arg[5] == '=' && (arg[6] == 'L' || arg[6] == 'l')) {
+            unsigned *psa  = (unsigned *)0;
+            unsigned *ascb = (unsigned *)psa[0x224/4];
+            unsigned *asxb = (unsigned *)ascb[0x6C/4];
+            lock(asxb, 0);
+        }
+
+        /* ABEND (bare) or ABEND=LOCK: fire now. */
+        ftpd_log_wto("FTPD072W DEBUG ABEND injection: SITE %s", arg);
+        *trap = 0;                     /* force S0C4 */
+    }
+#endif
 
     warn[0] = '\0';
     n_tokens = 0;

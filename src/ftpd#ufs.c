@@ -443,11 +443,15 @@ ftpd_ufs_retr(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Track for ABEND recovery (releases the cross-AS UFSD file). */
+    sess->cur_ufs_file = fp;
+
     // Open data connection
     ftpd_session_reply(sess, FTP_150,
                        "Opening data connection for %s", path);
     if (ftpd_data_open(sess) != 0) {
         ftpd_session_reply(sess, FTP_425, "Cannot open data connection");
+        sess->cur_ufs_file = NULL;
         ufs_fclose(&fp);
         return 0;
     }
@@ -462,6 +466,7 @@ ftpd_ufs_retr(ftpd_session_t *sess, const char *arg)
             break;
     }
 
+    sess->cur_ufs_file = NULL;
     ufs_fclose(&fp);
     ftpd_data_close(sess);
     ftpd_session_reply(sess, FTP_226, "Transfer complete");
@@ -504,11 +509,15 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Track for ABEND recovery (releases the cross-AS UFSD file). */
+    sess->cur_ufs_file = fp;
+
     // Open data connection
     ftpd_session_reply(sess, FTP_150,
                        "Opening data connection for %s", path);
     if (ftpd_data_open(sess) != 0) {
         ftpd_session_reply(sess, FTP_425, "Cannot open data connection");
+        sess->cur_ufs_file = NULL;
         ufs_fclose(&fp);
         return 0;
     }
@@ -522,6 +531,7 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
         ufs_fwrite(buf, 1, (UINT32)n, fp);
     }
 
+    sess->cur_ufs_file = NULL;
     ufs_fclose(&fp);
     ftpd_data_close(sess);
     ftpd_session_reply(sess, FTP_226, "Transfer complete");

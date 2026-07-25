@@ -165,6 +165,29 @@ under the default identity with a warning:
 FTPD004W RACINIT ENVIR=CREATE failed RC=nn
 ```
 
+### 5.1 SECURITY INVARIANT — `FTPD/USER` must be least-privilege
+
+> **This is a security invariant, not a recommendation.**
+>
+> `FTPD/USER` **must not** be granted broad dataset authority (no
+> `OPERATIONS`-equivalent access, no wide `ID(FTPD) ACCESS(ALTER)`
+> profiles). Its only required authority is what the STC itself needs
+> to run — not access to user data. Per-user data access is authorized
+> against the **logged-in user's** identity, never `FTPD/USER`.
+>
+> **Why it is an invariant:** the per-command ABEND recovery handler
+> resets the address-space-wide security environment (ASXBSENV) to the
+> `FTPD/USER` ACEE after an unexpected ABEND. Because sessions run as
+> concurrent subtasks sharing that one field, a concurrent session can
+> be transiently pulled onto `FTPD/USER` during recovery. This is
+> deliberately **fail-closed** *only while `FTPD/USER` is minimally
+> privileged*: a session pulled onto it can lose authority, never gain
+> it. If `FTPD/USER` is given broad dataset authority, that same
+> transient switch becomes **fail-open** — a concurrent session's
+> dataset OPEN could momentarily authorize with elevated access.
+>
+> Keep `FTPD/USER` scoped to the STC's own needs.
+
 ---
 
 ## 6. Reuse for Other STCs
