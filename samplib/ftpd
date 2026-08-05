@@ -23,4 +23,13 @@
 //STDOUT   DD  SYSOUT=*
 //STDERR   DD  SYSOUT=*
 //FTPDPRM  DD  DSN=&D(&M),DISP=SHR,FREE=CLOSE
-//HASPCKPT DD  DISP=SHR,DSN=SYS1.HASPCKPT
+//*
+//* JES mode (SITE FILETYPE=JES) needs BOTH the checkpoint and the
+//* spool dataset: jesopen() opens DD:HASPCKPT and DD:HASPACE1.
+//* Without HASPACE1 every JES command answers 451 and the STC log
+//* shows IEC130I HASPACE1 DD STATEMENT MISSING.
+//* UNIT and VOL are site specific -- use the volumes your JES2
+//* checkpoint and spool datasets actually live on.
+//*
+//HASPCKPT DD  DISP=SHR,DSN=SYS1.HASPCKPT,UNIT=3350,VOL=SER=MVS000
+//HASPACE1 DD  DISP=SHR,DSN=SYS1.HASPACE,UNIT=3350,VOL=SER=SPOOL1
