@@ -785,9 +785,8 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
             rc = jesprint(jes, job, dd->dsid, spool_line_callback,
                           sess, &st);
 
-            ftpd_log(LOG_DEBUG,
-                     "JES RETR: dsid=%d rc=%d reason=%d blocks=%u lines=%u",
-                     dd->dsid, rc, st.reason, st.blocks, st.lines);
+            ftpd_trace("RETR dsid=%d rc=%d reason=%d blocks=%u lines=%u",
+                       dd->dsid, rc, st.reason, st.blocks, st.lines);
 
             lines += st.lines;
 
