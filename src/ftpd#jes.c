@@ -19,7 +19,6 @@
 #include "ftpd#jes.h"
 #include "ftpd#xlt.h"
 #include "clibjes2.h"
-#include "clibgrt.h"
 #include "haspjqe.h"
 
 /* ASCII constants (wire format before translation) */
@@ -586,14 +585,17 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
 
 /* --------------------------------------------------------------------
 ** jesprint() callback: send one spool line to the FTP data connection.
-** Session pointer is passed via grtapp1 (same pattern as mvsMF).
+** The session arrives in jesprint()'s arg parameter (libc370 #21/#22);
+** the former detour through grtapp1 is no longer needed.
 ** Lines are in EBCDIC — translate to ASCII for TYPE A.
+**
+** A failed send returns -1, which stops the walk (JESPR_STOPPED) instead
+** of reading the rest of the spool data set into a dead socket.
 ** ----------------------------------------------------------------- */
 static int
-spool_line_callback(const char *line, unsigned linelen)
+spool_line_callback(const char *line, unsigned linelen, void *arg)
 {
-    CLIBGRT *grt = __grtget();
-    ftpd_session_t *sess = (ftpd_session_t *)grt->grtapp1;
+    ftpd_session_t *sess = (ftpd_session_t *)arg;
     char buf[256];
     int len;
 
@@ -613,7 +615,9 @@ spool_line_callback(const char *line, unsigned linelen)
     buf[len]     = 0x0D;   /* ASCII CR */
     buf[len + 1] = 0x0A;   /* ASCII LF */
 
-    ftpd_data_send(sess, buf, len + 2);
+    if (ftpd_data_send(sess, buf, len + 2) < 0)
+        return -1;         /* jesprint() stops with JESPR_STOPPED */
+
     return 0;
 }
 
@@ -651,6 +655,8 @@ find_job(const char *jobid_arg, JESJOB ***out_joblist)
 ** RETR JOBnnnnn.n → specific spool file (1-based index)
 **
 ** Uses jesprint() with callback to send lines on data connection.
+** jesprint() reports why its block walk stopped (JESPRST), which is what
+** tells an empty spool file apart from one JES2 has already purged.
 ** ----------------------------------------------------------------- */
 int
 ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
@@ -660,8 +666,11 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
     JESJOB **joblist = NULL;
     JESJOB *job;
     JES *jes = NULL;
-    CLIBGRT *grt;
-    void *saved_app1;
+    JESPRST st;
+    unsigned lines = 0; /* lines handed to the data connection           */
+    int stale = 0;      /* spool files the checkpoint lists but JES2 purged */
+    int io_err = 0;     /* spool read failed / walk truncated            */
+    int aborted = 0;    /* our callback stopped: data connection is gone */
     int i;
     int dd_index;
     int rc;
@@ -743,15 +752,9 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    /* Store session in grtapp1 for the jesprint callback */
-    grt = __grtget();
-    saved_app1 = grt->grtapp1;
-    grt->grtapp1 = sess;
-
     /* Open JES for spool reading */
     jes = jesopen();
     if (!jes) {
-        grt->grtapp1 = saved_app1;
         ftpd_data_close(sess);
         jesjobfr(&joblist);
         ftpd_session_reply(sess, FTP_451,
@@ -779,12 +782,51 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
             if (!dd->mttr)
                 continue;
 
-            rc = jesprint(jes, job, dd->dsid, spool_line_callback);
-            if (rc < 0) {
+            rc = jesprint(jes, job, dd->dsid, spool_line_callback,
+                          sess, &st);
+
+            ftpd_trace("RETR dsid=%d rc=%d reason=%d blocks=%u lines=%u",
+                       dd->dsid, rc, st.reason, st.blocks, st.lines);
+
+            lines += st.lines;
+
+            if (rc > 0) {
+                /* 503 = JES unusable, 404 = dsid not in this job */
+                io_err = 1;
                 ftpd_log(LOG_ERROR,
-                         "JES RETR: jesprint failed rc=%d dsid=%d",
-                         rc, dd->dsid);
+                         "JES RETR: jesprint rc=%d dsid=%d", rc, dd->dsid);
+            } else if (st.reason == JESPR_FOREIGN ||
+                       st.reason == JESPR_DSID) {
+                /* The very first block belongs to somebody else: nothing of
+                ** this data set was read.  JES2 printed and purged it while
+                ** the checkpoint still advertises it, and its tracks have
+                ** been reallocated.  An empty transfer would claim the data
+                ** set is empty, which is not the same thing. */
+                stale++;
+                ftpd_log(LOG_WARN,
+                         "JES RETR: dsid=%d no longer on spool (reason=%d)",
+                         dd->dsid, st.reason);
+            } else if (st.reason == JESPR_STOPPED) {
+                aborted = 1;
+                ftpd_log(LOG_ERROR,
+                         "JES RETR: data connection lost, dsid=%d prtrc=%d",
+                         dd->dsid, st.prtrc);
+            } else if (st.reason != JESPR_END &&
+                       st.reason != JESPR_EMPTY &&
+                       st.reason != JESPR_OPENEND) {
+                /* IOERR, LOOP, CAP, NOBUF, NOMEM: what was sent is
+                ** incomplete.  JESPR_OPENEND is NOT one of these -- it is
+                ** the normal end of a data set of a still running job,
+                ** whose last block chains to a track that is allocated but
+                ** not yet written and therefore carries a foreign key. */
+                io_err = 1;
+                ftpd_log(LOG_ERROR,
+                         "JES RETR: spool read failed, dsid=%d reason=%d "
+                         "mttr=%u", dd->dsid, st.reason, st.mttr);
             }
+
+            if (aborted)
+                break;
 
             /* z/OS separator: space-prefixed, exact string */
             if (dsid_req < 0) {
@@ -794,12 +836,36 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
         }
     }
 
-    /* Restore grtapp1 */
-    grt->grtapp1 = saved_app1;
-
     jesclose(&jes);
     ftpd_data_close(sess);
     jesjobfr(&joblist);
+
+    if (aborted) {
+        ftpd_session_reply(sess, FTP_426,
+                           "Data connection closed, transfer aborted.");
+        return 0;
+    }
+
+    if (io_err) {
+        ftpd_session_reply(sess, FTP_451,
+                           "Error reading spool data set for %s.",
+                           jobid_arg);
+        return 0;
+    }
+
+    if (lines == 0 && stale > 0) {
+        /* Nothing was read and the checkpoint entry is stale */
+        ftpd_session_reply(sess, FTP_550,
+                           "Spool data set for %s no longer available.",
+                           jobid_arg);
+        return 0;
+    }
+
+    if (stale > 0) {
+        ftpd_log(LOG_WARN,
+                 "JES RETR: %s, %d spool file(s) no longer on spool",
+                 jobid_arg, stale);
+    }
 
     ftpd_session_reply(sess, FTP_250,
                        "Transfer completed successfully.");
