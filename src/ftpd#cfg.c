@@ -33,6 +33,7 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
 
     /* Security */
     memset(cfg->authuser, 0, sizeof(cfg->authuser));
+    cfg->sslproxy = 0;              /* off: PBSZ/PROT stay unimplemented */
 
     /* JES */
     cfg->jes_level = 2;
@@ -178,6 +179,20 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
     else if (strcmp(key, "AUTHUSER") == 0) {
         strncpy(cfg->authuser, value, sizeof(cfg->authuser) - 1);
     }
+    else if (strcmp(key, "SSLPROXY") == 0) {
+        /* YES makes FTPD answer PBSZ/PROT with 200 without encrypting
+        ** anything -- correct only when a TLS terminating proxy is in
+        ** front of it.  Anything but YES leaves the option off. */
+        if (strcmp(value, "YES") == 0 || strcmp(value, "yes") == 0) {
+            cfg->sslproxy = 1;
+        } else if (strcmp(value, "NO") == 0 || strcmp(value, "no") == 0) {
+            cfg->sslproxy = 0;
+        } else {
+            ftpd_log(LOG_WARN, "%s: SSLPROXY must be YES or NO, "
+                     "got %s, staying off", __func__, value);
+            cfg->sslproxy = 0;
+        }
+    }
     else if (strcmp(key, "JESINTERFACELEVEL") == 0) {
         cfg->jes_level = atoi(value);
         if (cfg->jes_level < 1 || cfg->jes_level > 2)
@@ -294,6 +309,8 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
     ftpd_log_wto("FTPD043I   MAXSESSIONS=%d IDLETIMEOUT=%d",
                  cfg->max_sessions, cfg->idle_timeout);
     ftpd_log_wto("FTPD044I   BANNER=%s", cfg->banner);
+    ftpd_log_wto("FTPD049I   SSLPROXY=%s",
+                 cfg->sslproxy ? "YES" : "NO");
     ftpd_log_wto("FTPD045I   DEFRECFM=%s DEFLRECL=%d DEFBLKSIZE=%d",
                  cfg->defaults.recfm, cfg->defaults.lrecl,
                  cfg->defaults.blksize);

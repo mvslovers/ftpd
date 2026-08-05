@@ -78,10 +78,59 @@ cmd_feat(ftpd_session_t *sess)
         " SITE FILETYPE\r\n"
         " SITE JES\r\n"
         " UTF8\r\n"
-        "211 End\r\n");
+        /* A client that reads FEAT before sending PROT skips it when
+        ** the feature is absent, so announce both only when SSLPROXY
+        ** makes them answerable. */
+        "%s"
+        "211 End\r\n",
+        sess->server->config.sslproxy ? " PBSZ\r\n PROT\r\n" : "");
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
     send(sess->ctrl_sock, buf, len, 0);
+    return 0;
+}
+
+/* --------------------------------------------------------------------
+** cmd_pbsz / cmd_prot -- RFC 4217 protection commands, SSLPROXY only.
+**
+** FTPD encrypts nothing -- MVS 3.8j has no TLS.  With SSLPROXY=YES a TLS
+** terminating proxy sits in front of it and the client must be told that
+** protection is available: any non-2xx answer makes it open the data
+** connection in the clear, against a proxy that waits for a handshake,
+** and the transfer dies in a timeout.  Without the option both commands
+** stay unimplemented and fall through to 500.
+** ----------------------------------------------------------------- */
+static int
+cmd_pbsz(ftpd_session_t *sess, const char *arg)
+{
+    (void)arg;                  /* over TLS the buffer size is always 0 */
+    ftpd_session_reply(sess, FTP_200, "PBSZ=0");
+    return 0;
+}
+
+static int
+cmd_prot(ftpd_session_t *sess, const char *arg)
+{
+    char lvl;
+
+    if (!arg || !arg[0]) {
+        ftpd_session_reply(sess, FTP_501,
+                           "PROT requires a protection level");
+        return 0;
+    }
+
+    lvl = (char)toupper((unsigned char)arg[0]);
+
+    /* P (private) is what the proxy provides; C (clear) is the client
+    ** turning protection off again.  S and E have no meaning here. */
+    if (lvl == 'P' || lvl == 'C') {
+        ftpd_session_reply(sess, FTP_200,
+                           "Data channel protection level set to %c", lvl);
+        return 0;
+    }
+
+    ftpd_session_reply(sess, FTP_504,
+                       "Protection level %c not supported", lvl);
     return 0;
 }
 
@@ -267,6 +316,12 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
             ftpd_session_reply(sess, FTP_504,
                 "Security mechanism not implemented.");
             return 0;
+        }
+        /* RFC 2228 allows PBSZ/PROT before login, and clients send them
+        ** there -- 530 would read as "no protection" just like 500. */
+        if (sess->server->config.sslproxy) {
+            if (strcmp(cmd, "PBSZ") == 0) return cmd_pbsz(sess, arg);
+            if (strcmp(cmd, "PROT") == 0) return cmd_prot(sess, arg);
         }
 
         ftpd_session_reply(sess, FTP_530, "Not logged in.");
@@ -491,6 +546,10 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
         ftpd_session_reply(sess, FTP_504,
             "Security mechanism not implemented.");
         return 0;
+    }
+    if (sess->server->config.sslproxy) {
+        if (strcmp(cmd, "PBSZ") == 0) return cmd_pbsz(sess, arg);
+        if (strcmp(cmd, "PROT") == 0) return cmd_prot(sess, arg);
     }
 
     /* Unknown command */
