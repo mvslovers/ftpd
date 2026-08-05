@@ -18,6 +18,11 @@ typedef struct ftpd_config {
     int             port;           /* listen port (default 21)      */
     char            bind_ip[16];    /* bind IP ("ANY" = 0.0.0.0)    */
     char            pasv_addr[16];  /* PASV address for responses    */
+    char            pasv_bind[16];  /* passive listener bind address
+                                    ** ("ANY" = 0.0.0.0).  NOT the same
+                                    ** as pasv_addr: this is where FTPD
+                                    ** listens, that is what the client
+                                    ** is told to connect to           */
     int             pasv_lo;        /* PASV port range low           */
     int             pasv_hi;        /* PASV port range high          */
     /* Limits */

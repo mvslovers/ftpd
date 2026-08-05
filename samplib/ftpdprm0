@@ -13,6 +13,15 @@ SRVIP=ANY
 PASVADR=127,0,0,1
 PASVPORTS=22000-22200
 #
+# PASVBIND is where the passive listener binds, PASVADR is what the
+# client is told to connect to -- they are only the same by default.
+# ANY (the default) binds every address of the host, as before.
+# Set one address when something else must own those ports on the
+# public address, e.g. a TLS terminating proxy that forwards to FTPD:
+#   PASVBIND=127.0.0.1     FTPD listens on loopback
+#   PASVADR=203,0,113,10   client is sent to the proxy
+PASVBIND=ANY
+#
 # --- Limits ---
 MAXSESSIONS=10
 IDLETIMEOUT=300
