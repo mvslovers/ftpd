@@ -218,9 +218,11 @@ initialize(ftpd_server_t *server, int argc, char **argv)
     rc = ENQ(FTPD_ENQ_QNAME, server->enq_rname,
              ENQ_SYSTEM | ENQ_EXC | ENQ_USE);
     if (rc != 0) {
-        ftpd_log_wto("FTPD002E FTPD is already active on port %d "
-                     "(ENQ rc=%d), this instance ends",
-                     server->config.port, rc);
+        /* rc=4 is the expected "another address space holds it"; anything
+        ** else goes to the trace, the operator message stays plain. */
+        ftpd_trace("startup ENQ %s rc=%d", server->enq_rname, rc);
+        ftpd_log_wto("FTPD002E FTPD is already active on port %d, "
+                     "this instance ends", server->config.port);
         return 8;
     }
 
