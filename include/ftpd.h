@@ -24,6 +24,7 @@
 #include "racf.h"                   /* security environment         */
 #include "clibtry.h"                /* try(), tryrc() ESTAE recovery */
 
+#include "ftpd#adr.h"               /* address parameter parsing    */
 #include "ftpd#cfg.h"               /* configuration                */
 #include "ftpd#log.h"               /* logging & trace              */
 #include "ftpd#xlt.h"               /* EBCDIC/ASCII translation     */

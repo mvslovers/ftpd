@@ -4,6 +4,8 @@
 ** FTPD Configuration
 */
 
+#include "ftpd#adr.h"               /* address parameter parsing     */
+
 /* --- DASD volume entry --- */
 typedef struct ftpd_dasd {
     char            volser[7];      /* volume serial                 */
@@ -13,16 +15,33 @@ typedef struct ftpd_dasd {
 #define FTPD_MAX_DASD       32      /* max configured DASD volumes   */
 
 /* --- Server configuration --- */
+/*
+** The three address fields below are all written by ftpd_adr_parse(), so
+** they hold either the literal "ANY" or a validated dotted quad -- never a
+** value the socket layer would have to guess about.  What ANY means is per
+** field, see the comments.
+*/
 typedef struct ftpd_config {
     /* Network */
     int             port;           /* listen port (default 21)      */
-    char            bind_ip[16];    /* bind IP ("ANY" = 0.0.0.0)    */
-    char            pasv_addr[16];  /* PASV address for responses    */
-    char            pasv_bind[16];  /* passive listener bind address
-                                    ** ("ANY" = 0.0.0.0).  NOT the same
-                                    ** as pasv_addr: this is where FTPD
-                                    ** listens, that is what the client
-                                    ** is told to connect to           */
+    char            bind_ip[FTPD_ADR_SIZE];
+                                    /* control listener bind address,
+                                    ** SRVBIND (alias SRVIP).
+                                    ** "ANY" = 0.0.0.0                */
+    int             bind_ip_alias;  /* 1 = set through the old SRVIP
+                                    ** spelling; the CONFIG dump says so */
+    char            pasv_addr[FTPD_ADR_SIZE];
+                                    /* address the client is told to
+                                    ** connect to, PASVADR.  "ANY" =
+                                    ** take it from the control
+                                    ** connection, per session        */
+    char            pasv_bind[FTPD_ADR_SIZE];
+                                    /* passive listener bind address,
+                                    ** PASVBIND.  "ANY" = 0.0.0.0.
+                                    ** NOT the same as pasv_addr: this
+                                    ** is where FTPD listens, that is
+                                    ** what the client is told to
+                                    ** connect to                     */
     int             pasv_lo;        /* PASV port range low           */
     int             pasv_hi;        /* PASV port range high          */
     /* Limits */

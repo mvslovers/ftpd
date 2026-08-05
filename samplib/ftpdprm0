@@ -8,9 +8,19 @@
 # DASD volumes: VOLSER,UNIT (e.g. PUB001,3390)
 #
 # --- Network ---
+#
+# Every address below takes ANY, a dotted quad (127.0.0.1) or the comma
+# form (127,0,0,1); an unreadable value is refused with a message naming
+# the default it fell back to -- it never binds something else silently.
+#
 SRVPORT=2121
-SRVIP=ANY
-PASVADR=127,0,0,1
+#
+# SRVBIND is where the control listener binds.  ANY (the default) takes
+# every address of the host; name one to keep FTPD off the others, e.g.
+# when only a proxy is meant to reach it.  The old spelling SRVIP is
+# still read and means the same thing.
+SRVBIND=ANY
+#
 PASVPORTS=22000-22200
 #
 # PASVBIND is where the passive listener binds, PASVADR is what the
@@ -21,6 +31,13 @@ PASVPORTS=22000-22200
 #   PASVBIND=127.0.0.1     FTPD listens on loopback
 #   PASVADR=203,0,113,10   client is sent to the proxy
 PASVBIND=ANY
+#
+# PASVADR=ANY (the default) sends the client to the address it reached
+# the control connection on, which is right whenever FTPD is reachable
+# directly.  Set an address only when the client must connect somewhere
+# else than it is talking to -- a proxy, or NAT with a public address
+# the host itself does not carry.
+PASVADR=ANY
 #
 # --- Limits ---
 MAXSESSIONS=10
@@ -41,7 +58,7 @@ BANNER=MVS 3.8j FTPD Server
 #
 # Only turn this on when a terminating proxy is guaranteed in front of
 # FTPD and FTPD is not reachable directly -- bind it to the private
-# interface with SRVIP.  Run bare, it promises clients a confidentiality
+# interface with SRVBIND.  Run bare, it promises clients a confidentiality
 # it does not deliver.  AUTH TLS (explicit FTPS) stays 504 either way;
 # this is for implicit FTPS.
 #

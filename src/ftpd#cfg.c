@@ -22,8 +22,11 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
 
     /* Network */
     cfg->port = 2121;
-    strcpy(cfg->bind_ip, "ANY");
-    strcpy(cfg->pasv_addr, "127.0.0.1");
+    strcpy(cfg->bind_ip, "ANY");    /* listen on every address       */
+    cfg->bind_ip_alias = 0;
+    strcpy(cfg->pasv_addr, "ANY");  /* advertise the address the client
+                                    ** reached us on -- a literal default
+                                    ** cannot be right for every client */
     strcpy(cfg->pasv_bind, "ANY");  /* bind every address, as before */
     cfg->pasv_lo = 22000;
     cfg->pasv_hi = 22200;
@@ -138,44 +141,35 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
             cfg->port = 21;
         }
     }
-    else if (strcmp(key, "SRVIP") == 0) {
-        strncpy(cfg->bind_ip, value, sizeof(cfg->bind_ip) - 1);
+    else if (strcmp(key, "SRVBIND") == 0 || strcmp(key, "SRVIP") == 0) {
+        /* Where the control listener binds -- ANY or one address.  SRVIP is
+        ** the old spelling, still read so existing PARMLIB members keep
+        ** working; SRVBIND is what the dump and the sample call it. */
+        if (ftpd_adr_parse(value, cfg->bind_ip, NULL) == FTPD_ADR_BAD) {
+            ftpd_log(LOG_WARN, "%s: invalid %s %s, listening on every "
+                     "address (ANY)", __func__, key, value);
+            strcpy(cfg->bind_ip, "ANY");
+        }
+        cfg->bind_ip_alias = (strcmp(key, "SRVIP") == 0);
     }
     else if (strcmp(key, "PASVADR") == 0) {
-        /* Accept comma-separated: 127,0,0,1 -> 127.0.0.1 */
-        char buf[16];
-        int i;
-        strncpy(buf, value, sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
-        for (i = 0; buf[i]; i++) {
-            if (buf[i] == ',')
-                buf[i] = '.';
+        /* What the client is told to connect to.  ANY -- and anything
+        ** unreadable -- means the address the client reached us on, which
+        ** the session resolves from the control connection. */
+        if (ftpd_adr_parse(value, cfg->pasv_addr, NULL) == FTPD_ADR_BAD) {
+            ftpd_log(LOG_WARN, "%s: invalid PASVADR %s, using the control "
+                     "connection address", __func__, value);
+            strcpy(cfg->pasv_addr, "ANY");
         }
-        strcpy(cfg->pasv_addr, buf);
     }
     else if (strcmp(key, "PASVBIND") == 0) {
         /* Where the passive listener binds -- ANY or one address.  A
         ** co-located TLS proxy owns the public address on the same
         ** ports, so FTPD must be able to stay off it. */
-        char buf[16];
-        int i;
-        strncpy(buf, value, sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
-        for (i = 0; buf[i]; i++) {
-            if (buf[i] == ',')
-                buf[i] = '.';
-        }
-        if (strcmp(buf, "ANY") == 0 || strcmp(buf, "any") == 0) {
+        if (ftpd_adr_parse(value, cfg->pasv_bind, NULL) == FTPD_ADR_BAD) {
+            ftpd_log(LOG_WARN, "%s: invalid PASVBIND %s, binding every "
+                     "address (ANY)", __func__, value);
             strcpy(cfg->pasv_bind, "ANY");
-        } else {
-            unsigned b1, b2, b3, b4;
-            if (sscanf(buf, "%u.%u.%u.%u", &b1, &b2, &b3, &b4) == 4) {
-                strcpy(cfg->pasv_bind, buf);
-            } else {
-                ftpd_log(LOG_WARN, "%s: invalid PASVBIND %s, using ANY",
-                         __func__, value);
-                strcpy(cfg->pasv_bind, "ANY");
-            }
         }
     }
     else if (strcmp(key, "PASVPORTS") == 0) {
@@ -329,9 +323,16 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
     int i;
 
     ftpd_log_wto("FTPD040I Configuration:");
-    ftpd_log_wto("FTPD041I   SRVPORT=%d SRVIP=%s", cfg->port, cfg->bind_ip);
+    ftpd_log_wto("FTPD041I   SRVPORT=%d SRVBIND=%s%s", cfg->port,
+                 cfg->bind_ip,
+                 cfg->bind_ip_alias ? " (set as SRVIP)" : "");
+    /* PASVADR=ANY is not an address the client could use -- say what it
+    ** resolves to instead, the operator is reading this to find out why a
+    ** client connects where it does. */
     ftpd_log_wto("FTPD042I   PASVADR=%s PASVPORTS=%d-%d PASVBIND=%s",
-                 cfg->pasv_addr, cfg->pasv_lo, cfg->pasv_hi,
+                 strcmp(cfg->pasv_addr, "ANY") == 0
+                     ? "ANY (control connection)" : cfg->pasv_addr,
+                 cfg->pasv_lo, cfg->pasv_hi,
                  cfg->pasv_bind);
     ftpd_log_wto("FTPD043I   MAXSESSIONS=%d IDLETIMEOUT=%d",
                  cfg->max_sessions, cfg->idle_timeout);
