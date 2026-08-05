@@ -134,7 +134,18 @@ ftpd_data_pasv(ftpd_session_t *sess)
     pasv_addr = sess->server->config.pasv_addr;
     if (ftpd_adr_parse(pasv_addr, NULL, &advaddr) != FTPD_ADR_OK) {
         len = sizeof(addr);
-        getsockname(sess->ctrl_sock, (struct sockaddr *)&addr, &len);
+        /* This is the default path now, not a rare fallback: without the rc
+        ** check a failed getsockname() would put whatever addr happens to
+        ** hold into the 227 reply and send the client there. */
+        if (getsockname(sess->ctrl_sock, (struct sockaddr *)&addr, &len)
+                != 0) {
+            ftpd_log(LOG_ERROR, "%s: getsockname() failed, errno=%d",
+                     __func__, errno);
+            closesocket(sess->pasv_sock);
+            sess->pasv_sock = -1;
+            sess->data_mode = DATA_NONE;
+            return -1;
+        }
         advaddr = ntohl(addr.sin_addr.s_addr);
     }
 
