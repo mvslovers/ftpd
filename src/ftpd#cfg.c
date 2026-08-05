@@ -24,6 +24,7 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     cfg->port = 2121;
     strcpy(cfg->bind_ip, "ANY");
     strcpy(cfg->pasv_addr, "127.0.0.1");
+    strcpy(cfg->pasv_bind, "ANY");  /* bind every address, as before */
     cfg->pasv_lo = 22000;
     cfg->pasv_hi = 22200;
     /* Limits */
@@ -151,6 +152,31 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
                 buf[i] = '.';
         }
         strcpy(cfg->pasv_addr, buf);
+    }
+    else if (strcmp(key, "PASVBIND") == 0) {
+        /* Where the passive listener binds -- ANY or one address.  A
+        ** co-located TLS proxy owns the public address on the same
+        ** ports, so FTPD must be able to stay off it. */
+        char buf[16];
+        int i;
+        strncpy(buf, value, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        for (i = 0; buf[i]; i++) {
+            if (buf[i] == ',')
+                buf[i] = '.';
+        }
+        if (strcmp(buf, "ANY") == 0 || strcmp(buf, "any") == 0) {
+            strcpy(cfg->pasv_bind, "ANY");
+        } else {
+            unsigned b1, b2, b3, b4;
+            if (sscanf(buf, "%u.%u.%u.%u", &b1, &b2, &b3, &b4) == 4) {
+                strcpy(cfg->pasv_bind, buf);
+            } else {
+                ftpd_log(LOG_WARN, "%s: invalid PASVBIND %s, using ANY",
+                         __func__, value);
+                strcpy(cfg->pasv_bind, "ANY");
+            }
+        }
     }
     else if (strcmp(key, "PASVPORTS") == 0) {
         /* Format: low-high */
@@ -304,8 +330,9 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
 
     ftpd_log_wto("FTPD040I Configuration:");
     ftpd_log_wto("FTPD041I   SRVPORT=%d SRVIP=%s", cfg->port, cfg->bind_ip);
-    ftpd_log_wto("FTPD042I   PASVADR=%s PASVPORTS=%d-%d",
-                 cfg->pasv_addr, cfg->pasv_lo, cfg->pasv_hi);
+    ftpd_log_wto("FTPD042I   PASVADR=%s PASVPORTS=%d-%d PASVBIND=%s",
+                 cfg->pasv_addr, cfg->pasv_lo, cfg->pasv_hi,
+                 cfg->pasv_bind);
     ftpd_log_wto("FTPD043I   MAXSESSIONS=%d IDLETIMEOUT=%d",
                  cfg->max_sessions, cfg->idle_timeout);
     ftpd_log_wto("FTPD044I   BANNER=%s", cfg->banner);

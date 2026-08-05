@@ -42,6 +42,51 @@ ftpd_data_port(ftpd_session_t *sess, const char *arg)
 ** Sends 227 response with address:port.
 ** Returns 0 on success, -1 on error.
 ** ----------------------------------------------------------------- */
+/* --------------------------------------------------------------------
+** Bind a passive listener to a free port in the configured range.
+**
+** The bind address is PASVBIND, which is deliberately NOT PASVADR:
+** PASVADR is the address the client is told to connect to, PASVBIND is
+** where FTPD actually listens.  They differ when a TLS terminating proxy
+** owns the public address on the same ports and forwards to FTPD on
+** loopback -- binding INADDR_ANY would take those ports on every address
+** of the host and lock the proxy out.
+**
+** Returns the bound port, or -1 when the whole range is taken.
+** ----------------------------------------------------------------- */
+static int
+bind_pasv_port(ftpd_session_t *sess, int sock)
+{
+    struct sockaddr_in addr;
+    unsigned bindaddr = 0;          /* INADDR_ANY */
+    const char *pb = sess->server->config.pasv_bind;
+    unsigned b1, b2, b3, b4;
+    int port;
+
+    if (pb[0] && strcmp(pb, "ANY") != 0 &&
+        sscanf(pb, "%u.%u.%u.%u", &b1, &b2, &b3, &b4) == 4) {
+        bindaddr = htonl((b1 << 24) | (b2 << 16) | (b3 << 8) | b4);
+    }
+
+    for (port = sess->server->config.pasv_lo;
+         port <= sess->server->config.pasv_hi;
+         port++) {
+
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = bindaddr;
+        addr.sin_port = htons(port);
+
+        if (bind(sock, &addr, sizeof(addr)) == 0)
+            return port;
+    }
+
+    ftpd_log(LOG_ERROR, "%s: no port available in range %d-%d on %s",
+             __func__, sess->server->config.pasv_lo,
+             sess->server->config.pasv_hi, pb);
+    return -1;
+}
+
 int
 ftpd_data_pasv(ftpd_session_t *sess)
 {
@@ -62,24 +107,8 @@ ftpd_data_pasv(ftpd_session_t *sess)
         return -1;
     }
 
-    /* Try ports in the configured range */
-    for (port = sess->server->config.pasv_lo;
-         port <= sess->server->config.pasv_hi;
-         port++) {
-
-        memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = 0;  /* bind to any address */
-        addr.sin_port = htons(port);
-
-        if (bind(sock, &addr, sizeof(addr)) == 0)
-            break;
-    }
-
-    if (port > sess->server->config.pasv_hi) {
-        ftpd_log(LOG_ERROR, "%s: no port available in range %d-%d",
-                 __func__, sess->server->config.pasv_lo,
-                 sess->server->config.pasv_hi);
+    port = bind_pasv_port(sess, sock);
+    if (port < 0) {
         closesocket(sock);
         return -1;
     }
@@ -125,7 +154,6 @@ ftpd_data_pasv(ftpd_session_t *sess)
 int
 ftpd_data_epsv(ftpd_session_t *sess)
 {
-    struct sockaddr_in addr;
     int sock;
     int port;
 
@@ -138,24 +166,8 @@ ftpd_data_epsv(ftpd_session_t *sess)
         return -1;
     }
 
-    /* Try ports in the configured range */
-    for (port = sess->server->config.pasv_lo;
-         port <= sess->server->config.pasv_hi;
-         port++) {
-
-        memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = 0;  /* bind to any address */
-        addr.sin_port = htons(port);
-
-        if (bind(sock, &addr, sizeof(addr)) == 0)
-            break;
-    }
-
-    if (port > sess->server->config.pasv_hi) {
-        ftpd_log(LOG_ERROR, "%s: no port available in range %d-%d",
-                 __func__, sess->server->config.pasv_lo,
-                 sess->server->config.pasv_hi);
+    port = bind_pasv_port(sess, sock);
+    if (port < 0) {
         closesocket(sock);
         return -1;
     }
