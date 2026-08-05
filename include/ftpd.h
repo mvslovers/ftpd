@@ -131,6 +131,11 @@ typedef struct ftpd_alloc {
 typedef struct ftpd_session ftpd_session_t;
 typedef struct ftpd_server  ftpd_server_t;
 
+/* Major name of the single-instance ENQ (SCOPE=SYSTEM).  The minor name
+** carries the listen port, so one FTPD per port is allowed and a second
+** start on a port already served is refused. */
+#define FTPD_ENQ_QNAME      "FTPD"
+
 /* --- Global server state --- */
 struct ftpd_server {
     char            eye[8];         /* eye catcher                   */
@@ -142,6 +147,9 @@ struct ftpd_server {
 #define FTPD_QUIESCE        0x02    /* shutdown in progress          */
 
     ftpd_config_t   config;         /* server configuration          */
+    char            enq_rname[16];  /* "FTPD.PORT.nnnnn": the single
+                                    ** instance ENQ, held by main's TCB
+                                    ** for the life of the server      */
     ACEE            *stc_acee;      /* STC identity ACEE, captured at
                                     ** init; recovery resets ASXBSENV
                                     ** to this after an ABEND          */
