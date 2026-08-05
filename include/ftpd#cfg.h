@@ -27,6 +27,11 @@ typedef struct ftpd_config {
 
     /* Security */
     char            authuser[9];    /* user allowed to TERM server   */
+    int             sslproxy;       /* 1 = acknowledge PBSZ/PROT with
+                                    ** 200 although FTPD encrypts
+                                    ** nothing.  Only correct behind a
+                                    ** TLS terminating proxy -- see
+                                    ** SSLPROXY in the sample config  */
 
     /* JES */
     int             jes_level;      /* default JES interface level   */

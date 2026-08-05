@@ -18,6 +18,26 @@ MAXSESSIONS=10
 IDLETIMEOUT=300
 BANNER=MVS 3.8j FTPD Server
 #
+# --- TLS terminating proxy ---
+#
+# MVS 3.8j has no TLS, so FTPD cannot offer FTPS itself.  The way around
+# that is a proxy (HAProxy, stunnel, ...) that terminates TLS and talks
+# plaintext to FTPD.  For the DATA connection to be encrypted as well the
+# client must see PBSZ/PROT answered with 200 -- any other answer makes it
+# open the data connection in the clear, against a proxy that waits for a
+# handshake, and the transfer dies in a timeout.
+#
+# SSLPROXY=YES answers PBSZ and PROT P/C with 200 and lists both in FEAT.
+# FTPD still encrypts NOTHING; the proxy does.
+#
+# Only turn this on when a terminating proxy is guaranteed in front of
+# FTPD and FTPD is not reachable directly -- bind it to the private
+# interface with SRVIP.  Run bare, it promises clients a confidentiality
+# it does not deliver.  AUTH TLS (explicit FTPS) stays 504 either way;
+# this is for implicit FTPS.
+#
+SSLPROXY=NO
+#
 # --- JES ---
 JESINTERFACELEVEL=2
 #

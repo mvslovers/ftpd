@@ -198,6 +198,17 @@ initialize(ftpd_server_t *server, int argc, char **argv)
         return 4;
     }
 
+    /* SSLPROXY makes FTPD claim data channel protection it does not
+    ** provide.  That is only true behind a TLS terminating proxy, so the
+    ** operator gets told at every start -- a server reachable directly
+    ** with this on promises its clients confidentiality it has not got. */
+    if (server->config.sslproxy) {
+        ftpd_log_wto("FTPD005W SSLPROXY=YES: PBSZ/PROT are acknowledged "
+                     "but FTPD encrypts nothing");
+        ftpd_log_wto("FTPD005W A TLS terminating proxy must be in front "
+                     "of port %d", server->config.port);
+    }
+
     /* Refuse a second instance on the same port.
     **
     ** Without this, /S FTPD on an already running server starts a complete
