@@ -734,15 +734,22 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
                 }
             }
         }
-        if (target_dd) {
-            ftpd_session_reply(sess, FTP_125,
-                "Sending data set %s.%s.%s.D%07d.%s",
-                job->owner, job->jobname, job->jobid,
-                target_dd->dsid, target_dd->ddname);
-        } else {
-            ftpd_session_reply(sess, FTP_125,
-                "Sending spool file %d for %s", dsid_req, jobid_arg);
+        /* An index past the last spool file (or 0 -- DD numbering starts at
+        ** 1) has nothing to send.  Say so before the 125: announcing a data
+        ** set and then completing an empty transfer claims the spool file
+        ** exists and is empty, which is a different answer. */
+        if (!target_dd) {
+            jesjobfr(&joblist);
+            ftpd_session_reply(sess, FTP_550,
+                "Spool file %d not found for Jobid %s, %d spool file(s) available",
+                dsid_req, jobid_arg, idx);
+            return 0;
         }
+
+        ftpd_session_reply(sess, FTP_125,
+            "Sending data set %s.%s.%s.D%07d.%s",
+            job->owner, job->jobname, job->jobid,
+            target_dd->dsid, target_dd->ddname);
     }
 
     if (ftpd_data_open(sess) != 0) {
