@@ -13,6 +13,7 @@
 #include "ftpd#ses.h"
 #include "clibppa.h"
 #include "clibos.h"
+#include "clibenq.h"
 
 /* Global server state */
 ftpd_server_t *ftpd_server = NULL;
@@ -195,6 +196,34 @@ initialize(ftpd_server_t *server, int argc, char **argv)
     /* Load configuration from DD:FTPDPRM */
     if (ftpdcfg_load(&server->config) != 0) {
         return 4;
+    }
+
+    /* Refuse a second instance on the same port.
+    **
+    ** Without this, /S FTPD on an already running server starts a complete
+    ** second one: both bind the listen port (the newcomer closes the first
+    ** server's socket as stale) and both answer MODIFY, so every console
+    ** command is processed twice.
+    **
+    ** The resource is keyed by port, so a deliberate second server on
+    ** another port (/S FTPD,M=FTPDPRM1) still starts.  RET=USE takes the
+    ** resource when it is free and returns rc=4 instead of waiting when
+    ** another address space holds it.  The ENQ belongs to main's TCB and
+    ** MVS releases it at task end -- including after an ABEND -- so there
+    ** is no DEQ to forget and no stale lock to clean up.
+    */
+    snprintf(server->enq_rname, sizeof(server->enq_rname),
+             "FTPD.PORT.%05d", server->config.port);
+
+    rc = ENQ(FTPD_ENQ_QNAME, server->enq_rname,
+             ENQ_SYSTEM | ENQ_EXC | ENQ_USE);
+    if (rc != 0) {
+        /* rc=4 is the expected "another address space holds it"; anything
+        ** else goes to the trace, the operator message stays plain. */
+        ftpd_trace("startup ENQ %s rc=%d", server->enq_rname, rc);
+        ftpd_log_wto("FTPD002E FTPD is already active on port %d, "
+                     "this instance ends", server->config.port);
+        return 8;
     }
 
     /* Create socket thread (handles listener + accept loop) */
