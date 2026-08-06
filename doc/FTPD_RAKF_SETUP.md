@@ -107,6 +107,29 @@ production.
 
 ---
 
+## 3.5 How FTPD Reads a RACHECK Result
+
+Every authorization decision — the `FTPAUTH` gate above and every DATASET
+check in §4 — goes through `racf_auth()`, whose return code is the SAF
+return code:
+
+| RC | Meaning | FTPD |
+|----|---------|------|
+| 0  | A profile permits the access | allow |
+| 4  | **No profile covers the resource** ("not protected") | allow |
+| 8  | A profile refuses the access | deny — `550` / `530` |
+
+RC=4 is an allow, not a refusal: it is the same answer data set OPEN,
+IDCAMS and the catalog act on, so refusing it would make FTP the only path
+on the system that cannot reach an unprotected data set.  This is what
+makes §3.4 work — an undefined `FTPAUTH` answers 4, and login proceeds.
+
+Note that a `DATASET *` catch-all profile — present in the stock MVS/CE and
+TK4- configurations — covers every data set name, so on those systems RC=4
+never occurs for the DATASET class.
+
+---
+
 ## 4. Dataset Access Control
 
 FTPD performs RACHECK against the `DATASET` class before every

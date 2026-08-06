@@ -19,6 +19,26 @@
 int ftpd_auth_pass(ftpd_session_t *sess, const char *password)
                                                     asm("FTPAUTPS");
 
+/* racf_auth() return code: no profile covers the resource.  SAF calls this
+** "resource not protected"; it is an ALLOW, not a denial — the same answer
+** data set OPEN, IDCAMS and the catalog act on. */
+#define FTPD_RACF_NOTPROT       4
+
+/*
+** True if a racf_auth() return code means the access may proceed: 0 (a
+** profile permits it) or 4 (no profile covers the resource).  Everything
+** else — 8 and up — is a refusal.
+**
+** Testing rc != 0 alone is wrong and was only ever harmless by accident:
+** libc370 set RACHECK flag byte 0x10 believing it meant LOG=NONE, when it
+** is DSTYPE=V, and with that flag RAKF answered 0 where it should answer 4.
+** With the flag corrected (libc370 #63) the 4 becomes visible, so both call
+** sites must accept it or every unprotected resource turns into a denial —
+** for FACILITY/FTPAUTH that means refusing every login on a system without
+** that profile, which doc/FTPD_RAKF_SETUP.md §3.4 documents as allowed.
+*/
+int ftpd_racf_allowed(int rc)                       asm("FTPRACOK");
+
 /*
 ** Identity switch around MVS services that must authorize against the
 ** logged-in user (dataset OPEN, SVC 99, IDCAMS, JES internal reader).
