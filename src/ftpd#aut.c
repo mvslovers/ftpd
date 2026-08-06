@@ -20,6 +20,7 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
 {
     ACEE *acee;
     int racf_rc;
+    int auth_rc;
     char user[9];
     char pass[9];
 
@@ -60,8 +61,12 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
     }
 
     /* Check FACILITY class authorization */
-    if (racf_auth(acee, FTPD_FACILITY_CLASS, FTPD_FACILITY_RESOURCE,
-                  RACF_ATTR_READ) != 0) {
+    auth_rc = racf_auth(acee, FTPD_FACILITY_CLASS, FTPD_FACILITY_RESOURCE,
+                        RACF_ATTR_READ);
+    if (auth_rc == FTPD_RACF_NOTPROT)
+        ftpd_log(LOG_DEBUG, "%s: %s.%s has no profile — FTP access is open",
+                 __func__, FTPD_FACILITY_CLASS, FTPD_FACILITY_RESOURCE);
+    if (!ftpd_racf_allowed(auth_rc)) {
         ftpd_log(LOG_WARN, "%s: %s not authorized for %s.%s",
                  __func__, user, FTPD_FACILITY_CLASS,
                  FTPD_FACILITY_RESOURCE);
@@ -135,4 +140,17 @@ ftpd_acee_leave(ftpd_session_t *sess)
 {
     if (sess->acee)
         racf_set_acee(sess->server->stc_acee);
+}
+
+/* --------------------------------------------------------------------
+** Does this racf_auth() return code allow the access?
+**
+** 0 = a profile permits it, 4 = no profile covers the resource.  Both are
+** SAF "allowed"; 8 and up are refusals.  See ftpd#aut.h for why testing
+** rc != 0 alone survived this long.
+** ----------------------------------------------------------------- */
+int
+ftpd_racf_allowed(int rc)
+{
+    return (rc == 0 || rc == FTPD_RACF_NOTPROT);
 }

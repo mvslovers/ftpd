@@ -104,10 +104,21 @@ dsn_match(const char *pattern, const char *name)
 static int
 check_dataset_access(ftpd_session_t *sess, const char *dsn, int attr)
 {
+    int rc;
+
     if (!sess->acee)
         return 0;   /* no ACEE available — skip check */
 
-    if (racf_auth(sess->acee, "DATASET", dsn, attr) != 0) {
+    rc = racf_auth(sess->acee, "DATASET", dsn, attr);
+
+    /* Not protected: no profile covers this data set.  OPEN, IDCAMS and the
+    ** catalog all proceed on that answer, so refusing here would make FTPD
+    ** stricter than every other path to the same data set on the system. */
+    if (rc == FTPD_RACF_NOTPROT)
+        ftpd_log(LOG_DEBUG, "%s: %s is not protected by RAKF — allowed for %s",
+                 __func__, dsn, sess->user);
+
+    if (!ftpd_racf_allowed(rc)) {
         ftpd_log(LOG_WARN, "%s: %s access denied to %s for %s",
                  __func__, attr == RACF_ATTR_READ    ? "READ"    :
                            attr == RACF_ATTR_UPDATE  ? "UPDATE"  :
