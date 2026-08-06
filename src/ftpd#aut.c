@@ -7,6 +7,7 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
+#include "cliblock.h"               /* lock()/unlock() — identity window */
 
 #define FTPD_MAX_AUTH_ATTEMPTS  3
 #define FTPD_FACILITY_RESOURCE  "FTPAUTH"
@@ -117,20 +118,40 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
 }
 
 /* --------------------------------------------------------------------
-** Switch the address space to this session's security environment.
+** Open this session's identity window: take the address-space-wide ENQ,
+** then switch ASXBSENV to the session's ACEE.
 **
-** No-op for an unauthenticated session.  See ftpd#aut.h for why leave()
-** restores a constant instead of the value observed here (#64).
+** No-op for an unauthenticated session — with no ACEE there is nothing to
+** switch, so there is nothing to serialize either.
+**
+** lock() waits rather than failing, which is why enter() has no error
+** return and no call site needs a failure path.  That is safe only while
+** the no-open-data-set invariant in ftpd#aut.h holds; read it before adding
+** a window.  RC=8 means this task already holds the ENQ, i.e. two windows
+** nested — a coding error the ENQ cannot express, so say so loudly.
 ** ----------------------------------------------------------------- */
 void
 ftpd_acee_enter(ftpd_session_t *sess)
 {
-    if (sess->acee)
-        racf_set_acee(sess->acee);
+    if (!sess->acee)
+        return;
+
+    if (lock(&sess->server->acee_lock, LOCK_EXC) == 8)
+        ftpd_log(LOG_ERROR, "%s: identity window already open on this task "
+                 "— nested enter, window exclusivity is broken", __func__);
+
+    racf_set_acee(sess->acee);
 }
 
 /* --------------------------------------------------------------------
-** Restore the STC identity captured at startup (ftpd.c: server->stc_acee).
+** Close the window: restore the STC identity captured at startup
+** (ftpd.c: server->stc_acee), then release the ENQ.
+**
+** ORDER IS LOAD-BEARING.  Releasing first would let the next window's owner
+** set its own ACEE, and this task would then overwrite it with the STC
+** identity — handing a live window the wrong identity, which is the very
+** failure the ENQ exists to prevent.  ABEND recovery resets and releases in
+** the same order, for the same reason.
 **
 ** stc_acee may be NULL if the startup RACINIT failed — that is still the
 ** correct value to restore, and is the same value ABEND recovery writes.
@@ -138,8 +159,11 @@ ftpd_acee_enter(ftpd_session_t *sess)
 void
 ftpd_acee_leave(ftpd_session_t *sess)
 {
-    if (sess->acee)
-        racf_set_acee(sess->server->stc_acee);
+    if (!sess->acee)
+        return;
+
+    racf_set_acee(sess->server->stc_acee);
+    unlock(&sess->server->acee_lock, LOCK_EXC);
 }
 
 /* --------------------------------------------------------------------

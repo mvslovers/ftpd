@@ -10,6 +10,7 @@
 #include "ftpd#dat.h"
 #include "ftpd#ufs.h"
 #include "libufs.h"                 /* UFSFILE, ufs_fclose()          */
+#include "cliblock.h"               /* unlock() — identity window ENQ */
 
 /* --------------------------------------------------------------------
 ** Allocate and initialize a new session
@@ -253,10 +254,10 @@ ftpd_run_command(ftpd_session_t *sess, const char *cmd, const char *arg)
 **
 ** This function is itself run under try() by the caller, so a re-ABEND in
 ** a cleanup step is contained.  Ordering is therefore deliberate: restore
-** the identity first (so it holds even on a re-ABEND); WTO + tell the
-** client next; and only then perform the one step that can plausibly
-** re-ABEND (fclose on a possibly-corrupt DCB), so a cleanup failure can
-** never leave the client hanging.
+** the identity and release its ENQ first (so they hold even on a re-ABEND);
+** WTO + tell the client next; and only then perform the one step that can
+** plausibly re-ABEND (fclose on a possibly-corrupt DCB), so a cleanup
+** failure can never leave the client hanging.
 **
 ** 'verb' is the parsed FTP command word only (no arguments) — never the
 ** raw command line, which for PASS would contain the password.
@@ -289,7 +290,24 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     ** re-ABENDs. */
     racf_set_acee(sess->server->stc_acee);
 
-    /* 2. Count + WTO now, before the risky cleanup, so the diagnostic
+    /* 2. Release the identity window's ENQ, which the ABEND skipped past.
+    ** MVS DEQs a task's ENQs at task termination, but recovery keeps the
+    ** task alive, so an orphaned window would stall every other session's
+    ** data set access until this worker's next command — and there is no
+    ** next command for a session that then sits idle.
+    **
+    ** MUST follow step 1, and for the same reason leave() resets before it
+    ** unlocks: release first and the next window's owner sets its ACEE,
+    ** which step 1 would then overwrite with the STC identity.
+    **
+    ** Ownership-safe without a tracking flag: unlock() is DEQ RET=HAVE
+    ** (@@lkunlk.c -> @@enqdeq.c: pl.opt=HAVE, SVC 48, returns pl.rc — never
+    ** ABENDs) and MVS ENQ ownership is per-TCB, so this can only release an
+    ** ENQ this task owns.  ABEND outside a window (the common case): RC=8,
+    ** nothing released, no concurrent window disturbed. */
+    unlock(&sess->server->acee_lock, LOCK_EXC);
+
+    /* 3. Count + WTO now, before the risky cleanup, so the diagnostic
     ** survives even a cleanup re-ABEND.  total_recover accumulates over
     ** the STC lifetime (per-session growth is bounded by FTPD_MAX_RECOVER)
     ** so leaked-resource accumulation from the documented residual windows
@@ -308,12 +326,12 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
                      "total=%u", abcode, verb, sess->ctrl_sock,
                      sess->server->total_recover);
 
-    /* 3. Tell the client before touching in-flight resources, so a
+    /* 4. Tell the client before touching in-flight resources, so a
     ** re-ABEND in cleanup cannot leave it hanging until timeout. */
     ftpd_session_reply(sess, FTP_451,
         "Requested action aborted: local error in processing.");
 
-    /* 4. Release the in-flight transfer handle.  Clear the tracking field
+    /* 5. Release the in-flight transfer handle.  Clear the tracking field
     ** BEFORE closing so a re-ABEND in the close (contained by the caller's
     ** try()) can never cause a double close on a subsequent recovery.  At
     ** most one of these is set (a session is in MVS or UFS mode, one

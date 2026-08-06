@@ -11,6 +11,9 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#sit.h"
+#ifdef FTPD_DEBUG_ABEND
+#include "ftpd#aut.h"            /* ftpd_acee_enter() — ABEND=LOCK  */
+#endif
 
 /* --------------------------------------------------------------------
 ** Helper: parse "KEY=VALUE" from token.
@@ -261,9 +264,13 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
     ** Requires an authenticated session (SITE is already post-auth; the
     ** explicit check keeps this from ever being a pre-auth DoS).  Keyword
     ** must be upper-case:
-    **   SITE ABEND        -> ABEND (S0C4) now; recovery must reset ASXBSENV
-    **                        to the STC identity, answer the client and leave
-    **                        the worker serving.
+    **   SITE ABEND        -> ABEND (S0C4) OUTSIDE any identity window;
+    **                        recovery's unlock() must be a no-op and leave
+    **                        every concurrent window undisturbed.
+    **   SITE ABEND=LOCK   -> open an identity window (ACEE switched, ENQ
+    **                        held), then ABEND inside it; recovery must put
+    **                        the STC identity back AND release the ENQ, or
+    **                        every other session's data set access stalls.
     **   SITE ABEND=XFER   -> arm the next MVS RETR to ABEND mid-transfer
     **                        (cur_file set + data connection open); exercises
     **                        recovery's fclose(cur_file) + clear-before-close.
@@ -283,6 +290,10 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
                 "DEBUG: next RETR will ABEND mid-transfer");
             return 0;
         }
+
+        /* ABEND=LOCK: ABEND with the identity window open. */
+        if (arg[5] == '=' && (arg[6] == 'L' || arg[6] == 'l'))
+            ftpd_acee_enter(sess);
 
         ftpd_log_wto("FTPD072W DEBUG ABEND injection: SITE %s", arg);
         *trap = 0;                     /* force S0C4 */
