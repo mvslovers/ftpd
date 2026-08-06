@@ -15,6 +15,7 @@
 */
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "ftpd#aut.h"
 #include "ftpd#dat.h"
 #include "ftpd#jes.h"
 #include "ftpd#xlt.h"
@@ -149,11 +150,9 @@ ftpd_jes_submit(ftpd_session_t *sess)
     }
 
     /* Open JES2 internal reader under user's security environment */
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        rc = jesiropn(&intrdr);
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    rc = jesiropn(&intrdr);
+    ftpd_acee_leave(sess);
     if (rc < 0) {
         ftpd_log(LOG_ERROR, "JES: jesiropn() failed rc=%d", rc);
         ftpd_data_close(sess);

@@ -9,6 +9,7 @@
 */
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "ftpd#aut.h"
 #include "ftpd#dat.h"
 #include "ftpd#mvs.h"
 #include "ftpd#xlt.h"
@@ -851,11 +852,9 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
 
         /* Open the PDS directory under the user's security environment,
         ** so the RAKF authorization check evaluates against the user. */
-        {
-            ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-            pds = __listpd(prefix, filter);
-            if (sess->acee) racf_set_acee(oldacee);
-        }
+        ftpd_acee_enter(sess);
+        pds = __listpd(prefix, filter);
+        ftpd_acee_leave(sess);
         if (!pds || !pds[0]) {
             if (pds) __freepd(&pds);
             ftpd_session_reply(sess, FTP_550,
@@ -1145,11 +1144,9 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         return 0;
 
     /* Switch to user's security environment for fopen */
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        fp = fopen(fname, "rb");
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    fp = fopen(fname, "rb");
+    ftpd_acee_leave(sess);
     if (fp == NULL) {
         ftpd_log(LOG_INFO, "RETR: fopen('%s') failed", fname);
         if (member[0])
@@ -1612,13 +1609,11 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         ** The window is a few instructions (two SVC 99 calls) and is not
         ** instrumented; total_recover in the operator log makes any such
         ** accumulation observable. */
-        {
-            ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-            rc = __dsalcf(ddname, "%s", opts);
-            if (rc == 0)
-                __dsfree(ddname);   /* release DD — fopen will re-allocate */
-            if (sess->acee) racf_set_acee(oldacee);   /* restore STC identity */
-        }
+        ftpd_acee_enter(sess);
+        rc = __dsalcf(ddname, "%s", opts);
+        if (rc == 0)
+            __dsfree(ddname);   /* release DD — fopen will re-allocate */
+        ftpd_acee_leave(sess);
 
         if (rc != 0) {
             ftpd_log(LOG_ERROR, "STOR: __dsalcf failed rc=%d", rc);
@@ -1639,11 +1634,9 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     ftpd_log(LOG_INFO, "STOR: fopen('%s', 'wb') new=%d", fname, allocated_new);
 
     /* Switch to user's security environment for fopen */
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        fp = fopen(fname, "wb");
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    fp = fopen(fname, "wb");
+    ftpd_acee_leave(sess);
     if (fp == NULL) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot open dataset %s for writing", dsn);
@@ -1916,11 +1909,9 @@ ftpd_mvs_dele(ftpd_session_t *sess, const char *arg)
     }
 
     /* Switch to user's security environment for IDCAMS */
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        rc = idcams(cmd);
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    rc = idcams(cmd);
+    ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "DELE fails: %s could not be deleted.", dsn);
@@ -1972,11 +1963,9 @@ ftpd_mvs_mkd(ftpd_session_t *sess, const char *arg)
     }
 
     /* Allocate new PDS under user's security environment */
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        rc = alloc_new_dataset(sess, dsn, 1, ddname);
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    rc = alloc_new_dataset(sess, dsn, 1, ddname);
+    ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot create %s", dsn);
@@ -2029,11 +2018,9 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
     snprintf(cmd, sizeof(cmd), " DELETE '%s'", dsn);
 
     /* Switch to user's security environment for IDCAMS */
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        rc = idcams(cmd);
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    rc = idcams(cmd);
+    ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "Cannot remove %s", dsn);
@@ -2125,15 +2112,24 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Authorize the TARGET name too.  RNFR already checked ALTER on the
+    ** source; without this the new name is only ever checked by IDCAMS
+    ** itself, i.e. by the RAKF check that runs under the address-space-wide
+    ** ASXBSENV — the one identity FTPD cannot guarantee is its own while
+    ** other sessions run (#64).  A denial clears the pending RNFR, like
+    ** every other failure path here. */
+    if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0) {
+        sess->rnfr_path[0] = '\0';
+        return 0;
+    }
+
     /* Rename via IDCAMS ALTER under user's security environment */
     snprintf(cmd, sizeof(cmd),
              " ALTER '%s' NEWNAME('%s')", sess->rnfr_path, dsn);
 
-    {
-        ACEE *oldacee = sess->acee ? racf_set_acee(sess->acee) : NULL;
-        rc = idcams(cmd);
-        if (sess->acee) racf_set_acee(oldacee);
-    }
+    ftpd_acee_enter(sess);
+    rc = idcams(cmd);
+    ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
             "Rename of %s to %s failed.", sess->rnfr_path, dsn);
