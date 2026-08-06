@@ -110,3 +110,29 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
 
     return 0;
 }
+
+/* --------------------------------------------------------------------
+** Switch the address space to this session's security environment.
+**
+** No-op for an unauthenticated session.  See ftpd#aut.h for why leave()
+** restores a constant instead of the value observed here (#64).
+** ----------------------------------------------------------------- */
+void
+ftpd_acee_enter(ftpd_session_t *sess)
+{
+    if (sess->acee)
+        racf_set_acee(sess->acee);
+}
+
+/* --------------------------------------------------------------------
+** Restore the STC identity captured at startup (ftpd.c: server->stc_acee).
+**
+** stc_acee may be NULL if the startup RACINIT failed — that is still the
+** correct value to restore, and is the same value ABEND recovery writes.
+** ----------------------------------------------------------------- */
+void
+ftpd_acee_leave(ftpd_session_t *sess)
+{
+    if (sess->acee)
+        racf_set_acee(sess->server->stc_acee);
+}
