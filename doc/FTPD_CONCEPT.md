@@ -773,8 +773,9 @@ the program.
 
 # Network
 SRVPORT=21
-SRVIP=ANY
-PASVADR=127,0,0,1
+SRVBIND=ANY
+PASVADR=ANY
+PASVBIND=ANY
 PASVPORTS=22000-22200
 
 # Limits
@@ -805,6 +806,24 @@ DEFVOLUME=PUB001
 # PUB001,3390   PUBLIC DATASETS
 # SYSCPK,3350   COMPILER/TOOLS
 ```
+
+**Address parameters** — `SRVBIND`, `PASVBIND` and `PASVADR` are read by
+one parser (`ftpd_adr_parse()`, `src/ftpd#adr.c`). Each accepts `ANY`, a
+dotted quad (`127.0.0.1`) or the comma form (`127,0,0,1`); all four octets
+must be present and in range 0–255. A value that is not an address is
+refused with a message naming the default that takes its place — FTPD never
+silently binds or advertises something other than what was configured.
+
+| Key | Meaning | `ANY` means |
+|-----|---------|-------------|
+| `SRVBIND` | where the control listener binds (old spelling `SRVIP` is still read) | every address of the host (0.0.0.0) |
+| `PASVBIND` | where the passive data listener binds | every address of the host (0.0.0.0) |
+| `PASVADR` | what the client is told to connect to in the 227 reply | the address this client reached the control connection on |
+
+`PASVBIND` and `PASVADR` differ only behind a proxy or NAT: `PASVBIND`
+keeps FTPD on a private interface while `PASVADR` sends the client to the
+public one. `/F FTPD,D CONFIG` shows the effective values, including which
+spelling set `SRVBIND` and what `PASVADR=ANY` resolves to.
 
 ### 5.2 JCL Procedure
 

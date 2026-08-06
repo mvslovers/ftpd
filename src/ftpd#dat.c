@@ -58,15 +58,19 @@ static int
 bind_pasv_port(ftpd_session_t *sess, int sock)
 {
     struct sockaddr_in addr;
-    unsigned bindaddr = 0;          /* INADDR_ANY */
+    unsigned bindaddr;
     const char *pb = sess->server->config.pasv_bind;
-    unsigned b1, b2, b3, b4;
     int port;
 
-    if (pb[0] && strcmp(pb, "ANY") != 0 &&
-        sscanf(pb, "%u.%u.%u.%u", &b1, &b2, &b3, &b4) == 4) {
-        bindaddr = htonl((b1 << 24) | (b2 << 16) | (b3 << 8) | b4);
+    /* ANY gives 0 = INADDR_ANY.  A value the parser rejects means the
+    ** operator asked for an address FTPD cannot bind -- refuse the passive
+    ** listener instead of quietly taking every address (issue #76).  The
+    ** config parser already validated this, so it is a last line only. */
+    if (ftpd_adr_parse(pb, NULL, &bindaddr) == FTPD_ADR_BAD) {
+        ftpd_log(LOG_ERROR, "%s: PASVBIND %s is not an address", __func__, pb);
+        return -1;
     }
+    bindaddr = htonl(bindaddr);
 
     for (port = sess->server->config.pasv_lo;
          port <= sess->server->config.pasv_hi;
@@ -94,6 +98,7 @@ ftpd_data_pasv(ftpd_session_t *sess)
     int sock;
     int port;
     int len;
+    unsigned advaddr;
     unsigned a1, a2, a3, a4;
     int p1, p2;
     const char *pasv_addr;
@@ -122,17 +127,32 @@ ftpd_data_pasv(ftpd_session_t *sess)
     sess->pasv_sock = sock;
     sess->data_mode = DATA_PASV;
 
-    /* Parse PASV address for response */
+    /* The address the client is told to connect to.  PASVADR=ANY (the
+    ** default) means "wherever this client reached us", which is the local
+    ** end of the control connection -- right for a directly reachable
+    ** server, wrong behind a proxy, which is why PASVADR exists at all. */
     pasv_addr = sess->server->config.pasv_addr;
-    if (sscanf(pasv_addr, "%u.%u.%u.%u", &a1, &a2, &a3, &a4) != 4) {
-        /* Fallback: get address from control socket */
+    if (ftpd_adr_parse(pasv_addr, NULL, &advaddr) != FTPD_ADR_OK) {
         len = sizeof(addr);
-        getsockname(sess->ctrl_sock, (struct sockaddr *)&addr, &len);
-        a1 = (ntohl(addr.sin_addr.s_addr) >> 24) & 0xFF;
-        a2 = (ntohl(addr.sin_addr.s_addr) >> 16) & 0xFF;
-        a3 = (ntohl(addr.sin_addr.s_addr) >> 8) & 0xFF;
-        a4 = ntohl(addr.sin_addr.s_addr) & 0xFF;
+        /* This is the default path now, not a rare fallback: without the rc
+        ** check a failed getsockname() would put whatever addr happens to
+        ** hold into the 227 reply and send the client there. */
+        if (getsockname(sess->ctrl_sock, (struct sockaddr *)&addr, &len)
+                != 0) {
+            ftpd_log(LOG_ERROR, "%s: getsockname() failed, errno=%d",
+                     __func__, errno);
+            closesocket(sess->pasv_sock);
+            sess->pasv_sock = -1;
+            sess->data_mode = DATA_NONE;
+            return -1;
+        }
+        advaddr = ntohl(addr.sin_addr.s_addr);
     }
+
+    a1 = (advaddr >> 24) & 0xFF;
+    a2 = (advaddr >> 16) & 0xFF;
+    a3 = (advaddr >>  8) & 0xFF;
+    a4 =  advaddr        & 0xFF;
 
     p1 = (port >> 8) & 0xFF;
     p2 = port & 0xFF;

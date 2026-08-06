@@ -270,7 +270,7 @@ socket_thread(void *arg1, void *arg2)
     int len;
     int sock;
     int rc;
-    unsigned a1, a2, a3, a4;
+    unsigned bindaddr;
     ftpd_session_t *sess;
 
     (void)arg2;
@@ -290,15 +290,19 @@ socket_thread(void *arg1, void *arg2)
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(server->config.port);
 
-    if (strcmp(server->config.bind_ip, "ANY") == 0) {
-        saddr.sin_addr.s_addr = 0;
-    } else {
-        if (sscanf(server->config.bind_ip, "%u.%u.%u.%u",
-                   &a1, &a2, &a3, &a4) == 4) {
-            saddr.sin_addr.s_addr = htonl(
-                (a1 << 24) | (a2 << 16) | (a3 << 8) | a4);
-        }
+    /* The config parser only stores ANY or a validated address, so this
+    ** cannot normally fail -- and if it ever does, refuse to listen rather
+    ** than fall through to the 0 left by the memset.  Binding every address
+    ** because one could not be read is the opposite of what was asked for
+    ** (issue #76). */
+    if (ftpd_adr_parse(server->config.bind_ip, NULL, &bindaddr)
+            == FTPD_ADR_BAD) {
+        ftpd_log_wto("FTPD055E SRVBIND %s is not an address, not listening",
+                     server->config.bind_ip);
+        closesocket(sock);
+        return 8;
     }
+    saddr.sin_addr.s_addr = htonl(bindaddr);
 
     /* Close any stale socket left over from a previous instance that
     ** did not shut down cleanly.  On MVS the socket fd table is
@@ -329,8 +333,8 @@ socket_thread(void *arg1, void *arg2)
 
     if (bind(sock, &saddr, sizeof(saddr)) < 0) {
         int err = errno;
-        ftpd_log_wto("FTPD051E bind() failed on port %d, errno=%d",
-                     server->config.port, err);
+        ftpd_log_wto("FTPD051E bind() failed on %s port %d, errno=%d",
+                     server->config.bind_ip, server->config.port, err);
         if (err == EADDRINUSE) {
             ftpd_log_wto("FTPD051I EADDRINUSE, retrying in 10s");
             __asm__("STIMER WAIT,BINTVL==F'1000'");
@@ -353,8 +357,11 @@ socket_thread(void *arg1, void *arg2)
     }
 
     server->listen_sock = sock;
-    ftpd_log_wto("FTPD054I Listening for FTP connections on port %d",
-                 server->config.port);
+    /* Name the address, not just the port: ANY and one interface look the
+    ** same from the console otherwise, and that is exactly the difference
+    ** an operator who set SRVBIND wants confirmed (issue #76). */
+    ftpd_log_wto("FTPD054I Listening for FTP connections on %s port %d",
+                 server->config.bind_ip, server->config.port);
 
     /* Accept loop — non-blocking socket + ecb_timed_wait.
     **
