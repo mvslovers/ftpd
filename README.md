@@ -46,6 +46,13 @@ A full-featured FTP server for MVS 3.8j, built from the ground up with [crent370
 - [mbt](https://github.com/mvslovers/mbt) build tool
 - Optional: [UFSD](https://github.com/mvslovers/ufsd) for UFS file access
 
+**libc370 sysroot: `d44cfea` (2026-08-06) or later.** That commit removed the
+ASXB ENQ from `racf_login()`/`racf_logout()`; FTPD's ABEND recovery dropped the
+defensive DEQ that used to release it after an ABEND, so building against an
+older sysroot leaves an orphaned address-space-wide ENQ stalling every session's
+login until that worker's next command. libc370 has no tags — the requirement is
+a commit, not a version.
+
 ### Build
 ```bash
 git clone https://github.com/mvslovers/ftpd.git
