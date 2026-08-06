@@ -266,10 +266,11 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
     ** must be upper-case:
     **   SITE ABEND        -> ABEND (S0C4) OUTSIDE any lock window; recovery's
     **                        unlock(asxb) must be a no-op and leave every
-    **                        concurrent session's racf_auth() undisturbed.
+    **                        concurrent session's login/teardown undisturbed.
     **   SITE ABEND=LOCK   -> acquire the ASXB ENQ, then ABEND holding it;
     **                        recovery must DEQ the orphaned ENQ (a concurrent
-    **                        session parked in racf_auth() then proceeds).
+    **                        session parked in racf_login() — the real window,
+    **                        PASS under try() — or racf_logout() proceeds).
     **   SITE ABEND=XFER   -> arm the next MVS RETR to ABEND mid-transfer
     **                        (cur_file set + data connection open); exercises
     **                        recovery's fclose(cur_file) + clear-before-close.

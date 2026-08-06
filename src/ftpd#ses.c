@@ -277,27 +277,38 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     **
     ** ORDER IS LOAD-BEARING: this set_acee(STC) MUST precede the
     ** unlock(asxb) in step 2.  If the lock were released first, a worker
-    ** waiting in racf_auth() would acquire it and capture THIS session's
+    ** parked in racf_logout() would acquire it and capture THIS session's
     ** user ACEE (still in ASXBSENV) as its own oldacee, then restore that
     ** ACEE on exit — leaving ASXBSENV dangling once this session ends and
     ** racf_logout() frees it.  That is precisely the dangling-ACEE hazard
-    ** this reset exists to remove.  Do not reorder. */
+    ** this reset exists to remove.  Do not reorder.
+    **
+    ** (Until libc370 #58 the same capture could come from racf_auth();
+    ** that one now passes the ACEE in the RACHECK plist and touches
+    ** neither ASXBSENV nor the lock.  racf_logout() still does both —
+    ** libc370/src/racf/raclgout.c:18,23,73 — so the hazard survives it.) */
     racf_set_acee(sess->server->stc_acee);
 
-    /* 2. Release the ASXB ENQ if this task ABENDed inside racf_auth()'s
-    ** lock(asxb)/unlock(asxb) critical section.  MVS DEQs a task's ENQs
-    ** at task termination, but recovery keeps the task alive, so an
-    ** orphaned AS-wide ENQ would stall every session's racf_auth() until
-    ** this worker's next command.
+    /* 2. Release the ASXB ENQ if this task ABENDed while holding it.  MVS
+    ** DEQs a task's ENQs at task termination, but recovery keeps the task
+    ** alive, so an orphaned AS-wide ENQ would stall every other session's
+    ** login and teardown until this worker's next command.
     **
-    ** This is ownership-safe WITHOUT a tracking flag, and cannot break
-    ** racf_auth()'s cross-task serialization (the property #64 relies on):
-    ** unlock() is DEQ RET=HAVE (@@lkunlk.c -> @@enqdeq.c: pl.opt=HAVE,
-    ** SVC 48, returns pl.rc — never ABENDs), and MVS ENQ ownership is
-    ** per-TCB, so a DEQ from THIS task can only release an ENQ THIS task
-    ** owns.  Outside the window (the common case) we don't own it: DEQ
-    ** RET=HAVE returns RC=8 and releases nothing — it can never touch a
-    ** concurrent worker's lock. */
+    ** The window is PASS: ftpd_auth_pass() -> racf_login(), which brackets
+    ** its RACINIT with lock(asxb)/unlock(asxb) (raclogin.c:52,156), and
+    ** dispatch runs under try().  racf_logout() takes the same lock, but
+    ** ftpd calls it from ftpd_session_free() outside try(), where an ABEND
+    ** ends the task and MVS DEQs for us.  racf_auth() no longer takes the
+    ** lock at all (libc370 #58) — this step outlived that caller.
+    **
+    ** This is ownership-safe WITHOUT a tracking flag: unlock() is DEQ
+    ** RET=HAVE (@@lkunlk.c -> @@enqdeq.c: pl.opt=HAVE, SVC 48, returns
+    ** pl.rc — never ABENDs), and MVS ENQ ownership is per-TCB, so a DEQ
+    ** from THIS task can only release an ENQ THIS task owns.  Outside the
+    ** window (the common case) we don't own it: DEQ RET=HAVE returns RC=8
+    ** and releases nothing — it can never touch a concurrent worker's
+    ** lock.  Delete this step only once racf_login()/racf_logout() stop
+    ** taking the ASXB lock. */
     {
         unsigned *psa  = (unsigned *)0;
         unsigned *ascb = (unsigned *)psa[0x224/4];  /* PSAAOLD  -> ASCB */
