@@ -10,7 +10,6 @@
 #include "ftpd#dat.h"
 #include "ftpd#ufs.h"
 #include "libufs.h"                 /* UFSFILE, ufs_fclose()          */
-#include "cliblock.h"               /* unlock() — release orphaned ENQ */
 
 /* --------------------------------------------------------------------
 ** Allocate and initialize a new session
@@ -254,10 +253,10 @@ ftpd_run_command(ftpd_session_t *sess, const char *cmd, const char *arg)
 **
 ** This function is itself run under try() by the caller, so a re-ABEND in
 ** a cleanup step is contained.  Ordering is therefore deliberate: restore
-** identity and release the ASXB ENQ first (so they hold even on a re-
-** ABEND); WTO + tell the client next; and only then perform the one step
-** that can plausibly re-ABEND (fclose on a possibly-corrupt DCB), so a
-** cleanup failure can never leave the client hanging.
+** the identity first (so it holds even on a re-ABEND); WTO + tell the
+** client next; and only then perform the one step that can plausibly
+** re-ABEND (fclose on a possibly-corrupt DCB), so a cleanup failure can
+** never leave the client hanging.
 **
 ** 'verb' is the parsed FTP command word only (no arguments) — never the
 ** raw command line, which for PASS would contain the password.
@@ -267,56 +266,30 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
 {
     FILE *fp;
 
-    /* 1. Reset the address-space-wide ASXBSENV to the STC identity.  If
-    ** the ABEND struck while switched to the user's ACEE (inside a
-    ** RETR/STOR/LIST OPEN), the shared field still points at the user —
-    ** possibly at an ACEE that is about to be freed.  Restoring the STC
-    ** identity re-establishes the AS's normal resting state and is fail-
-    ** closed: FTPD/USER is least-privilege, so any concurrent session
-    ** transiently pulled onto it can only lose authority, never gain it.
+    /* 1. Reset the address-space-wide ASXBSENV to the STC identity.
     **
-    ** ORDER IS LOAD-BEARING: this set_acee(STC) MUST precede the
-    ** unlock(asxb) in step 2.  If the lock were released first, a worker
-    ** parked in racf_logout() would acquire it and capture THIS session's
-    ** user ACEE (still in ASXBSENV) as its own oldacee, then restore that
-    ** ACEE on exit — leaving ASXBSENV dangling once this session ends and
-    ** racf_logout() frees it.  That is precisely the dangling-ACEE hazard
-    ** this reset exists to remove.  Do not reorder.
+    ** ftpd switches that field to the session's ACEE around every operation
+    ** that authorizes against it — data set OPEN has no parameter list to
+    ** carry an ACEE, so ASXBSENV is the only way to say who is opening
+    ** (ftpd_acee_enter/leave, ftpd#aut.c).  An ABEND inside such a window
+    ** skips the leave(), so the shared field is left holding this session's
+    ** user, and every sibling TCB in the address space authorizes as that
+    ** user until something writes the field again.  Nobody else will:
+    ** racf_auth() and racf_login() do not touch ASXBSENV, and racf_logout()
+    ** only clears it — by __cas() against the ACEE it is deleting
+    ** (libc370/src/racf/raclgout.c:81) — so a foreign ACEE resting there is
+    ** deliberately left alone.  Putting the STC identity back is therefore
+    ** this handler's job and nobody else's.
     **
-    ** (Until libc370 #58 the same capture could come from racf_auth();
-    ** that one now passes the ACEE in the RACHECK plist and touches
-    ** neither ASXBSENV nor the lock.  racf_logout() still does both —
-    ** libc370/src/racf/raclgout.c:18,23,73 — so the hazard survives it.) */
+    ** It is also the fail-closed direction: FTPD/USER is least-privilege, so
+    ** a concurrent session transiently pulled onto it can only lose
+    ** authority, never gain it.
+    **
+    ** This runs first because it must hold even if a later cleanup step
+    ** re-ABENDs. */
     racf_set_acee(sess->server->stc_acee);
 
-    /* 2. Release the ASXB ENQ if this task ABENDed while holding it.  MVS
-    ** DEQs a task's ENQs at task termination, but recovery keeps the task
-    ** alive, so an orphaned AS-wide ENQ would stall every other session's
-    ** login and teardown until this worker's next command.
-    **
-    ** The window is PASS: ftpd_auth_pass() -> racf_login(), which brackets
-    ** its RACINIT with lock(asxb)/unlock(asxb) (raclogin.c:52,156), and
-    ** dispatch runs under try().  racf_logout() takes the same lock, but
-    ** ftpd calls it from ftpd_session_free() outside try(), where an ABEND
-    ** ends the task and MVS DEQs for us.  racf_auth() no longer takes the
-    ** lock at all (libc370 #58) — this step outlived that caller.
-    **
-    ** This is ownership-safe WITHOUT a tracking flag: unlock() is DEQ
-    ** RET=HAVE (@@lkunlk.c -> @@enqdeq.c: pl.opt=HAVE, SVC 48, returns
-    ** pl.rc — never ABENDs), and MVS ENQ ownership is per-TCB, so a DEQ
-    ** from THIS task can only release an ENQ THIS task owns.  Outside the
-    ** window (the common case) we don't own it: DEQ RET=HAVE returns RC=8
-    ** and releases nothing — it can never touch a concurrent worker's
-    ** lock.  Delete this step only once racf_login()/racf_logout() stop
-    ** taking the ASXB lock. */
-    {
-        unsigned *psa  = (unsigned *)0;
-        unsigned *ascb = (unsigned *)psa[0x224/4];  /* PSAAOLD  -> ASCB */
-        unsigned *asxb = (unsigned *)ascb[0x6C/4];  /* ASCBASXB -> ASXB */
-        unlock(asxb, 0);
-    }
-
-    /* 3. Count + WTO now, before the risky cleanup, so the diagnostic
+    /* 2. Count + WTO now, before the risky cleanup, so the diagnostic
     ** survives even a cleanup re-ABEND.  total_recover accumulates over
     ** the STC lifetime (per-session growth is bounded by FTPD_MAX_RECOVER)
     ** so leaked-resource accumulation from the documented residual windows
@@ -335,12 +308,12 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
                      "total=%u", abcode, verb, sess->ctrl_sock,
                      sess->server->total_recover);
 
-    /* 4. Tell the client before touching in-flight resources, so a
+    /* 3. Tell the client before touching in-flight resources, so a
     ** re-ABEND in cleanup cannot leave it hanging until timeout. */
     ftpd_session_reply(sess, FTP_451,
         "Requested action aborted: local error in processing.");
 
-    /* 5. Release the in-flight transfer handle.  Clear the tracking field
+    /* 4. Release the in-flight transfer handle.  Clear the tracking field
     ** BEFORE closing so a re-ABEND in the close (contained by the caller's
     ** try()) can never cause a double close on a subsequent recovery.  At
     ** most one of these is set (a session is in MVS or UFS mode, one

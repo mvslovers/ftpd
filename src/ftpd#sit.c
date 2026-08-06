@@ -11,9 +11,6 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#sit.h"
-#ifdef FTPD_DEBUG_ABEND
-#include "cliblock.h"               /* lock() — debug ABEND injection  */
-#endif
 
 /* --------------------------------------------------------------------
 ** Helper: parse "KEY=VALUE" from token.
@@ -264,13 +261,9 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
     ** Requires an authenticated session (SITE is already post-auth; the
     ** explicit check keeps this from ever being a pre-auth DoS).  Keyword
     ** must be upper-case:
-    **   SITE ABEND        -> ABEND (S0C4) OUTSIDE any lock window; recovery's
-    **                        unlock(asxb) must be a no-op and leave every
-    **                        concurrent session's login/teardown undisturbed.
-    **   SITE ABEND=LOCK   -> acquire the ASXB ENQ, then ABEND holding it;
-    **                        recovery must DEQ the orphaned ENQ (a concurrent
-    **                        session parked in racf_login() — the real window,
-    **                        PASS under try() — or racf_logout() proceeds).
+    **   SITE ABEND        -> ABEND (S0C4) now; recovery must reset ASXBSENV
+    **                        to the STC identity, answer the client and leave
+    **                        the worker serving.
     **   SITE ABEND=XFER   -> arm the next MVS RETR to ABEND mid-transfer
     **                        (cur_file set + data connection open); exercises
     **                        recovery's fclose(cur_file) + clear-before-close.
@@ -291,15 +284,6 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
             return 0;
         }
 
-        /* ABEND=LOCK: hold the ASXB ENQ across the ABEND. */
-        if (arg[5] == '=' && (arg[6] == 'L' || arg[6] == 'l')) {
-            unsigned *psa  = (unsigned *)0;
-            unsigned *ascb = (unsigned *)psa[0x224/4];
-            unsigned *asxb = (unsigned *)ascb[0x6C/4];
-            lock(asxb, 0);
-        }
-
-        /* ABEND (bare) or ABEND=LOCK: fire now. */
         ftpd_log_wto("FTPD072W DEBUG ABEND injection: SITE %s", arg);
         *trap = 0;                     /* force S0C4 */
     }
