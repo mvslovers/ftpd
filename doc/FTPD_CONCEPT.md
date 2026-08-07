@@ -183,6 +183,7 @@ This is lenient behavior for forward compatibility — clients that send z/OS-sp
 - **Quoted** CWD is **absolute** — resets the prefix:
   - `CWD 'SYS1.MACLIB'` → `SYS1.MACLIB.`
 - `CWD ..` / `CDUP` → removes last qualifier. At empty prefix, returns `250` with empty prefix (no error)
+- `CWD .` → changes nothing, answers `250` for the current prefix (or the PDS, in PDS context). Answered before the prefix is built: `HLQ.` + `.` would leave an empty qualifier, and resolving it used to drop PDS context while keeping the PDS as the prefix
 
 **CWD trailing dot controls PDS detection (verified on z/OS 3.1):**
 - **Without** trailing dot → OBTAIN checks DSORG; if PDS → enters PDS context:

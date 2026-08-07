@@ -416,7 +416,7 @@ ftpd_mvs_cdup(ftpd_session_t *sess)
 ** z/OS behavior:
 ** - CWD sets prefix only, no existence check (always 250)
 ** - Exception: if resolved name is a PDS, response says so
-** - CWD .. is treated as CDUP
+** - CWD .. is treated as CDUP, CWD . changes nothing
 ** ----------------------------------------------------------------- */
 int
 ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
@@ -429,6 +429,26 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
     /* CWD .. / CWD handled as CDUP */
     if (arg && strcmp(arg, "..") == 0)
         return ftpd_mvs_cdup(sess);
+
+    /* CWD . means stay here, and has to be answered before the prefix is
+    ** built: "HLQ." + "." is "HLQ..", one trailing dot comes off again, and
+    ** the empty qualifier that remains would answer 501 for what every
+    ** client sends as a no-op (#95).
+    **
+    ** It also has to be a real no-op.  Resolving it used to clear the PDS
+    ** context while keeping the PDS as the prefix, which left a session
+    ** where `put x` addressed the data set HLQ.PDS.X. */
+    if (arg && strcmp(arg, ".") == 0) {
+        if (sess->in_pds)
+            ftpd_session_reply(sess, FTP_250,
+                "The working directory \"%s\" is a partitioned data set",
+                sess->pds_name);
+        else
+            ftpd_session_reply(sess, FTP_250,
+                "\"%s\" is the working directory name prefix.",
+                sess->mvs_cwd);
+        return 0;
+    }
 
     /* Detect trailing dot BEFORE resolve_dsn strips it.
     ** z/OS behavior (verified on z/OS 3.1):
