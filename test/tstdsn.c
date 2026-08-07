@@ -61,8 +61,17 @@ main(void)
     CHECK(bad("HERC01.TEST:1"), "a colon is rejected");
     CHECK(bad("HERC01.TEST+1"), "a plus sign is rejected");
     CHECK(bad("HERC01.TEST_1"), "an underscore is rejected");
-    CHECK(bad("HERC01.TEST?"), "a question mark is rejected");
     CHECK(bad("HERC01.TEST\t"), "a control character is rejected");
+
+    /* --- a qualifier has to hold something ---------------------------- */
+    CHECK(bad("HERC01..PROFILE"),
+          "an empty qualifier is rejected (`put .profile` reached SVC 99)");
+    CHECK(bad(".PROFILE"), "a leading dot is an empty first qualifier");
+    CHECK(bad("HERC01."),
+          "a trailing dot is an empty last qualifier -- resolve_dsn strips it "
+          "first, where it means prefix-only");
+    CHECK(bad("."), "a lone dot is not a name");
+    CHECK(bad("HERC01...TEST"), "two empty qualifiers are rejected");
 
     /* --- letters are not a range -------------------------------------- */
     /* In EBCDIC A-Z runs C1-C9, D1-D9, E2-E9 with gaps, and '{' (C0),
@@ -85,13 +94,20 @@ main(void)
     CHECK(bad("(MEM)"), "a member without a data set is not a name");
 
     /* --- wildcards belong to LIST and NLST ---------------------------- */
+    /* '?' is one of them: FTPD has always documented and rejected it with
+    ** '*' and '%' (FTPD_CONCEPT.md), and dsn_match() ignoring it means a
+    ** pattern carrying one matches nothing -- not that it is a letter. */
     CHECK(bad("HERC01.MIK*"), "'*' is rejected when patterns are not allowed");
     CHECK(bad("HERC01.%BC"), "'%' is rejected when patterns are not allowed");
+    CHECK(bad("HERC01.MIK?"), "'?' is rejected when patterns are not allowed");
     CHECK(ftpd_dsn_valid("HERC01.MIK*", 1) == 1, "'*' is a pattern for LIST");
     CHECK(ftpd_dsn_valid("HERC01.%BC", 1) == 1, "'%' is a pattern for LIST");
+    CHECK(ftpd_dsn_valid("HERC01.MIK?", 1) == 1, "'?' is a pattern for LIST");
     CHECK(ftpd_dsn_valid("HERC01.*", 1) == 1, "a whole qualifier may be a pattern");
     CHECK(ftpd_dsn_valid("HERC01.BUILD/X", 1) == 0,
           "allowing patterns does not allow anything else");
+    CHECK(ftpd_dsn_valid("HERC01..*", 1) == 0,
+          "allowing patterns does not allow an empty qualifier");
 
     /* --- nothing is not a name ---------------------------------------- */
     CHECK(bad(""), "an empty name is rejected");

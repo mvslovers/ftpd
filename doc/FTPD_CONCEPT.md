@@ -203,16 +203,23 @@ This is lenient behavior for forward compatibility — clients that send z/OS-sp
 - Every resolved name passes `ftpd_dsn_valid()` (`ftpd#dsn.c`) before any
   catalog or allocation work — for every command, not just CWD
 - Allowed: `A-Z`, `0-9`, the national characters `@ # $`, and `-`; `.`
-  separates qualifiers; `*` and `%` only for LIST/NLST patterns
+  separates qualifiers and no qualifier may be empty; the wildcards above only
+  for LIST/NLST patterns
 - Rejected with `501 Invalid data set name "'DSN'".  Use MVS Dsname
   conventions.` — the resolved name is quoted, because what the client sent
   and what FTPD built are rarely the same thing:
   - `put build/x.xmit` → `501 Invalid data set name "'HERC01.BUILD/X.XMIT'". …`
     (previously reached SVC 99 and came back as `550 Cannot allocate dataset`)
-- Not enforced, deliberately: qualifier length (≤ 8), empty qualifiers, and
-  the "must not begin with a digit" rule above. The length rule would turn
-  `ls ABCDEFGHIJ*` — a pattern that matches nothing — into a 501, and MVS 3.8j
-  is more permissive about the first character than the manuals are
+  - `put .profile` → `501 Invalid data set name "'HERC01..PROFILE'". …`
+- A wildcard keeps the qualifier message above, `?` included:
+  `CWD MIK?` → `501 A qualifier in "MIK?" contains an invalid character`.
+  The set lives in `FTPD_DSN_WILDCARDS` (`ftpd#dsn.h`) so the check, the LIST
+  path and the message cannot drift apart. `dsn_match()` implements only `*`,
+  `**` and `%`, so a `?` in a LIST pattern matches nothing
+- Not enforced, deliberately: qualifier length (≤ 8) and the "must not begin
+  with a digit" rule above. The length rule would turn `ls ABCDEFGHIJ*` — a
+  pattern that matches nothing — into a 501, and MVS 3.8j is more permissive
+  about the first character than the manuals are
 - A member (everything from `(`) is not inspected here; `sanitize_member()`
   strips the extension, uppercases and truncates it to 8 characters
 

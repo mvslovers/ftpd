@@ -22,21 +22,34 @@ int
 ftpd_dsn_valid(const char *dsn, int allow_wildcards)
 {
     const char *p;
+    int qlen;               /* characters in the qualifier being read */
 
-    if (!dsn || !dsn[0])
+    if (!dsn)
         return 0;
 
+    qlen = 0;
     for (p = dsn; *p && *p != '('; p++) {
-        if (*p == '.')
+        if (*p == '.') {
+            /* Nothing between two dots is not a qualifier.  `put .profile`
+            ** resolved to HERC01..PROFILE and got as far as SVC 99. */
+            if (qlen == 0)
+                return 0;
+            qlen = 0;
             continue;
+        }
 
-        if (allow_wildcards && (*p == '*' || *p == '%'))
+        if (allow_wildcards && strchr(FTPD_DSN_WILDCARDS, *p) != NULL) {
+            qlen++;
             continue;
+        }
 
         if (strchr(dsn_chars, *p) == NULL)
             return 0;
+
+        qlen++;
     }
 
-    /* A name that is nothing but a member -- "(MEM)" -- is not a name. */
-    return (p != dsn);
+    /* qlen is the last qualifier's length: 0 means the name ended on a dot,
+    ** was empty, or was nothing but a member -- "(MEM)". */
+    return (qlen > 0);
 }

@@ -188,8 +188,11 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
         return 0;
     }
 
-    /* Reject wildcards unless explicitly allowed (LIST/NLST) */
-    if (!allow_wildcards && (strchr(arg, '*') || strchr(arg, '%'))) {
+    /* Reject wildcards unless explicitly allowed (LIST/NLST).  Asked of the
+    ** raw argument rather than of the resolved name, because the PDS member
+    ** branch below returns before the name is validated -- and a member is
+    ** not a pattern either. */
+    if (!allow_wildcards && strpbrk(arg, FTPD_DSN_WILDCARDS) != NULL) {
         return -2;
     }
 
@@ -257,6 +260,16 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
 ** CWD — change working directory (MVS dataset prefix)
 ** ----------------------------------------------------------------- */
 /* --------------------------------------------------------------------
+** Helper: is c one of the characters that make a name a pattern?
+** Guards against '\0', which strchr() would report as a member of any set.
+** ----------------------------------------------------------------- */
+static int
+is_wildcard(char c)
+{
+    return c != '\0' && strchr(FTPD_DSN_WILDCARDS, c) != NULL;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: generate z/OS-compatible wildcard error message.
 ** Identifies the problematic qualifier and says "begins with"
 ** or "contains" depending on position.
@@ -283,7 +296,7 @@ wildcard_error(ftpd_session_t *sess, const char *arg)
             /* Check if this qualifier had a wildcard */
             wc = qstart;
             while (wc < p) {
-                if (*wc == '*' || *wc == '%')
+                if (is_wildcard(*wc))
                     goto found;
                 wc++;
             }
@@ -294,7 +307,7 @@ wildcard_error(ftpd_session_t *sess, const char *arg)
     /* Check last qualifier */
     wc = qstart;
     while (*wc) {
-        if (*wc == '*' || *wc == '%')
+        if (is_wildcard(*wc))
             goto found;
         wc++;
     }
@@ -314,7 +327,7 @@ found:
     if (qstart == arg || (arg[0] == '\'' && qstart == arg + 1) ||
         *(qstart - 1) == '.') {
         /* First char of qualifier is the wildcard? */
-        if (*qstart == '*' || *qstart == '%') {
+        if (is_wildcard(*qstart)) {
             ftpd_session_reply(sess, FTP_501,
                 "A qualifier in \"%s\" begins with an invalid character",
                 qual);
