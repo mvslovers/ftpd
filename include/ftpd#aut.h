@@ -52,8 +52,26 @@ int ftpd_racf_allowed(int rc)                       asm("FTPRACOK");
 ** to zero — which RAKF treats as "access permitted" (ICHSFR00: no ACEE ->
 ** RACHGOOD).  Restoring a constant makes both states unreachable.
 **
+** Enter also takes an ENQ on server->acee_lock, so only one window is open
+** in the address space at a time (#79).  One field cannot hold two
+** identities: without it, a worker dispatching inside another session's
+** window authorizes as that session's user, which for a pre-checked
+** operation means a spurious denial — S913 out of OPEN, i.e. an ABEND and
+** a recovery, for what should be a wait of a few milliseconds.
+**
+** INVARIANT, load-bearing for deadlock freedom: a session must not enter a
+** window while holding a data set ENQ (an open DCB or an allocated DD).
+** Every window today opens or allocates INSIDE itself and releases before
+** the next one — RETR/STOR fopen and then transfer outside the window, MKD
+** frees its DD right after, DELE/RMD/RNTO hold nothing.  So a worker inside
+** a window never waits on a resource another worker can only release after
+** acquiring this ENQ.  Keep it that way: a window opened around an already
+** open data set can deadlock the address space.
+**
 ** Both are no-ops for an unauthenticated session (sess->acee == NULL), and
-** must be used in matched pairs around the shortest possible window.
+** must be used in matched pairs around the shortest possible window.  They
+** must NOT nest: the ENQ is not recursive, so an inner leave() would end
+** the outer window's exclusivity.
 */
 void ftpd_acee_enter(ftpd_session_t *sess)          asm("FTPACEEN");
 void ftpd_acee_leave(ftpd_session_t *sess)          asm("FTPACELV");

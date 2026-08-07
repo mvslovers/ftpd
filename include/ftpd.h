@@ -154,6 +154,11 @@ struct ftpd_server {
     ACEE            *stc_acee;      /* STC identity ACEE, captured at
                                     ** init; recovery resets ASXBSENV
                                     ** to this after an ABEND          */
+    int             acee_lock;      /* never read — its ADDRESS is the
+                                    ** ENQ resource serializing the
+                                    ** identity windows (ftpd#aut.c).
+                                    ** Lives in the server struct so it
+                                    ** is one anchor per address space  */
     int             listen_sock;    /* listening socket fd            */
     CTHDMGR         *mgr;          /* thread manager                */
     CTHDTASK        *sock_task;    /* socket listener thread         */
