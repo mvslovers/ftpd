@@ -1019,48 +1019,6 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
 }
 
 /* --------------------------------------------------------------------
-** SIZE — get approximate dataset size
-** ----------------------------------------------------------------- */
-long
-ftpd_mvs_size(ftpd_session_t *sess, const char *dsn)
-{
-    char name[FTPD_MAX_DSN_LEN + 2];
-    LOCWORK lw;
-    DSCB dscb;
-    int rc;
-    long size;
-
-    if (resolve_dsn(sess, dsn, name, sizeof(name), 0) != 0)
-        return -1;
-
-    memset(&lw, 0, sizeof(lw));
-    rc = __locate(name, &lw);
-    if (rc != 0)
-        return -1;
-
-    memset(&dscb, 0, sizeof(dscb));
-    rc = __dscbdv(name, lw.volser, &dscb);
-    if (rc != 0)
-        return -1;
-
-    /* Approximate: used_tracks * blksize (rough estimate) */
-    {
-        unsigned short blksize = dscb.dscb1.blksz;
-
-        if (blksize == 0)
-            blksize = dscb.dscb1.lrecl;
-        if (blksize == 0)
-            return 0;
-
-        /* lstar TTR: first 2 bytes = track count */
-        size = ((long)dscb.dscb1.lstar[0] << 8) | dscb.dscb1.lstar[1];
-        size = size * blksize;
-    }
-
-    return size;
-}
-
-/* --------------------------------------------------------------------
 ** Helper: split DSN(MEMBER) into base dataset name and member name.
 ** If no parentheses, member[0] = '\0'.
 ** Modifies dsn in place (strips the member part).

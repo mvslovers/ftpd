@@ -465,14 +465,16 @@ ftpd_cmd_dispatch(ftpd_session_t *sess, const char *cmd, const char *arg)
     if (strcmp(cmd, "SIZE") == 0) {
         if (sess->fsmode == FS_UFS)
             return ftpd_ufs_size(sess, arg);
-        {
-            long sz = ftpd_mvs_size(sess, arg);
-            if (sz >= 0)
-                ftpd_session_reply(sess, FTP_213, "%ld", sz);
-            else
-                ftpd_session_reply(sess, FTP_550, "Dataset not found");
-            return 0;
-        }
+        /* MVS data sets have no byte count to report.  RFC 3659 wants the
+        ** exact transfer size, and a data set's metadata cannot give it: for
+        ** F/FB the last block may be short and by how much is recorded
+        ** nowhere, so 10 records of 80 bytes in a 3120-byte block look like
+        ** 3120.  z/OS FTP does not implement SIZE for data sets either, and
+        ** SIZE is an optional extension -- so answer like MDTM does rather
+        ** than invent a number clients use for resume offsets (#88). */
+        ftpd_session_reply(sess, FTP_502,
+                           "SIZE not implemented for MVS data sets");
+        return 0;
     }
     if (strcmp(cmd, "MDTM") == 0) {
         if (sess->fsmode == FS_UFS)

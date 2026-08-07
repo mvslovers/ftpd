@@ -99,9 +99,17 @@ Standard FTP commands that MUST be supported:
 | `ABOR` | Abort transfer |
 | `REST` | Restart transfer (RFC 3659) |
 | `FEAT` | Feature negotiation (RFC 2389) |
-| `SIZE` | File size (RFC 3659) |
-| `MDTM` | File modification time (RFC 3659) |
+| `SIZE` | File size (RFC 3659) — **UFS only**, `502` for MVS data sets |
+| `MDTM` | File modification time (RFC 3659) — **UFS only**, `502` for MVS data sets |
 | `HELP` | Command help |
+
+`SIZE` and `MDTM` are optional RFC 3659 extensions and are answered only in
+UFS mode. A data set has no byte count to report: RFC 3659 asks for the exact
+number of bytes the transfer would deliver, and MVS metadata cannot supply it —
+for F/FB the last block may be short and by how much is recorded nowhere, so
+ten 80-byte records in a 3120-byte block are indistinguishable from a full
+block. z/OS FTP does not implement `SIZE` for data sets either. Clients use the
+value for resume offsets, so an estimate is worse than an honest `502`.
 
 ### 2.2 z/OS-Compatible SITE Commands
 
