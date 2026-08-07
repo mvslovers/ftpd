@@ -1054,6 +1054,41 @@ split_member(char *dsn, char *member, int mbrsz)
 }
 
 /* --------------------------------------------------------------------
+** Helper: what an idcams() return code means, in words.
+**
+** The value is IDCAMS's highest condition code.  The messages that explain
+** it go to SYSPRINT, and libc370's IDCAMS IO exit discards them
+** (src/clib/idcams.c, OP_PUT) -- so the condition code is all a caller has,
+** and "failed" is all the client used to be told.
+**
+** Measured on MVS 3.8j, one IDCAMS step per case:
+**   ALTER of a data set that does not exist  IDC3012I ENTRY ... NOT FOUND
+**                                            -> condition code 8
+**   ALTER to a name with a 9-character qualifier
+**                                            IDC3203I ITEM ... DOES NOT
+**                                            ADHERE TO RESTRICTIONS -> 12
+**   DELETE of a data set that does not exist IDC3012I ... NOT FOUND -> 8
+**
+** 8 is the catalog's general "no" and covers a refusal as well as a missing
+** entry, so the wording names both rather than guessing between them.
+** Negative values come from libc370: IDCAMS could not be invoked at all.
+** ----------------------------------------------------------------- */
+static const char *
+idcams_reason(int rc)
+{
+    if (rc < 0)
+        return "IDCAMS could not be invoked";
+
+    switch (rc) {
+    case 4:  return "IDCAMS reported a warning";
+    case 8:  return "not in the catalog, or refused";
+    case 12: return "the data set name was rejected as invalid";
+    case 16: return "IDCAMS terminated";
+    default: return "IDCAMS reported an error";
+    }
+}
+
+/* --------------------------------------------------------------------
 ** Helper: is 'member' present in PDS 'dsn'?
 **
 ** __locate() answers for the base data set only — it resolves DSN(MEMBER) by
@@ -1925,8 +1960,10 @@ ftpd_mvs_dele(ftpd_session_t *sess, const char *arg)
     rc = idcams(cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
+        ftpd_log(LOG_ERROR, "%s: idcams(\"%s\") rc=%d", __func__, cmd, rc);
         ftpd_session_reply(sess, FTP_550,
-            "DELE fails: %s could not be deleted.", dsn);
+            "DELE fails: %s could not be deleted -- %s (IDCAMS rc=%d).",
+            dsn, idcams_reason(rc), rc);
         return 0;
     }
 
@@ -2034,8 +2071,10 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
     rc = idcams(cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
+        ftpd_log(LOG_ERROR, "%s: idcams(\"%s\") rc=%d", __func__, cmd, rc);
         ftpd_session_reply(sess, FTP_550,
-            "Cannot remove %s", dsn);
+            "Cannot remove %s -- %s (IDCAMS rc=%d).",
+            dsn, idcams_reason(rc), rc);
         return 0;
     }
 
@@ -2235,8 +2274,10 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
     rc = idcams(cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
+        ftpd_log(LOG_ERROR, "%s: idcams(\"%s\") rc=%d", __func__, cmd, rc);
         ftpd_session_reply(sess, FTP_550,
-            "Rename of %s to %s failed.", src, dsn);
+            "Rename of %s to %s failed -- %s (IDCAMS rc=%d).",
+            src, dsn, idcams_reason(rc), rc);
         sess->rnfr_path[0] = '\0';
         return 0;
     }
