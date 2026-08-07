@@ -11,6 +11,7 @@
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
 #include "ftpd#dat.h"
+#include "ftpd#dsn.h"
 #include "ftpd#mvs.h"
 #include "ftpd#xlt.h"
 #include "mvssupa.h"
@@ -166,7 +167,11 @@ sanitize_member(const char *in, char *out, int outsz)
 **   DSN.NAME    → relative: prepend mvs_cwd prefix
 **
 ** Result is uppercased and null-terminated in buf (max 44 chars).
-** Returns 0 on success, -1 if name is too long or contains wildcards.
+**
+** Returns 0 on success, or, with the reply left to dsn_error():
+**   -1  the name is too long
+**   -2  the name holds a wildcard and the caller resolves one name
+**   -3  the name holds a character a data set name may not hold
 ** ----------------------------------------------------------------- */
 static int
 resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
@@ -236,6 +241,14 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
     len = strlen(buf);
     if (len > 0 && buf[len - 1] == '.')
         buf[len - 1] = '\0';
+
+    /* Ask last, with the name in the form the rest of FTPD will use it:
+    ** a client that sends its local path as the remote name (`put
+    ** build/x.xmit`) used to get that '/' carried through LOCATE and into
+    ** SVC 99, which reported an allocation failure for a name that was
+    ** never allocatable (#95). */
+    if (!ftpd_dsn_valid(buf, allow_wildcards))
+        return -3;
 
     return 0;
 }
@@ -317,6 +330,38 @@ found:
 }
 
 /* --------------------------------------------------------------------
+** Helper: reply to a resolve_dsn() failure.
+**
+** Every command resolves a name the same way and used to answer the same
+** single "Invalid dataset name" for every way it can go wrong.  Saying
+** which one it was is worth more than the sentence: a wildcard names the
+** qualifier that carries it, and an unusable character comes back with the
+** name FTPD actually built, which is the surprising part when the client
+** sent a path and got a data set name (#95).
+**
+** arg -- the argument as the client sent it, for the wildcard message.
+** dsn -- the resolved name; read only for -3, where resolve_dsn() has
+**        filled it in completely.
+** ----------------------------------------------------------------- */
+static void
+dsn_error(ftpd_session_t *sess, const char *arg, const char *dsn, int rc)
+{
+    if (rc == -2) {
+        wildcard_error(sess, arg);
+        return;
+    }
+
+    if (rc == -3) {
+        ftpd_session_reply(sess, FTP_501,
+            "Invalid data set name \"'%s'\".  Use MVS Dsname conventions.",
+            dsn);
+        return;
+    }
+
+    ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+}
+
+/* --------------------------------------------------------------------
 ** CDUP — remove last qualifier from CWD
 ** SYS1.MACLIB. → SYS1.
 ** SYS1. → (empty, reset to HLQ)
@@ -388,12 +433,8 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
     }
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc == -2) {
-        wildcard_error(sess, arg);
-        return 0;
-    }
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -823,9 +864,9 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         if (strcmp(arg, "*") == 0) {
             strcpy(prefix, cwd_notrail);
         } else {
-            if (resolve_dsn(sess, arg, prefix, sizeof(prefix), 1) != 0) {
-                ftpd_session_reply(sess, FTP_501,
-                                   "Invalid dataset name");
+            int rc = resolve_dsn(sess, arg, prefix, sizeof(prefix), 1);
+            if (rc != 0) {
+                dsn_error(sess, arg, prefix, rc);
                 return 0;
             }
         }
@@ -1171,7 +1212,7 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -1601,7 +1642,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -1928,7 +1969,7 @@ ftpd_mvs_dele(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -1995,7 +2036,7 @@ ftpd_mvs_mkd(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -2048,7 +2089,7 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -2102,7 +2143,7 @@ ftpd_mvs_rnfr(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 
@@ -2170,7 +2211,7 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
 
     rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
     if (rc != 0) {
-        ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
+        dsn_error(sess, arg, dsn, rc);
         return 0;
     }
 

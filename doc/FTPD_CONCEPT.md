@@ -199,6 +199,23 @@ This is lenient behavior for forward compatibility — clients that send z/OS-sp
 - Only alphanumeric characters, `@`, `#`, `$` allowed in qualifiers
 - Qualifiers must not begin with a digit
 
+**Dataset name character validation (issue #95):**
+- Every resolved name passes `ftpd_dsn_valid()` (`ftpd#dsn.c`) before any
+  catalog or allocation work — for every command, not just CWD
+- Allowed: `A-Z`, `0-9`, the national characters `@ # $`, and `-`; `.`
+  separates qualifiers; `*` and `%` only for LIST/NLST patterns
+- Rejected with `501 Invalid data set name "'DSN'".  Use MVS Dsname
+  conventions.` — the resolved name is quoted, because what the client sent
+  and what FTPD built are rarely the same thing:
+  - `put build/x.xmit` → `501 Invalid data set name "'HERC01.BUILD/X.XMIT'". …`
+    (previously reached SVC 99 and came back as `550 Cannot allocate dataset`)
+- Not enforced, deliberately: qualifier length (≤ 8), empty qualifiers, and
+  the "must not begin with a digit" rule above. The length rule would turn
+  `ls ABCDEFGHIJ*` — a pattern that matches nothing — into a 501, and MVS 3.8j
+  is more permissive about the first character than the manuals are
+- A member (everything from `(`) is not inspected here; `sanitize_member()`
+  strips the extension, uppercases and truncates it to 8 characters
+
 **Supported Dataset Organizations:**
 - PS (Physical Sequential)
 - PO (Partitioned — PDS)

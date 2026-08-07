@@ -27,6 +27,12 @@ ac = 1                    # APF authorization (SETCODE AC(1));
 name = "TSTADR"
 sources = ["test/tstadr.c", "src/ftpd#adr.c"]
 
+# ftpd_dsn_valid() -- the data set name character check (#95).  Same shape as
+# TSTADR: ftpd#dsn.c is free of ftpd.h and of MVS services, so this is DUAL.
+[[test]]
+name = "TSTDSN"
+sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
+
 # ── Dependencies ─────────────────────────────────────────
 # Only ufsd remains a real dependency: libufs.h / libufs.a are ufsd-specific.
 # crent370 was dropped -- every crent370 header ftpd uses (clib*.h, racf.h,
