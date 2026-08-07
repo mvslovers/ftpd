@@ -1054,6 +1054,49 @@ split_member(char *dsn, char *member, int mbrsz)
 }
 
 /* --------------------------------------------------------------------
+** Helper: is 'member' present in PDS 'dsn'?
+**
+** __locate() answers for the base data set only — it resolves DSN(MEMBER) by
+** ignoring the member entirely — so member existence needs the directory.
+** Reads it with __listpd() under the session identity, exactly as LIST does;
+** the caller has already established that the base data set exists.
+**
+** Returns 1 if the member is there, 0 if it is not (or the directory could
+** not be read, which for the callers here means the same thing: do not
+** proceed).
+** ----------------------------------------------------------------- */
+static int
+member_exists(ftpd_session_t *sess, const char *dsn, const char *member)
+{
+    PDSLIST **pds;
+    char want[8];
+    int found = 0;
+    int i;
+
+    /* Directory entries are 8 bytes, blank padded and not terminated. */
+    memset(want, ' ', sizeof(want));
+    for (i = 0; i < (int)sizeof(want) && member[i]; i++)
+        want[i] = member[i];
+
+    ftpd_acee_enter(sess);
+    pds = __listpd(dsn, member);
+    ftpd_acee_leave(sess);
+
+    if (!pds)
+        return 0;
+
+    for (i = 0; pds[i]; i++) {
+        if (memcmp(pds[i]->name, want, sizeof(want)) == 0) {
+            found = 1;
+            break;
+        }
+    }
+
+    __freepd(&pds);
+    return found;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: format RECFM name for 125 response.
 ** Uses _FILE_RECFM_* constants from clibio.h (FILE struct recfm).
 ** F/FB → "FIX", V/VB → "VAR", U → "UND"
@@ -2008,6 +2051,8 @@ int
 ftpd_mvs_rnfr(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
+    char full[FTPD_MAX_DSN_LEN + 2];
+    char member[FTPD_MAX_MBR_LEN + 1];
     LOCWORK lw;
     int rc;
 
@@ -2022,11 +2067,20 @@ ftpd_mvs_rnfr(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* Keep the name as given for RNTO, then work on the base name.  Every
+    ** check below is about the data set or its directory, and neither
+    ** __locate() nor a RAKF DATASET profile can be asked about DSN(MEMBER):
+    ** LOCATE resolves the base name and ignores the member, and profiles are
+    ** held under data set names (#92). */
+    strncpy(full, dsn, sizeof(full) - 1);
+    full[sizeof(full) - 1] = '\0';
+    split_member(dsn, member, sizeof(member));
+
     /* RACF access check (ALTER needed for rename) */
     if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
         return 0;
 
-    /* Verify existence */
+    /* Verify existence — of the data set, and of the member if one is named */
     memset(&lw, 0, sizeof(lw));
     if (__locate(dsn, &lw) != 0) {
         ftpd_session_reply(sess, FTP_550,
@@ -2034,8 +2088,14 @@ ftpd_mvs_rnfr(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    if (member[0] && !member_exists(sess, dsn, member)) {
+        ftpd_session_reply(sess, FTP_550,
+            "RNFR fails: %s(%s) does not exist.", dsn, member);
+        return 0;
+    }
+
     /* Store for RNTO */
-    strncpy(sess->rnfr_path, dsn, sizeof(sess->rnfr_path) - 1);
+    strncpy(sess->rnfr_path, full, sizeof(sess->rnfr_path) - 1);
     sess->rnfr_path[sizeof(sess->rnfr_path) - 1] = '\0';
 
     ftpd_session_reply(sess, FTP_350,
@@ -2051,6 +2111,9 @@ int
 ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
+    char tmember[FTPD_MAX_MBR_LEN + 1];
+    char src[FTPD_MAX_DSN_LEN + 2];
+    char smember[FTPD_MAX_MBR_LEN + 1];
     LOCWORK lw;
     char cmd[256];
     int rc;
@@ -2071,6 +2134,78 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
         ftpd_session_reply(sess, FTP_501, "Invalid dataset name");
         return 0;
     }
+
+    strncpy(src, sess->rnfr_path, sizeof(src) - 1);
+    src[sizeof(src) - 1] = '\0';
+    split_member(src, smember, sizeof(smember));
+    split_member(dsn, tmember, sizeof(tmember));
+
+    /* A member and a data set are different kinds of thing: STOW renames a
+    ** directory entry, IDCAMS ALTER renames a catalogued data set, and
+    ** neither turns one into the other.  Say which way round it was. */
+    if ((smember[0] != '\0') != (tmember[0] != '\0')) {
+        if (smember[0])
+            ftpd_session_reply(sess, FTP_550,
+                "Rename fails: cannot rename member %s(%s) to data set %s.",
+                src, smember, dsn);
+        else
+            ftpd_session_reply(sess, FTP_550,
+                "Rename fails: cannot rename data set %s to member %s(%s).",
+                src, dsn, tmember);
+        sess->rnfr_path[0] = '\0';
+        return 0;
+    }
+
+    /* --- member -> member: STOW change, not IDCAMS --------------------- */
+    if (smember[0]) {
+        if (strcmp(src, dsn) != 0) {
+            ftpd_session_reply(sess, FTP_550,
+                "Rename fails: cannot move a member between data sets "
+                "(%s -> %s).", src, dsn);
+            sess->rnfr_path[0] = '\0';
+            return 0;
+        }
+
+        if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0) {
+            sess->rnfr_path[0] = '\0';
+            return 0;
+        }
+
+        /* __renmem() allocates, opens, STOWs and closes the PDS, so it
+        ** carries its own existence checks — rc 8 for a missing source and
+        ** rc 4 for an occupied target are exactly the two answers __locate()
+        ** could never give here (#92). */
+        ftpd_acee_enter(sess);
+        rc = __renmem(dsn, smember, tmember);
+        ftpd_acee_leave(sess);
+
+        switch (rc) {
+        case 0:
+            ftpd_session_reply(sess, FTP_250, "%s(%s) renamed to %s(%s)",
+                               dsn, smember, dsn, tmember);
+            break;
+        case 4:
+            ftpd_session_reply(sess, FTP_550,
+                "Rename fails: %s(%s) already exists.", dsn, tmember);
+            break;
+        case 8:
+            ftpd_session_reply(sess, FTP_550,
+                "Rename fails: %s(%s) does not exist.", dsn, smember);
+            break;
+        default:
+            ftpd_log(LOG_ERROR, "%s: __renmem(%s,%s,%s) rc=%d",
+                     __func__, dsn, smember, tmember, rc);
+            ftpd_session_reply(sess, FTP_550,
+                "Rename of %s(%s) to %s(%s) failed.",
+                dsn, smember, dsn, tmember);
+            break;
+        }
+
+        sess->rnfr_path[0] = '\0';
+        return 0;
+    }
+
+    /* --- data set -> data set: IDCAMS ALTER ---------------------------- */
 
     /* Check target does not exist */
     memset(&lw, 0, sizeof(lw));
@@ -2094,20 +2229,20 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
 
     /* Rename via IDCAMS ALTER under user's security environment */
     snprintf(cmd, sizeof(cmd),
-             " ALTER '%s' NEWNAME('%s')", sess->rnfr_path, dsn);
+             " ALTER '%s' NEWNAME('%s')", src, dsn);
 
     ftpd_acee_enter(sess);
     rc = idcams(cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_session_reply(sess, FTP_550,
-            "Rename of %s to %s failed.", sess->rnfr_path, dsn);
+            "Rename of %s to %s failed.", src, dsn);
         sess->rnfr_path[0] = '\0';
         return 0;
     }
 
     ftpd_session_reply(sess, FTP_250,
-        "%s renamed to %s", sess->rnfr_path, dsn);
+        "%s renamed to %s", src, dsn);
 
     sess->rnfr_path[0] = '\0';
 
