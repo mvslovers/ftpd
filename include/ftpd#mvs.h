@@ -39,13 +39,6 @@ int ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                                                     asm("FTPMVLST");
 
 /*
-** Get dataset size (used tracks * blksize approximation).
-** Returns size in bytes, or -1 on error.
-*/
-long ftpd_mvs_size(ftpd_session_t *sess, const char *dsn)
-                                                    asm("FTPMVSIZ");
-
-/*
 ** RETR — send dataset/member to client via data connection.
 */
 int ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
