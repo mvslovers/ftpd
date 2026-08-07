@@ -197,10 +197,15 @@ site_apply_one(ftpd_session_t *sess,
 
     /* --- JES parameters --- */
 
-    if (strcmp(key, "JESINTERFACELEVEL") == 0) {
-        sess->jes_level = atoi(val);
-        return 0;
-    }
+    /* JESINTERFACELEVEL is deliberately NOT accepted here.  On z/OS it is a
+    ** server setting in FTP.DATA, not something a client may change per
+    ** session, and z/OS answers a client that tries with "Unrecognized
+    ** parameter".  Accepting it was worse than either: ftpd stored the value
+    ** in sess->jes_level and no code has ever read it, so the 200 reply
+    ** promised a scoping level that does not exist.  What that level governs
+    ** on z/OS -- who may see and fetch another user's spool -- is tracked as
+    ** its own piece of work; until it exists, say so honestly by falling
+    ** through to the unrecognized-parameter path below. */
 
     if (strcmp(key, "JESJOBNAME") == 0) {
         strncpy(sess->jes_jobname, val, sizeof(sess->jes_jobname) - 1);
@@ -245,6 +250,8 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
     char key[32];
     char val[64];
     char warn[128];
+    char badtok[96];            /* first unrecognized token, verbatim */
+    char badmsg[160];
     const char *p;
     const char *end;
     int tlen;
@@ -301,6 +308,7 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
 #endif
 
     warn[0] = '\0';
+    badtok[0] = '\0';
     n_tokens = 0;
     n_unrecognized = 0;
     p = arg;
@@ -321,8 +329,15 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
         tok[tlen] = '\0';
 
         parse_kv(tok, key, sizeof(key), val, sizeof(val));
-        if (site_apply_one(sess, key, val, warn, sizeof(warn)) != 0)
+        if (site_apply_one(sess, key, val, warn, sizeof(warn)) != 0) {
+            /* Keep the first offender verbatim for the reply — z/OS names it,
+            ** and "which one?" is the only question the old wording left. */
+            if (badtok[0] == '\0') {
+                strncpy(badtok, tok, sizeof(badtok) - 1);
+                badtok[sizeof(badtok) - 1] = '\0';
+            }
             n_unrecognized++;
+        }
         n_tokens++;
         p = end;
     }
@@ -336,8 +351,10 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
 
     /* Send exactly one reply for the entire command */
     if (n_unrecognized > 0) {
+        snprintf(badmsg, sizeof(badmsg),
+                 "Unrecognized parameter '%s' on SITE command.", badtok);
         ftpd_session_reply_multi(sess, FTP_200,
-            "Unrecognized parameter on SITE command.",
+            badmsg,
             "SITE command was accepted");
     } else if (warn[0] != '\0') {
         ftpd_session_reply_multi(sess, FTP_200,
