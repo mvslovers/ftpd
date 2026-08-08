@@ -183,6 +183,7 @@ This is lenient behavior for forward compatibility — clients that send z/OS-sp
 - **Quoted** CWD is **absolute** — resets the prefix:
   - `CWD 'SYS1.MACLIB'` → `SYS1.MACLIB.`
 - `CWD ..` / `CDUP` → removes last qualifier. At empty prefix, returns `250` with empty prefix (no error)
+- `CWD .` → changes nothing, answers `250` for the current prefix (or the PDS, in PDS context). Answered before the prefix is built: `HLQ.` + `.` would leave an empty qualifier, and resolving it used to drop PDS context while keeping the PDS as the prefix
 
 **CWD trailing dot controls PDS detection (verified on z/OS 3.1):**
 - **Without** trailing dot → OBTAIN checks DSORG; if PDS → enters PDS context:
@@ -198,6 +199,30 @@ This is lenient behavior for forward compatibility — clients that send z/OS-sp
   - `CWD MIK*` → `501 A qualifier in "MIK*" contains an invalid character`
 - Only alphanumeric characters, `@`, `#`, `$` allowed in qualifiers
 - Qualifiers must not begin with a digit
+
+**Dataset name character validation (issue #95):**
+- Every resolved name passes `ftpd_dsn_valid()` (`ftpd#dsn.c`) before any
+  catalog or allocation work — for every command, not just CWD
+- Allowed: `A-Z`, `0-9`, the national characters `@ # $`, and `-`; `.`
+  separates qualifiers and no qualifier may be empty; the wildcards above only
+  for LIST/NLST patterns
+- Rejected with `501 Invalid data set name "'DSN'".  Use MVS Dsname
+  conventions.` — the resolved name is quoted, because what the client sent
+  and what FTPD built are rarely the same thing:
+  - `put build/x.xmit` → `501 Invalid data set name "'HERC01.BUILD/X.XMIT'". …`
+    (previously reached SVC 99 and came back as `550 Cannot allocate dataset`)
+  - `put .profile` → `501 Invalid data set name "'HERC01..PROFILE'". …`
+- A wildcard keeps the qualifier message above, `?` included:
+  `CWD MIK?` → `501 A qualifier in "MIK?" contains an invalid character`.
+  The set lives in `FTPD_DSN_WILDCARDS` (`ftpd#dsn.h`) so the check, the LIST
+  path and the message cannot drift apart. `dsn_match()` implements only `*`,
+  `**` and `%`, so a `?` in a LIST pattern matches nothing
+- Not enforced, deliberately: qualifier length (≤ 8) and the "must not begin
+  with a digit" rule above. The length rule would turn `ls ABCDEFGHIJ*` — a
+  pattern that matches nothing — into a 501, and MVS 3.8j is more permissive
+  about the first character than the manuals are
+- A member (everything from `(`) is not inspected here; `sanitize_member()`
+  strips the extension, uppercases and truncates it to 8 characters
 
 **Supported Dataset Organizations:**
 - PS (Physical Sequential)
