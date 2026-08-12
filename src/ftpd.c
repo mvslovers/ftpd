@@ -29,7 +29,7 @@ ftpd_server_t *ftpd_server = NULL;
 
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);
-static int  initialize(ftpd_server_t *server, int argc, char **argv);
+static int  initialize(ftpd_server_t *server);
 static void terminate(ftpd_server_t *server);
 
 /* ====================================================================
@@ -42,7 +42,10 @@ main(int argc, char **argv)
     COM *com;
     CIB *cib;
     int rc;
+    int apf_rc;
     char vers[24];              /* MBT_VERSION, upper case: FTPD000I+001I */
+
+    (void)argc;
 
     memset(&server, 0, sizeof(server));
     strcpy(server.eye, FTPD_EYE);
@@ -65,6 +68,24 @@ main(int argc, char **argv)
     }
     __cibset(5);
 
+    /* --- APF authorization ----------------------------------------
+    ** Before the first WTO on purpose.  MCS prefixes every message from
+    ** an unauthorized problem program with '+', so a banner issued ahead
+    ** of this would be the one startup line marked up differently from
+    ** all the others -- which is exactly what the old order produced:
+    **
+    **     +FTPD000I FTPD Server 1.0.0-dev starting
+    **      FTPD000I FTPD was APF authorized via SVC 244
+    **
+    ** UFSD orders it the same way (__gtcom, __cibset, clib_apf_setup,
+    ** then the banner).  The rc is carried past the banner rather than
+    ** reported here: a failure is worth a line, but not one ahead of the
+    ** message saying which server is starting.  FTPD warns and continues
+    ** where UFSD gives up -- the commands that need authorization fail
+    ** individually and say so.
+    */
+    apf_rc = clib_apf_setup(argv[0]);
+
     /* --- Startup banner ------------------------------------------
     ** Which FTPD, built from which source, against which C runtime.  A
     ** deploy/relink mismatch (sysroot says X, the STC runs Y) then cannot
@@ -86,8 +107,11 @@ main(int argc, char **argv)
 #endif
     }
 
+    if (apf_rc)
+        ftpd_log_wto("FTPD003W APF SETUP FAILED RC=%d", apf_rc);
+
     /* Initialize server (config, trace, socket thread, worker pool) */
-    rc = initialize(&server, argc, argv);
+    rc = initialize(&server);
     if (rc != 0) {
         ftpd_log_wto("FTPD091E INITIALIZATION FAILED RC=%d", rc);
         return rc;
@@ -157,18 +181,9 @@ main(int argc, char **argv)
 ** Initialize -- config, logging, trace, socket thread, worker pool
 ** ================================================================= */
 static int
-initialize(ftpd_server_t *server, int argc, char **argv)
+initialize(ftpd_server_t *server)
 {
     int rc;
-
-    /* APF authorize task + STEPLIB.  Only the failure is worth a line on
-    ** the console: a successful authorization is the normal case and says
-    ** nothing an operator has to act on.  This warns and continues -- the
-    ** commands that need authorization fail individually and say so. */
-    rc = clib_apf_setup(argv[0]);
-    if (rc) {
-        ftpd_log_wto("FTPD003W APF SETUP FAILED RC=%d", rc);
-    }
 
     /* STC identity switch: RACINIT ENVIR=CREATE for FTPD/USER
     ** Replaces the default STC security environment (PROD/PRDGROUP)
