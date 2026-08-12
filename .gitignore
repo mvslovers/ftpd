@@ -6,7 +6,11 @@
 .build-warnings
 compile_commands.json
 
+# Connection settings, incl. MBT_MVS_PASS -- .env plus the per-target
+# variants (.env.mvsdev, ...). The example carries no credentials.
 .env
+.env.*
+!.env.example
 
 # Generated build state -- the committed lock lives at the root (mbt.lock).
 .mbt/
