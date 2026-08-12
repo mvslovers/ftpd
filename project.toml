@@ -39,7 +39,7 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # mvssupa.h, haspjqe.h, socket.h, ...) and its runtime routines are now in
 # the cc370 sysroot (libc370), same as the ufsd v2 migration.
 [dependencies]
-"mvslovers/ufsd" = ">=1.1.0-dev"
+"mvslovers/ufsd" = ">=1.1.0"
 
 # ── Release ──────────────────────────────────────────────
 [release]
