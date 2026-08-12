@@ -291,7 +291,7 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
         /* ABEND=XFER: arm, do not ABEND now. */
         if (arg[5] == '=' && (arg[6] == 'X' || arg[6] == 'x')) {
             sess->debug_abend_xfer = 1;
-            ftpd_log_wto("FTPD072W DEBUG ABEND=XFER armed socket=%d",
+            ftpd_log_wto("FTPD072W DEBUG ABEND=XFER ARMED SOCKET=%d",
                          sess->ctrl_sock);
             ftpd_session_reply(sess, FTP_200,
                 "DEBUG: next RETR will ABEND mid-transfer");
@@ -302,7 +302,7 @@ ftpd_site_dispatch(ftpd_session_t *sess, const char *arg)
         if (arg[5] == '=' && (arg[6] == 'L' || arg[6] == 'l'))
             ftpd_acee_enter(sess);
 
-        ftpd_log_wto("FTPD072W DEBUG ABEND injection: SITE %s", arg);
+        ftpd_log_wto("FTPD072W DEBUG ABEND INJECTION: SITE %s", arg);
         *trap = 0;                     /* force S0C4 */
     }
 #endif

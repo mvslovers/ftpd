@@ -322,16 +322,16 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
 {
     int i;
 
-    ftpd_log_wto("FTPD040I Configuration:");
+    ftpd_log_wto("FTPD040I CONFIGURATION:");
     ftpd_log_wto("FTPD041I   SRVPORT=%d SRVBIND=%s%s", cfg->port,
                  cfg->bind_ip,
-                 cfg->bind_ip_alias ? " (set as SRVIP)" : "");
+                 cfg->bind_ip_alias ? " (SET AS SRVIP)" : "");
     /* PASVADR=ANY is not an address the client could use -- say what it
     ** resolves to instead, the operator is reading this to find out why a
     ** client connects where it does. */
     ftpd_log_wto("FTPD042I   PASVADR=%s PASVPORTS=%d-%d PASVBIND=%s",
                  strcmp(cfg->pasv_addr, "ANY") == 0
-                     ? "ANY (control connection)" : cfg->pasv_addr,
+                     ? "ANY (CONTROL CONNECTION)" : cfg->pasv_addr,
                  cfg->pasv_lo, cfg->pasv_hi,
                  cfg->pasv_bind);
     ftpd_log_wto("FTPD043I   MAXSESSIONS=%d IDLETIMEOUT=%d",
@@ -344,7 +344,7 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
                  cfg->defaults.blksize);
     ftpd_log_wto("FTPD046I   DEFUNIT=%s DEFVOLUME=%s",
                  cfg->defaults.unit, cfg->defaults.volume);
-    ftpd_log_wto("FTPD047I   DASD volumes=%d:", cfg->num_dasd);
+    ftpd_log_wto("FTPD047I   DASD VOLUMES=%d:", cfg->num_dasd);
     for (i = 0; i < cfg->num_dasd; i++) {
         ftpd_log_wto("FTPD048I     %s,%s",
                      cfg->dasd[i].volser, cfg->dasd[i].unit);

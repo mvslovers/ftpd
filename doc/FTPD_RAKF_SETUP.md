@@ -178,14 +178,14 @@ default STC identity (PROD/PRDGROUP) to `FTPD/USER`.  This requires:
 On success, the console shows:
 
 ```
-FTPD004I STC identity set to FTPD/USER via RACINIT
+FTPD004I STC IDENTITY SET TO FTPD/USER VIA RACINIT
 ```
 
 If the RACINIT fails (e.g., user not defined), the STC continues
 under the default identity with a warning:
 
 ```
-FTPD004W RACINIT ENVIR=CREATE failed RC=nn
+FTPD004W RACINIT ENVIR=CREATE FAILED RC=nn
 ```
 
 ### 5.1 SECURITY INVARIANT — `FTPD/USER` must be least-privilege
@@ -236,7 +236,7 @@ The `USER` group is shared.
 4. (Optional) Define DATASET profiles for access control
 5. Reload RAKF: `/F RAKF,RELOAD`
 6. Start FTPD: `/S FTPD`
-7. Verify: `FTPD004I STC identity set to FTPD/USER via RACINIT`
+7. Verify: `FTPD004I STC IDENTITY SET TO FTPD/USER VIA RACINIT`
 8. Test login: `ftp <host> 2121` with a valid RAKF user
 
 ---
@@ -246,7 +246,7 @@ The `USER` group is shared.
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `RAKF0010I STC FTPD STARTED USING DEFAULT STC ACCOUNT` | FTPD user not defined in RAKF | Add FTPD user, `/F RAKF,RELOAD` |
-| `FTPD004W RACINIT ENVIR=CREATE failed` | FTPD user not defined or APF issue | Check RAKF users, verify APF auth |
+| `FTPD004W RACINIT ENVIR=CREATE FAILED` | FTPD user not defined or APF issue | Check RAKF users, verify APF auth |
 | `530 Login incorrect` | Wrong password or user not in RAKF | Verify user exists, password is correct |
 | `530 Not authorized for FTP access` | FTPAUTH profile denies access | Grant READ to user's group |
 | `550 Access denied to <dsn>` | DATASET profile denies access | Check DATASET profiles in RAKF |

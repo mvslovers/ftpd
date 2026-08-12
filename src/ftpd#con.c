@@ -19,7 +19,12 @@
 **   /F FTPD,SHUTDOWN    - graceful shutdown
 **   /P FTPD             - stop (graceful shutdown)
 */
+/* Build stamp for the VERSION command -- see the note in ftpd.c on why
+** this is included per translation unit and not from ftpd.h. */
+#include <buildstamp.h>
+
 #include "ftpd.h"
+#include "clibver.h"
 
 /* Forward declarations for command handlers */
 static void cmd_stats(ftpd_server_t *server);
@@ -97,7 +102,7 @@ ftpd_process_cib(ftpd_server_t *server, CIB *cib)
             cmd_shutdown(server);
         }
         else {
-            ftpd_log_wto("FTPD090E Unknown command: %s", arg);
+            ftpd_log_wto("FTPD021E UNKNOWN COMMAND: %s", arg);
         }
         break;
 
@@ -116,7 +121,7 @@ cmd_stats(ftpd_server_t *server)
 {
     ftpd_log_wto("FTPD010I STATUS: %s",
                  (server->flags & FTPD_ACTIVE) ? "ACTIVE" : "INACTIVE");
-    ftpd_log_wto("FTPD011I SESSIONS:    %d active, %ld total",
+    ftpd_log_wto("FTPD011I SESSIONS:    %d ACTIVE, %ld TOTAL",
                  server->num_sessions, server->total_sessions);
     ftpd_log_wto("FTPD012I BYTES IN:    %ld", server->total_bytes_in);
     ftpd_log_wto("FTPD013I BYTES OUT:   %ld", server->total_bytes_out);
@@ -130,7 +135,7 @@ cmd_stats(ftpd_server_t *server)
 static void
 cmd_sessions(ftpd_server_t *server)
 {
-    ftpd_log_wto("FTPD015I Active sessions: %d / %d",
+    ftpd_log_wto("FTPD015I ACTIVE SESSIONS: %d / %d",
                  server->num_sessions, server->config.max_sessions);
 }
 
@@ -145,12 +150,28 @@ cmd_config(ftpd_server_t *server)
 
 /* ====================================================================
 ** VERSION -- display version string
+**
+** Repeats the startup banner: which FTPD, built from which commit,
+** against which C runtime.  An operator asking VERSION after a deploy
+** wants exactly the identity the banner scrolled off with.
 ** ================================================================= */
 static void
 cmd_version(ftpd_server_t *server)
 {
+    char vers[24];
+    char commit[24];
+    char stamp[48];
+
     (void)server;
-    ftpd_log_wto("FTPD016I %s", FTPD_VERSION_STR);
+
+    ftpd_log_wto("FTPD016I FTPD %s (%s)",
+                 ftpd_upcase(vers, sizeof(vers), MBT_VERSION),
+                 ftpd_upcase(commit, sizeof(commit), MBT_COMMIT));
+    ftpd_log_wto("FTPD016I %s",
+                 ftpd_upcase(stamp, sizeof(stamp), libc370_version()));
+#if MBT_COMMIT_DIRTY
+    ftpd_log_wto("FTPD006W BUILT FROM A MODIFIED WORKING TREE");
+#endif
 }
 
 /* ====================================================================
@@ -167,18 +188,18 @@ cmd_trace(ftpd_server_t *server, const char *arg)
 
     if (strcmp(arg, "ON") == 0) {
         ftpd_trace_enable(1);
-        ftpd_log_wto("FTPD080I Trace enabled");
+        ftpd_log_wto("FTPD080I TRACE ENABLED");
     }
     else if (strcmp(arg, "OFF") == 0) {
         ftpd_trace_enable(0);
-        ftpd_log_wto("FTPD081I Trace disabled");
+        ftpd_log_wto("FTPD081I TRACE DISABLED");
     }
     else if (strcmp(arg, "DUMP") == 0) {
         int n = ftpd_trace_dump();
-        ftpd_log_wto("FTPD082I Trace dumped, %d entries", n);
+        ftpd_log_wto("FTPD082I TRACE DUMPED, %d ENTRIES", n);
     }
     else {
-        ftpd_log_wto("FTPD090E TRACE: expected ON, OFF, or DUMP");
+        ftpd_log_wto("FTPD021E TRACE: SYNTAX: TRACE ON|OFF|DUMP");
     }
 }
 
@@ -189,7 +210,7 @@ static void
 cmd_help(ftpd_server_t *server)
 {
     (void)server;
-    ftpd_log_wto("FTPD020I Commands: STATS, SESSIONS, CONFIG, "
+    ftpd_log_wto("FTPD020I COMMANDS: STATS, SESSIONS, CONFIG, "
                  "VERSION, TRACE, HELP, SHUTDOWN");
 }
 
@@ -199,7 +220,7 @@ cmd_help(ftpd_server_t *server)
 static void
 cmd_shutdown(ftpd_server_t *server)
 {
-    ftpd_log_wto("FTPD097I FTPD shutting down...");
+    ftpd_log_wto("FTPD098I FTPD SHUTTING DOWN");
     server->flags &= ~FTPD_ACTIVE;
     server->flags |= FTPD_QUIESCE;
     ecb_post(&server->wakeup_ecb, 0);

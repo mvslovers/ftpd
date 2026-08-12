@@ -314,16 +314,16 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     ** stays observable in the operator log. */
     sess->server->total_recover++;
     if (abcode == 0)
-        ftpd_log_wto("FTPD070E ABEND recovery (ESTAE create failed) "
-                     "cmd=%s socket=%d total=%u",
+        ftpd_log_wto("FTPD070E ABEND RECOVERY (ESTAE CREATE FAILED) "
+                     "CMD=%s SOCKET=%d TOTAL=%u",
                      verb, sess->ctrl_sock, sess->server->total_recover);
     else if (abcode > 0xFFF)
-        ftpd_log_wto("FTPD070E ABEND S%03X recovered cmd=%s socket=%d "
-                     "total=%u", (abcode >> 12) & 0xFFF, verb,
+        ftpd_log_wto("FTPD070E ABEND S%03X RECOVERED CMD=%s SOCKET=%d "
+                     "TOTAL=%u", (abcode >> 12) & 0xFFF, verb,
                      sess->ctrl_sock, sess->server->total_recover);
     else
-        ftpd_log_wto("FTPD070E ABEND U%04u recovered cmd=%s socket=%d "
-                     "total=%u", abcode, verb, sess->ctrl_sock,
+        ftpd_log_wto("FTPD070E ABEND U%04u RECOVERED CMD=%s SOCKET=%d "
+                     "TOTAL=%u", abcode, verb, sess->ctrl_sock,
                      sess->server->total_recover);
 
     /* 4. Tell the client before touching in-flight resources, so a
@@ -461,8 +461,8 @@ ftpd_session_run(void *udata, CTHDWORK *work)
                 ** corrupt state); stop recovering and close it cleanly.
                 ** The worker survives and serves the next connection. */
                 if (recover_count >= FTPD_MAX_RECOVER) {
-                    ftpd_log_wto("FTPD071E session socket=%d closed after "
-                                 "%d consecutive ABENDs", sess->ctrl_sock,
+                    ftpd_log_wto("FTPD071E SESSION SOCKET=%d CLOSED AFTER "
+                                 "%d CONSECUTIVE ABENDS", sess->ctrl_sock,
                                  recover_count);
                     break;
                 }

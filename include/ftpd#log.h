@@ -22,6 +22,20 @@
 void ftpd_log_wto(const char *fmt, ...)                     asm("FTPLOGW");
 
 /*
+** Copy `src` into `dst` in upper case, NUL-terminated, writing at most
+** `n` bytes including the NUL.  Returns `dst` so a call can be used
+** directly as a ftpd_log_wto() argument.
+**
+** The console house style is upper case, but the build stamp arrives in
+** lower case: MBT_VERSION and MBT_COMMIT carry the project version and a
+** hex commit hash, and libc370_version() returns a whole sentence of its
+** own ("libc370 v1.0.2-dev (22b4870)").  toupper() is the libc370 one, so
+** the mapping is EBCDIC-correct -- do not hand-roll a range test.
+*/
+const char *ftpd_upcase(char *dst, unsigned n, const char *src)
+                                                            asm("FTPUPCAS");
+
+/*
 ** Write a log message to STDOUT with timestamp and level.
 ** This is the general-purpose logging function.
 */
