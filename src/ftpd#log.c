@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <ctype.h>
 
 #include "clibwto.h"
 #include "ftpd#log.h"
@@ -43,6 +44,28 @@ ftpd_log_wto(const char *fmt, ...)
     va_end(ap);
 
     wto(buf);
+}
+
+/* ====================================================================
+** Upper case a string into a caller-supplied buffer
+**
+** The console house style is upper case; only values keep their original
+** case.  Everything that reaches a WTO as a literal is already written in
+** upper case -- this is for the strings that arrive lower case at runtime:
+** the build stamp (MBT_VERSION, MBT_COMMIT) and libc370_version().
+** ================================================================= */
+const char *
+ftpd_upcase(char *dst, unsigned n, const char *src)
+{
+    unsigned i;
+
+    if (n == 0) return dst;
+
+    for (i = 0; i + 1U < n && src[i]; i++)
+        dst[i] = (char)toupper((unsigned char)src[i]);
+    dst[i] = '\0';
+
+    return dst;
 }
 
 /* ====================================================================

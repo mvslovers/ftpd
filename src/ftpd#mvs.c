@@ -1316,7 +1316,7 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     if (sess->debug_abend_xfer) {
         volatile int *trap = (volatile int *)0;
         sess->debug_abend_xfer = 0;
-        ftpd_log_wto("FTPD072W DEBUG ABEND=XFER firing mid-RETR socket=%d",
+        ftpd_log_wto("FTPD072W DEBUG ABEND=XFER FIRING MID-RETR SOCKET=%d",
                      sess->ctrl_sock);
         *trap = 0;                     /* force S0C4 */
     }

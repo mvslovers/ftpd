@@ -5,6 +5,10 @@
 ** Response strings match z/OS FTP Server behavior
 ** (see doc/ZOS_FTP_REFERENCE.md).
 */
+/* Build stamp for the STAT reply -- see the note in ftpd.c on why this is
+** included per translation unit and not from ftpd.h. */
+#include <buildstamp.h>
+
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#cmd.h"
@@ -162,7 +166,8 @@ cmd_noop(ftpd_session_t *sess)
 static int
 cmd_stat(ftpd_session_t *sess)
 {
-    ftpd_session_reply(sess, FTP_211, "%s", FTPD_VERSION_STR);
+    /* Client-facing protocol text: stays mixed case, unlike the console. */
+    ftpd_session_reply(sess, FTP_211, "%s", FTPD_PRODUCT " " MBT_VERSION);
     return 0;
 }
 

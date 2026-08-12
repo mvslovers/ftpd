@@ -31,9 +31,16 @@
 
 typedef unsigned char   UCHAR;
 
-/* --- Version --- */
-#define FTPD_VERSION        "1.0.0-dev"
-#define FTPD_VERSION_STR    "MVS 3.8j FTPD Server " FTPD_VERSION
+/* --- Product name ---
+**
+** The version is NOT here: it comes from MBT_VERSION in the generated
+** <buildstamp.h>, so it cannot drift from VERSION the way a second copy
+** would.  buildstamp.h stays out of this header on purpose -- -MMD makes
+** it a prerequisite of every object that includes it, and a new commit
+** would then rebuild the whole project instead of the few translation
+** units that actually name the version (mbt#59).
+*/
+#define FTPD_PRODUCT        "MVS 3.8j FTPD Server"
 
 /* --- Filesystem / filetype modes --- */
 #define FT_SEQ              0       /* sequential dataset mode       */
