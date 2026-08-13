@@ -15,8 +15,10 @@ name = "FTPD"
 startup = "crt1"
 entry = "@@CRT0"
 sources = ["src/ftpd*.c"]
-ac = 1                    # APF authorization (SETCODE AC(1));
-# ld370 supports --ac -- mbt wiring pending.
+ac = 1                    # APF authorization (SETCODE AC(1)); mbt puts it on
+# the link line as '--ac 1' -- the note that this was still pending is stale.
+# It matters for the SMP install: the ++JCLIN is a COPY step, so SMP copies the
+# module instead of re-binding it, and AC(1) arrives exactly as ld370 set it.
 
 # ── Tests ────────────────────────────────────────────────
 # ftpd_adr_parse() -- the shared SRVBIND/PASVBIND/PASVADR parser (#76).
@@ -40,6 +42,61 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # the cc370 sysroot (libc370), same as the ufsd v2 migration.
 [dependencies]
 "mvslovers/ufsd" = ">=1.2.0"
+
+# ── Distribution (SMP4 install package) ──────────────────
+# Turns `make package` into an installable product, the same two transports
+# ufsd ships with:
+#
+#   FTPD load module -> XMIT -> staging LKLIB -> SMP ++MOD -> FTPD.<vrm>.LINKLIB
+#   samplib/         -> XMIT -> TSO RECEIVE            -> FTPD.<vrm>.SAMPLIB
+#
+# SMP *copies* the host-bound module rather than re-binding it (a COPY-style
+# ++JCLIN is what says so), which is what keeps ac = 1 and the entry point
+# exactly as ld370 set them. The sample library stays outside SMP: an MCS card
+# ends at column 72 and FTPDPRM0 already has comment lines past it, so a
+# configuration pattern would have to answer to a delivery mechanism. The
+# datasets are versioned, so every release brings a fresh SAMPLIB anyway --
+# there is no in-place update for SMP to manage.
+#
+# Every value is a dataset name; the ddname SMP addresses it by is always the
+# last qualifier, so LINKLIB, SAMPLIB, FTPDLOAD and AFTPDLOD fall out of the
+# names. @VRM@ becomes V1R0M0 at package time.
+[distribution]
+readme = "doc/installation.md"
+
+[distribution.smp]
+# One FMID per minor release, spent exactly once: it names a functional level,
+# and a changed one is a new level. Patches on top of it ship as PTFs. 1.0.x is
+# TFTP100; a later 1.1.0 becomes TFTP110 and is installed as a clean cut
+# (RESTORE + REJECT the old, then receive the new). Verified free on 2026-08-13
+# before it was claimed here: LIST CDS and LIST ACDS SYSMOD(TFTP100) both
+# answered RC 04 with an empty list on mvsdev (MVS/CE) and drnmig3a (TK5).
+# A test install must use a throwaway id -- a half-applied FMID leaves this one
+# occupied, and the CDS cannot be queried to find out.
+fmid    = "TFTP100"
+system  = "Z038"
+
+# Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
+# libufs is linked statically, so nothing of ufsd has to be installed for FTPD
+# to load. At run time it is soft -- ftpd_ufs_get() asks UFSD for a session
+# lazily, per session, and answers 550 UFS service not available when the
+# started task is not there. MVS data sets and JES are unaffected, which is
+# most of what FTPD does. REQ(TUFS120) would therefore refuse the install on
+# every system that does not run UFSD, for a facility that degrades on its own
+# -- including both systems we test on, where LIST CDS/ACDS SYSMOD(TUFS120)
+# answered RC 04 on 2026-08-13. ufsd's own prereq is empty for the same kind of
+# reason: RAKF is a runtime dependency, not a SYSMOD one. The guide documents
+# UFSD as an optional runtime prerequisite instead.
+prereq  = []
+
+accept_fmid = true               # accept the FMID once so a PTF can be RESTOREd
+lklib   = "FTPD.@VRM@.FTPDLOAD"  # staging: what the load XMIT is received into
+target  = "FTPD.@VRM@.LINKLIB"   # where the load module ends up
+distlib = "FTPD.@VRM@.AFTPDLOD"
+
+[[distribution.library]]
+dir     = "samplib"
+target  = "FTPD.@VRM@.SAMPLIB"
 
 # ── Release ──────────────────────────────────────────────
 [release]
