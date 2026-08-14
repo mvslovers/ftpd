@@ -3,6 +3,17 @@ name = "ftpd"
 version = "1.0.0-dev"
 type = "application"
 
+[toolchain]
+# Pins the refs release.yml builds the published artifacts against; build.yml
+# deliberately keeps floating on main so a cc370/libc370 regression surfaces
+# in a PR build (mbt#68). cc370 is omitted -- it defaults to main and has no
+# releases to pin to yet.
+#
+# Without this the release CI builds against libc370 main, which is how the
+# first 1.0.0 attempt shipped reporting "FTPD005I LIBC370 1.0.3-DEV (F14AD04)"
+# -- an unreleased runtime nobody can reproduce from a tag.
+libc370 = "1.0.2"
+
 [build]
 # -DVERSION from the project version (v1's mbt injected it automatically;
 # v2 does not). Kept consistent across the ecosystem's projects.
