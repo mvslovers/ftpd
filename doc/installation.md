@@ -456,17 +456,15 @@ the architecture is in
 
 ## 11. Removing FTPD
 
-Because the installation is SMP-managed, there is a defined way back. Stop FTPD
-first (`/P FTPD`), then run, in this order:
+Because the installation is SMP-managed, there is a defined way back — but it
+is **not** the `RESTORE` followed by `REJECT` that SMP documentation leads you
+to expect. The install job accepts the FMID in the same run as the APPLY, and
+an accepted function SYSMOD refuses both: `RESTORE` because it was accepted,
+`REJECT` because accepting removed the control statements it works from. The
+route that does work is a `UCLIN` job.
 
-```
-RESTORE S(TFTP100) .          takes the load module back out of the LINKLIB
-REJECT  SELECT(TFTP100) .     removes the SYSMOD from the SMP inventory
-```
-
-`RESTORE` runs under `SMPAPP` and `REJECT` under `SMPREC`; the DD statements
-are the same ones the install job uses for `APPLY` — copy that step and change
-the `SMPCNTL` command. The FMID is named at the top of the install job.
+The full procedure, with the job to submit and the messages to check, is in
+[uninstall.md](https://github.com/mvslovers/ftpd/blob/main/doc/uninstall.md).
 
 What SMP does **not** remove, because it never owned them: the copies you made
 in step 7, and your RAKF definitions. Those are yours to delete.
