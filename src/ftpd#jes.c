@@ -263,19 +263,26 @@ ftpd_jes_submit(ftpd_session_t *sess)
     ftpd_log(LOG_INFO, "JES: closing internal reader, %d cards, %ld bytes",
              cardcount, total);
 
-    /* Close internal reader — triggers JES2 processing */
-    rc = jesircls(intrdr);
-    if (rc < 0) {
-        ftpd_log(LOG_ERROR, "JES: jesircls() failed rc=%d", rc);
-        ftpd_session_reply(sess, FTP_451,
-                           "Failed to close internal reader");
-        return 0;
-    }
+    /* Close internal reader — triggers JES2 processing.  jesircl2() hands
+    ** the jobid out between the ENDREQ and the close; the old read of
+    ** intrdr->rpl.rplrbar after jesircls() fetched it from the freed
+    ** VSFILE (#102).  The handle is gone either way, so drop the pointer
+    ** before checking the return code. */
+    {
+        unsigned char jobid_raw[8];
 
-    /* Extract job ID from JES2 response (8 bytes in rpl.rplrbar) */
-    memset(jobid, 0, sizeof(jobid));
-    strncpy(jobid, (const char *)intrdr->rpl.rplrbar, 8);
-    jobid[8] = '\0';
+        rc = jesircl2(intrdr, jobid_raw);
+        intrdr = NULL;
+        if (rc < 0) {
+            ftpd_log(LOG_ERROR, "JES: jesircl2() failed rc=%d", rc);
+            ftpd_session_reply(sess, FTP_451,
+                               "Failed to close internal reader");
+            return 0;
+        }
+
+        memset(jobid, 0, sizeof(jobid));
+        memcpy(jobid, jobid_raw, 8);
+    }
 
     ftpd_log(LOG_INFO, "JES: job submitted: %s (%d cards, %ld bytes)",
              jobid, cardcount, total);
