@@ -319,7 +319,12 @@ ftpd_data_send(ftpd_session_t *sess, const void *buf, int len)
     while (sent < len) {
         rc = send(sess->data_sock, (const char *)buf + sent, len - sent, 0);
         if (rc <= 0) {
-            ftpd_log(LOG_ERROR, "%s: send failed, errno=%d", __func__, errno);
+            /* errno only carries a diagnosis when send() itself failed;
+            ** for any other non-positive return it is a leftover from an
+            ** earlier call and reads like a real cause. */
+            ftpd_log(LOG_ERROR, "%s: send failed after %d of %d bytes, "
+                     "rc=%d, errno=%d", __func__, sent, len, rc,
+                     (rc < 0) ? errno : 0);
             return -1;
         }
         sent += rc;

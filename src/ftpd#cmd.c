@@ -90,8 +90,7 @@ cmd_feat(ftpd_session_t *sess)
         sess->server->config.sslproxy ? " PBSZ\r\n PROT\r\n" : "");
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
-    send(sess->ctrl_sock, buf, len, 0);
-    return 0;
+    return ftpd_session_send(sess, buf, len);
 }
 
 /* --------------------------------------------------------------------
