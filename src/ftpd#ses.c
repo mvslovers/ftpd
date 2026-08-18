@@ -87,15 +87,59 @@ ftpd_session_free(ftpd_session_t *sess)
 }
 
 /* --------------------------------------------------------------------
+** Write raw bytes to the control connection.
+**
+** Every reply funnels through here so a failed write is noticed once,
+** centrally, instead of at ~200 call sites: the session is marked
+** closing, and the command loop ends on its next iteration.  Callers
+** may ignore the return value and still terminate correctly.
+**
+** No retry and no interpretation of transport-level codes happens here.
+** On a blocking socket -- which the control connection is, FIONBIO is
+** set only on the listener -- waiting out a full send buffer is the C
+** library's job (libc370 issue #120).  Anything negative that reaches
+** us means the peer is gone.
+** ----------------------------------------------------------------- */
+int
+ftpd_session_send(ftpd_session_t *sess, const char *buf, int len)
+{
+    int sent = 0;
+    int rc;
+
+    if (sess->ctrl_dead)
+        return -1;
+
+    while (sent < len) {
+        rc = send(sess->ctrl_sock, buf + sent, len - sent, 0);
+        if (rc <= 0) {
+            /* Report once per session: a dead control connection
+            ** otherwise produces one message per queued reply. */
+            ftpd_log(LOG_INFO,
+                     "%s: control write failed after %d of %d bytes, "
+                     "socket %d, rc=%d, errno=%d -- closing session",
+                     __func__, sent, len, sess->ctrl_sock, rc,
+                     (rc < 0) ? errno : 0);
+            sess->ctrl_dead = 1;
+            sess->state = SESS_CLOSING;
+            return -1;
+        }
+        sent += rc;
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** Send FTP reply on control connection (EBCDIC -> ASCII)
 ** ----------------------------------------------------------------- */
-void
+int
 ftpd_session_reply(ftpd_session_t *sess, int code, const char *fmt, ...)
 {
     char buf[512];
     va_list ap;
     int len;
     int i;
+    int rc;
 
     /* Format: "code message\r\n" */
     len = snprintf(buf, sizeof(buf) - 2, "%d ", code);
@@ -112,15 +156,20 @@ ftpd_session_reply(ftpd_session_t *sess, int code, const char *fmt, ...)
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
 
-    send(sess->ctrl_sock, buf, len, 0);
+    rc = ftpd_session_send(sess, buf, len);
 
-    ftpd_trace(">>> %d %.*s", code, len - 2, buf + 4);
+    /* Trace what actually went out -- a reply that never reached the
+    ** client must not appear in the trace as if it had. */
+    if (rc == 0)
+        ftpd_trace(">>> %d %.*s", code, len - 2, buf + 4);
+
+    return rc;
 }
 
 /* --------------------------------------------------------------------
 ** Send multi-line FTP reply
 ** ----------------------------------------------------------------- */
-void
+int
 ftpd_session_reply_multi(ftpd_session_t *sess, int code,
                          const char *first, const char *last)
 {
@@ -132,13 +181,14 @@ ftpd_session_reply_multi(ftpd_session_t *sess, int code,
     len = snprintf(buf, sizeof(buf) - 2, "%d-%s\r\n", code, first);
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
-    send(sess->ctrl_sock, buf, len, 0);
+    if (ftpd_session_send(sess, buf, len) < 0)
+        return -1;
 
     /* Last line: "code text\r\n" */
     len = snprintf(buf, sizeof(buf) - 2, "%d %s\r\n", code, last);
     for (i = 0; i < len; i++)
         buf[i] = ebc2asc[(unsigned char)buf[i]];
-    send(sess->ctrl_sock, buf, len, 0);
+    return ftpd_session_send(sess, buf, len);
 }
 
 /* --------------------------------------------------------------------
@@ -403,16 +453,21 @@ ftpd_session_run(void *udata, CTHDWORK *work)
         ftpd_log(LOG_INFO, "%s: session started, socket %d", __func__,
                  sess->ctrl_sock);
 
-        /* Send 220 greeting */
-        ftpd_session_reply(sess, FTP_220, "%s", server->config.banner);
-        sess->state = SESS_AUTH_USER;
+        /* Send 220 greeting.  Only advance the state if it went out --
+        ** otherwise the assignment would overwrite the SESS_CLOSING that
+        ** the failed write just set. */
+        if (ftpd_session_reply(sess, FTP_220, "%s",
+                               server->config.banner) == 0)
+            sess->state = SESS_AUTH_USER;
 
         /* Consecutive per-command ABEND recoveries; reset on any clean
         ** command so the guard only trips on a wedged session. */
         recover_count = 0;
 
-        /* Command loop */
-        while (sess->state != SESS_CLOSING) {
+        /* Command loop.  ctrl_dead is tested separately from the state:
+        ** a handler that sets its own state after a failed reply would
+        ** otherwise clear SESS_CLOSING again. */
+        while (sess->state != SESS_CLOSING && !sess->ctrl_dead) {
             if (work->state == CTHDWORK_STATE_SHUTDOWN)
                 break;
 

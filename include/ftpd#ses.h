@@ -16,6 +16,7 @@ struct ftpd_session {
 
     /* Sockets */
     int             ctrl_sock;      /* control connection socket     */
+    int             ctrl_dead;      /* 1 = control write failed      */
     int             data_sock;      /* data connection socket        */
     int             pasv_sock;      /* passive listen socket         */
 
@@ -124,19 +125,31 @@ int ftpd_session_run(void *udata, CTHDWORK *work)           asm("FTPSESRN");
 void ftpd_session_free(ftpd_session_t *sess)                asm("FTPSESFR");
 
 /*
+** Write raw bytes to the control connection.  The buffer must already
+** be in ASCII.  Short writes are completed; any failure closes the
+** session (see ftpd_session_reply()).
+** Returns 0 when everything was written, -1 otherwise.
+*/
+int ftpd_session_send(ftpd_session_t *sess,
+                      const char *buf, int len)             asm("FTPSESSD");
+
+/*
 ** Send an FTP reply on the control connection.
 ** Message is in EBCDIC internally, translated to ASCII before sending.
+** A failed write marks the session closing; callers that ignore the
+** return value still terminate, because the command loop tests state.
+** Returns 0 when the reply was written, -1 otherwise.
 */
-void ftpd_session_reply(ftpd_session_t *sess, int code,
-                        const char *fmt, ...)               asm("FTPSESRP");
+int ftpd_session_reply(ftpd_session_t *sess, int code,
+                       const char *fmt, ...)                asm("FTPSESRP");
 
 /*
 ** Send a multi-line FTP reply.
 ** First line uses "code-" prefix, last line uses "code " prefix.
 */
-void ftpd_session_reply_multi(ftpd_session_t *sess, int code,
-                              const char *first,
-                              const char *last)             asm("FTPSESRM");
+int ftpd_session_reply_multi(ftpd_session_t *sess, int code,
+                             const char *first,
+                             const char *last)              asm("FTPSESRM");
 
 /*
 ** Read one command line from the control connection.
