@@ -1237,6 +1237,7 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     long total;
     int lrecl;
     int is_fixed;
+    int aborted = 0;            /* data connection died mid-transfer */
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing dataset name");
@@ -1336,15 +1337,18 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
         if (lrecl > 0) {
             while ((n = fread(buf, 1, lrecl, fp)) > 0) {
-                ftpd_data_send(sess, buf, (int)n);
+                if (ftpd_data_send(sess, buf, (int)n) < 0) {
+                    aborted = 1;
+                    break;
+                }
                 total += n;
                 recnum++;
             }
         }
 
         ftpd_log(LOG_INFO,
-                 "RETR BIN: done sent=%ld records=%d lrecl=%d",
-                 total, recnum, lrecl);
+                 "RETR BIN: %s sent=%ld records=%d lrecl=%d",
+                 aborted ? "ABORTED" : "done", total, recnum, lrecl);
     }
     else if (sess->type == XFER_TYPE_A) {
         /* ---------------------------------------------------------------
@@ -1366,7 +1370,10 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 
                 buf[end]     = ASCII_CR;
                 buf[end + 1] = ASCII_LF;
-                ftpd_data_send(sess, buf, end + 2);
+                if (ftpd_data_send(sess, buf, end + 2) < 0) {
+                    aborted = 1;
+                    break;
+                }
                 total += end + 2;
             }
         }
@@ -1375,13 +1382,17 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         /* TYPE E: send EBCDIC as-is, fread lrecl bytes per record */
         if (lrecl > 0) {
             while ((n = fread(buf, 1, lrecl, fp)) > 0) {
-                ftpd_data_send(sess, buf, (int)n);
+                if (ftpd_data_send(sess, buf, (int)n) < 0) {
+                    aborted = 1;
+                    break;
+                }
                 total += n;
             }
         }
     }
 
-    ftpd_log(LOG_INFO, "RETR: closing %s", fname);
+    ftpd_log(LOG_INFO, "RETR: %s %s after %ld bytes",
+             aborted ? "aborting" : "closing", fname, total);
     sess->cur_file = NULL;
     fclose(fp);
     ftpd_data_close(sess);
@@ -1390,6 +1401,17 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     sess->xfer_count++;
     if (sess->server) {
         sess->server->total_bytes_out += total;
+    }
+
+    /* An aborted transfer must not be reported as a completed one -- the
+    ** client is left with an incomplete data set and has to know.  total
+    ** counts only what actually left the machine, so it is the honest
+    ** number to report. */
+    if (aborted) {
+        ftpd_session_reply(sess, FTP_426,
+                           "Transfer aborted: data connection lost "
+                           "after %ld bytes.", total);
+        return 0;
     }
 
     ftpd_session_reply(sess, FTP_250,
