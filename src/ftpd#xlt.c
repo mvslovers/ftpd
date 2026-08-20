@@ -22,7 +22,7 @@
 /* Active default — FTP protocol I/O + UFS file content               */
 /* ================================================================== */
 
-static unsigned char ibm1047_atoe[256] = {
+static const unsigned char ibm1047_atoe[256] = {
     /* 0x00-0x07 */ 0x00, 0x01, 0x02, 0x03, 0x37, 0x2D, 0x2E, 0x2F,
     /* 0x08-0x0F */ 0x16, 0x05, 0x15, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     /* 0x10-0x17 */ 0x10, 0x11, 0x12, 0x13, 0x3C, 0x3D, 0x32, 0x26,
@@ -57,7 +57,7 @@ static unsigned char ibm1047_atoe[256] = {
     /* 0xF8-0xFF */ 0x70, 0xDD, 0xDE, 0xDB, 0xDC, 0x8D, 0x8E, 0xDF
 };
 
-static unsigned char ibm1047_etoa[256] = {
+static const unsigned char ibm1047_etoa[256] = {
     /* 0x00-0x07 */ 0x00, 0x01, 0x02, 0x03, 0x9C, 0x09, 0x86, 0x7F,
     /* 0x08-0x0F */ 0x97, 0x8D, 0x8E, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     /* 0x10-0x17 */ 0x10, 0x11, 0x12, 0x13, 0x9D, 0x0A, 0x08, 0x87,
@@ -96,7 +96,7 @@ static unsigned char ibm1047_etoa[256] = {
 /* IBM Code Page 037 (CECP US/Canada) — for MVS dataset content       */
 /* ================================================================== */
 
-static unsigned char cp037_atoe[256] = {
+static const unsigned char cp037_atoe[256] = {
     /* 0x00-0x07 */ 0x00, 0x01, 0x02, 0x03, 0x37, 0x2D, 0x2E, 0x2F,
     /* 0x08-0x0F */ 0x16, 0x05, 0x15, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     /* 0x10-0x17 */ 0x10, 0x11, 0x12, 0x13, 0x3C, 0x3D, 0x32, 0x26,
@@ -131,7 +131,7 @@ static unsigned char cp037_atoe[256] = {
     /* 0xF8-0xFF */ 0x70, 0xDD, 0xDE, 0xDB, 0xDC, 0x8D, 0x8E, 0xDF
 };
 
-static unsigned char cp037_etoa[256] = {
+static const unsigned char cp037_etoa[256] = {
     /* 0x00-0x07 */ 0x00, 0x01, 0x02, 0x03, 0x9C, 0x09, 0x86, 0x7F,
     /* 0x08-0x0F */ 0x97, 0x8D, 0x8E, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
     /* 0x10-0x17 */ 0x10, 0x11, 0x12, 0x13, 0x9D, 0x0A, 0x08, 0x87,
@@ -168,10 +168,24 @@ static unsigned char cp037_etoa[256] = {
 
 /* ================================================================== */
 /* Active pointers — always IBM-1047                                  */
+/*                                                                    */
+/* Both the tables and the pointers to them are const, and that is    */
+/* not decoration.  FTPD is link-edited AC(1): fetched from an APF-   */
+/* authorized library its module storage is key 0 while the STC runs  */
+/* key 8, so anything written here abends S0C4 (#101).  A codepage    */
+/* switch that reassigned one of these pointers would be exactly that */
+/* bug -- it is what killed HTTPD in http_xlate_init (httpd#197).     */
+/* Read-only, they are never written after program fetch and cost     */
+/* nothing.  A per-session codepage belongs in ftpd_session, not here.*/
+/*                                                                    */
+/* The names are shared with libc370 (src/dyn75/asc2ebc.c) and httpd, */
+/* where they are plain `unsigned char *`.  Keeping the pointer shape */
+/* keeps that ABI: nothing in libc370 references them today, but an   */
+/* array here would silently become garbage to anything that did.     */
 /* ================================================================== */
 
-unsigned char *asc2ebc = ibm1047_atoe;
-unsigned char *ebc2asc = ibm1047_etoa;
+const unsigned char * const asc2ebc = ibm1047_atoe;
+const unsigned char * const ebc2asc = ibm1047_etoa;
 
 /* ================================================================== */
 /* Translation functions                                              */

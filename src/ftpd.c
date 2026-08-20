@@ -19,13 +19,11 @@
 
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "clibgrt.h"
 #include "clibppa.h"
 #include "clibos.h"
 #include "clibenq.h"
 #include "clibver.h"
-
-/* Global server state */
-ftpd_server_t *ftpd_server = NULL;
 
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);
@@ -39,6 +37,7 @@ int
 main(int argc, char **argv)
 {
     ftpd_server_t server;
+    CLIBGRT *grt;
     COM *com;
     CIB *cib;
     int rc;
@@ -50,7 +49,31 @@ main(int argc, char **argv)
     memset(&server, 0, sizeof(server));
     strcpy(server.eye, FTPD_EYE);
     server.flags |= FTPD_ACTIVE;
-    ftpd_server = &server;
+
+    /* --- Publish the server, before anything can want it ------------
+    ** The server block is a main() local on purpose.  It used to be
+    ** anchored in a module-scope `ftpd_server` pointer, and that single
+    ** store was enough to kill FTPD outright the moment FTPD.LINKLIB got
+    ** an APF entry: an AC(1) module fetched from an authorized library
+    ** lands in subpool 252 key 0, the STC runs problem state key 8, and
+    ** the store abends S0C4 here -- ahead of the first WTO, so the whole
+    ** JESMSGLG was one IEF450I and nothing else (#101).
+    **
+    ** The GRT is the process-level home for exactly this: heap, key 8,
+    ** and inherited by every subtask, so a session worker sees what main
+    ** put there.  grtapp1 is the anchor a dump reader follows to the
+    ** server (no code reads it); grtapp2 carries the log/trace state,
+    ** which ftpd#log.c does read, on every ftpd_log() and ftpd_trace().
+    **
+    ** level first, anchor second: the memset above leaves it at
+    ** LOG_ERROR, and everything from here on logs.
+    */
+    server.log.level = LOG_INFO;
+    ftpd_log_anchor(&server.log);
+
+    grt = __grtget();
+    if (grt)
+        grt->grtapp1 = &server;
 
     /* Get COM area and set CIB limit BEFORE creating any threads.
     **

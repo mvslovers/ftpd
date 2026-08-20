@@ -155,6 +155,11 @@ struct ftpd_server {
 #define FTPD_QUIESCE        0x02    /* shutdown in progress          */
 
     ftpd_config_t   config;         /* server configuration          */
+    ftpd_logst_t    log;            /* log level + trace ring state;
+                                    ** here rather than file scope in
+                                    ** ftpd#log.c because module storage
+                                    ** is key 0 under APF (#101).  Read
+                                    ** through grtapp2, not this field  */
     char            enq_rname[16];  /* "FTPD.PORT.nnnnn": the single
                                     ** instance ENQ, held by main's TCB
                                     ** for the life of the server      */
@@ -178,8 +183,6 @@ struct ftpd_server {
                                     ** (STC-lifetime; observability for
                                     ** documented residual leaks)      */
 };
-
-extern ftpd_server_t *ftpd_server;
 
 /*
 ** Process a Console Information Block (operator command).

@@ -8,3 +8,21 @@ on:
 jobs:
   build:
     uses: mvslovers/mbt/.github/workflows/build.yml@main
+
+  # FTPD is AC(1).  Fetched from an APF-authorized library it is loaded into
+  # key-0 storage, so a key-8 store into its own statics abends S0C4 before
+  # the first WTO (#101).  The build cannot see that -- this can.
+  module-data:
+    name: No writable data in AC(1) modules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check module data
+        run: python3 tools/check-module-data.py

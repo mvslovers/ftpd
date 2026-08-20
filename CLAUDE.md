@@ -14,6 +14,26 @@ Standalone FTP daemon for MVS 3.8j. Not tied to HTTPD.
 Supports native MVS datasets, UFS (via UFSD), and JES (job submit/spool).
 z/OS-compatible SITE commands and dataset name handling.
 
+### No writable module data — FTPD is AC(1)
+
+**Never add a mutable file-scope variable or a function-local `static` to a
+`[[module]]` source.** FTPD is link-edited `AC(1)`. Fetched from an
+APF-authorized library, the job step is authorized before program fetch, so
+MVS loads the module into subpool 252 **key 0**; the STC runs problem state
+key 8, and any store into module storage abends S0C4 (#101). It also breaks
+the RENT/REUS attributes ld370 puts on the module by default.
+
+Where state goes instead: into `struct ftpd_server` (a `main()` local, key 8)
+and published process-wide through the GRT — `grtapp1` anchors the server for
+dump reading, `grtapp2` the log/trace block that `ftpd#log.c` reads on every
+call. `ftpd_log_anchor()` is the pattern to copy. A subtask inherits the GRT
+from its mother task (`@@CRTSET`), so worker threads see it. Tables that are
+only ever read are `const` instead.
+
+`tools/check-module-data.py` enforces it and runs as its own CI job. It is a
+text proxy — the real check is `cc370 -S` plus a look for a store through a
+register loaded from `=A(@Vn)` or into an X-var.
+
 ### Dependencies
 
 - **crent370** (required): C runtime — sockets, thdmgr (threads), jes, racf, os, emfile, ipc
