@@ -42,6 +42,7 @@ main(int argc, char **argv)
     CIB *cib;
     int rc;
     int apf_rc;
+    int apf_at_entry;           /* authorized before clib_apf_setup()?   */
     char vers[24];              /* MBT_VERSION, upper case: FTPD000I+001I */
 
     (void)argc;
@@ -106,7 +107,15 @@ main(int argc, char **argv)
     ** message saying which server is starting.  FTPD warns and continues
     ** where UFSD gives up -- the commands that need authorization fail
     ** individually and say so.
+    **
+    ** Ask __isauth() first.  Which route authorizes the STC decides
+    ** whether its own module storage is writable -- authorized at entry
+    ** means the job step was already authorized when program fetch ran,
+    ** so MVS took the job pack area in subpool 252 key 0 (#101) -- and
+    ** clib_apf_setup() destroys the distinction by returning 0 either
+    ** way.  One TESTAUTH, no supervisor state.
     */
+    apf_at_entry = __isauth();
     apf_rc = clib_apf_setup(argv[0]);
 
     /* --- Startup banner ------------------------------------------
@@ -130,8 +139,23 @@ main(int argc, char **argv)
 #endif
     }
 
+    /* Which route got us here, and what it costs.  Both routes end in an
+    ** authorized task and neither says a word on its own: clib_apf_setup()
+    ** returns 0 either way and libc370's diagnostics on that path are
+    ** commented out.  That silence is what made #101 hard to place -- the
+    ** route is what decides whether FTPD's own module storage is writable,
+    ** so it belongs next to the version banner.
+    **
+    ** The key is inferred from the route, not measured: an authorized job
+    ** step has its module fetched key 0, an unauthorized one key 8, and
+    ** SVC 244 arrives too late to change either.
+    */
     if (apf_rc)
         ftpd_log_wto("FTPD003W APF SETUP FAILED RC=%d", apf_rc);
+    else if (apf_at_entry)
+        ftpd_log_wto("FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)");
+    else
+        ftpd_log_wto("FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)");
 
     /* Initialize server (config, trace, socket thread, worker pool) */
     rc = initialize(&server);

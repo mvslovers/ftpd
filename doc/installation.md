@@ -128,6 +128,19 @@ server block, the log level and the trace ring all live in `main()`'s storage
 and are reached through the C runtime's process anchor. **On 1.0.0 an APF entry
 kills FTPD outright** — see the `S0C4` row under Troubleshooting.
 
+You do not have to work out which route you got: FTPD says so at startup, on
+the line after the version banner.
+
+```
+FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)     APF list entry
+FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)         SVC 244, from RAKF
+```
+
+The key is inferred from the route rather than measured — an authorised job
+step has its module fetched key 0, an unauthorised one key 8, and SVC 244
+arrives too late to change either. Neither line is a warning: both routes end
+in an authorised started task, and which one you want is a site decision.
+
 Unlike UFSD, FTPD **warns and keeps running** when authorisation fails:
 
 ```
@@ -411,6 +424,7 @@ A healthy start ends in `FTPD001I … READY`:
 ```
 FTPD000I FTPD <version> (A3F2C91) STARTING
 FTPD005I LIBC370 V1.0.2 (22B4870)
+FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC IDENTITY SET TO FTPD/USER VIA RACINIT
 FTPD054I LISTENING ON 0.0.0.0 PORT 2121
 FTPD001I FTPD <version> READY
@@ -420,6 +434,11 @@ The two build stamps identify exactly what is running: `FTPD000I` gives the
 version and the commit it was built from, `FTPD005I` the libc370 it was linked
 against — quote both in a bug report. A build made from a modified working tree
 marks its hash `-DIRTY` and adds `FTPD006W`; a released build never does.
+
+`FTPD008I` says which of the two authorisation routes the start took, and
+reads `AUTHORIZED BY LIBRARY (MODULE KEY 0)` on a system with the LINKLIB in
+the APF list — see step 2. Quote it in a bug report too: it decides the storage
+key FTPD's own module runs in.
 
 Then log in from a client:
 
