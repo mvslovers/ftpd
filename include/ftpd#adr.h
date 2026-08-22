@@ -41,4 +41,17 @@
 int ftpd_adr_parse(const char *value, char *out, unsigned *addr)
                                                             asm("FTPADRPA");
 
+/*
+** Would a socket already bound to `bound` keep a bind to `want` from
+** succeeding, both on the same port and both in host byte order?
+**
+** 0 (INADDR_ANY, i.e. SRVBIND=ANY) means every interface, so it collides
+** with anything on that port in either direction.  Two different specific
+** addresses do not collide -- they are different interfaces, and a listener
+** on one leaves the port free on the other.
+**
+** Returns non-zero when they collide.
+*/
+int ftpd_adr_conflicts(unsigned bound, unsigned want)        asm("FTPADRCF");
+
 #endif /* FTPD_ADR_H */

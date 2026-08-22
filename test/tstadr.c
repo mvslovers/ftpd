@@ -121,5 +121,20 @@ main(void)
           addr == QUAD(10, 20, 30, 40),
           "the binary alone can be requested");
 
+    /* --- ftpd_adr_conflicts(): which leftover sockets the stale-port
+    ** sweep may close (#109).  Getting this wrong either leaves the port
+    ** occupied or closes a socket on an interface we never asked for. --- */
+    CHECK(ftpd_adr_conflicts(0u, 0u), "ANY over ANY conflicts");
+    CHECK(ftpd_adr_conflicts(QUAD(10, 1, 2, 3), QUAD(10, 1, 2, 3)),
+          "the same address conflicts with itself");
+    CHECK(ftpd_adr_conflicts(0u, QUAD(10, 1, 2, 3)),
+          "a socket on ANY blocks a bind to one interface");
+    CHECK(ftpd_adr_conflicts(QUAD(10, 1, 2, 3), 0u),
+          "a socket on one interface blocks a bind to ANY");
+    CHECK(!ftpd_adr_conflicts(QUAD(10, 1, 2, 3), QUAD(10, 1, 2, 4)),
+          "two different interfaces do not conflict -- leave that one alone");
+    CHECK(!ftpd_adr_conflicts(QUAD(127, 0, 0, 1), QUAD(192, 168, 0, 1)),
+          "loopback does not block a bind to a real interface");
+
     return mbt_test_summary("TSTADR");
 }
