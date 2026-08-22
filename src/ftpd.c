@@ -199,7 +199,7 @@ main(int argc, char **argv)
             if (!server.sock_task ||
                 (server.sock_task->termecb & ECB_POSTED_BIT))
                 break;
-            __asm__("STIMER WAIT,BINTVL==F'10'");
+            __asm__("STIMER WAIT,BINTVL==F'10'" : : : "0", "1", "14", "15");
         }
     }
 
@@ -263,7 +263,7 @@ main(int argc, char **argv)
         if (!(server.flags & FTPD_ACTIVE)) break;
 
         /* Sleep 1 second (100 centiseconds), then check again */
-        __asm__("STIMER WAIT,BINTVL==F'100'");
+        __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
     }
 
     terminate(&server);
@@ -444,7 +444,7 @@ bind_wait(ftpd_server_t *server, int secs)
     for (s = 0; s < secs; s++) {
         if (!(server->flags & FTPD_ACTIVE))
             return -1;
-        __asm__("STIMER WAIT,BINTVL==F'100'");
+        __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
     }
 
     return (server->flags & FTPD_ACTIVE) ? 0 : -1;
@@ -589,7 +589,7 @@ socket_thread(void *arg1, void *arg2)
             ** resort.  A start that recovers here reports no bind failure
             ** at all: the FTPD053I lines and FTPD054I tell the story, and an
             ** E-message in front of a successful start only alarms. */
-            __asm__("STIMER WAIT,BINTVL==F'200'");
+            __asm__("STIMER WAIT,BINTVL==F'200'" : : : "0", "1", "14", "15");
             rc  = bind(sock, &saddr, sizeof(saddr));
             err = (rc < 0) ? errno : 0;
         }
@@ -744,7 +744,7 @@ terminate(ftpd_server_t *server)
                 ftpd_log_wto("FTPD095I WAITING FOR SOCKET THREAD "
                              "TO TERMINATE (%d)", i);
             }
-            __asm__("STIMER WAIT,BINTVL==F'100'");
+            __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
         }
         if (!(server->sock_task->termecb & 0x40000000U)) {
             ftpd_log_wto("FTPD095W SOCKET THREAD DID NOT TERMINATE");

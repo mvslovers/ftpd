@@ -150,7 +150,12 @@ struct ftpd_server {
 #define FTPD_EYE    "*FTPD*"
 
     /* Server flags */
-    unsigned        flags;
+    /* volatile: written by one TCB and polled by another.  The socket
+    ** thread's bind retry watches flags for a /P, main's event loop
+    ** watches it for shutdown, and main watches listen_sock for the
+    ** listener coming up.  Without it cc370 -O1 hoists the load out of
+    ** the polling loop and the poller never sees the change (#113). */
+    volatile unsigned flags;
 #define FTPD_ACTIVE         0x01    /* server is running             */
 #define FTPD_QUIESCE        0x02    /* shutdown in progress          */
 
@@ -171,7 +176,7 @@ struct ftpd_server {
                                     ** identity windows (ftpd#aut.c).
                                     ** Lives in the server struct so it
                                     ** is one anchor per address space  */
-    int             listen_sock;    /* listening socket fd            */
+    volatile int    listen_sock;    /* listening socket fd; see flags */
     CTHDMGR         *mgr;          /* thread manager                */
     CTHDTASK        *sock_task;    /* socket listener thread         */
     unsigned        wakeup_ecb;    /* posted to break main WAIT      */
