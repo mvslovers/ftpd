@@ -94,3 +94,12 @@ ftpd_adr_parse(const char *value, char *out, unsigned *addr)
 
     return FTPD_ADR_OK;
 }
+
+/* --------------------------------------------------------------------
+** Do two bind addresses on the same port collide?  See ftpd#adr.h.
+** ----------------------------------------------------------------- */
+int
+ftpd_adr_conflicts(unsigned bound, unsigned want)
+{
+    return bound == 0 || want == 0 || bound == want;
+}

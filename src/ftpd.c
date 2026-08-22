@@ -29,6 +29,7 @@ ftpd_server_t *ftpd_server = NULL;
 
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);
+static int  close_stale_port(ftpd_server_t *server, int own, unsigned want);
 static int  initialize(ftpd_server_t *server);
 static void terminate(ftpd_server_t *server);
 
@@ -299,6 +300,82 @@ initialize(ftpd_server_t *server)
 /* ====================================================================
 ** Socket thread -- listener, accept loop
 ** ================================================================= */
+
+/* --------------------------------------------------------------------
+** Close every socket still sitting on our listen port.
+**
+** The X'75' socket table lives in Hercules and is global to the whole
+** emulator -- it is not per address space, and a new STC does not inherit
+** anything from a prior run.  That is precisely why getsockname() over
+** socket numbers can see what an FTPD that ended without closing its
+** sockets left behind: the listener AND every connection it had accepted,
+** all of them on the same local port, each one holding it.  Closing the
+** first match is almost never enough, so this closes them all (issue #109).
+**
+** It is also why this has to be careful.  The startup ENQ FTPD.PORT.nnnnn
+** rules out a second live FTPD on this port -- and nothing more.  A live
+** listener on this port that is NOT an FTPD loses its socket here, because
+** the socket table says nothing about who owns an entry and there is no way
+** to tell dead from alive through it.  That is the price of the sweep; it
+** is bounded by running only after our own bind() failed with EADDRINUSE,
+** so a normal start never touches a foreign socket.
+**
+** own  -- the caller's own descriptor, skipped.  This used to run before
+**         socket() had been called at all; it now runs with a live socket
+**         the caller is about to bind, and a failed bind() may still leave
+**         that descriptor in the table carrying a local port.  Closing it
+**         would leave the caller binding a closed socket.
+** want -- the address we are binding, host byte order, 0 for ANY.
+**
+** Returns the number of sockets closed.
+** ----------------------------------------------------------------- */
+static int
+close_stale_port(ftpd_server_t *server, int own, unsigned want)
+{
+    struct sockaddr sa;
+    struct sockaddr_in *sin;
+    unsigned bound;
+    int salen;
+    int si;
+    int closed = 0;
+
+    for (si = 1; si < FD_SETSIZE; si++) {
+        if (si == own)
+            continue;
+
+        salen = sizeof(sa);
+        if (getsockname(si, &sa, &salen) != 0)
+            continue;
+
+        sin = (struct sockaddr_in *)&sa;
+        if (sin->sin_port != htons(server->config.port))
+            continue;
+
+        /* Right port, wrong interface: with SRVBIND naming one address, a
+        ** socket on a different one cannot be what made our bind fail, so
+        ** it is not ours to close. */
+        bound = ntohl(sin->sin_addr.s_addr);
+        if (!ftpd_adr_conflicts(bound, want))
+            continue;
+
+        ftpd_log_wto("FTPD053I CLOSING STALE SOCKET %d ON %u.%u.%u.%u "
+                     "PORT %d", si,
+                     (bound >> 24) & 0xFF, (bound >> 16) & 0xFF,
+                     (bound >>  8) & 0xFF,  bound        & 0xFF,
+                     server->config.port);
+        closesocket(si);
+        closed++;
+    }
+
+    if (closed > 1) {
+        /* The per-socket lines scroll; the operator reads this one. */
+        ftpd_log_wto("FTPD053I %d STALE SOCKETS CLOSED ON PORT %d",
+                     closed, server->config.port);
+    }
+
+    return closed;
+}
+
 static int
 socket_thread(void *arg1, void *arg2)
 {
@@ -308,6 +385,7 @@ socket_thread(void *arg1, void *arg2)
     int len;
     int sock;
     int rc;
+    int err;
     unsigned bindaddr;
     ftpd_session_t *sess;
 
@@ -342,47 +420,44 @@ socket_thread(void *arg1, void *arg2)
     }
     saddr.sin_addr.s_addr = htonl(bindaddr);
 
-    /* Close any stale socket left over from a previous instance that
-    ** did not shut down cleanly.  On MVS the socket fd table is
-    ** per-address-space, so a new STC inherits fds from a prior run
-    ** of the same jobname.  Iterate all fds, check with getsockname
-    ** whether any is bound to our port, and close it.  This avoids
-    ** EADDRINUSE on bind() (same technique as HTTPD).
+    /* Bind first.  The stale-socket sweep below is a last resort and only
+    ** runs when the bind actually failed with EADDRINUSE -- it used to run
+    ** unconditionally in front of every bind, where it could close a socket
+    ** that belongs to something alive on that port for no gain at all
+    ** (issue #109).
+    **
+    ** errno is captured immediately after each bind(): the sweep issues
+    ** getsockname() and closesocket(), and either clobbers it before
+    ** FTPD051E below gets to report it.
     */
-    {
-        int si;
-        int salen;
-        struct sockaddr sa;
-        struct sockaddr_in *sin;
-        for (si = 1; si < FD_SETSIZE; si++) {
-            salen = sizeof(sa);
-            if (getsockname(si, &sa, &salen) == 0) {
-                sin = (struct sockaddr_in *)&sa;
-                if (sin->sin_port == htons(server->config.port)) {
-                    ftpd_log_wto("FTPD053I CLOSING STALE SOCKET %d "
-                                 "ON PORT %d", si, server->config.port);
-                    closesocket(si);
-                    __asm__("STIMER WAIT,BINTVL==F'200'");
-                    break;
-                }
-            }
+    rc  = bind(sock, &saddr, sizeof(saddr));
+    err = (rc < 0) ? errno : 0;
+
+    if (rc < 0 && err == EADDRINUSE) {
+        if (close_stale_port(server, sock, bindaddr) > 0) {
+            /* Give the closes a moment to reach the host stack, then retry
+            ** at once -- the 10s wait below is the fallback, not the first
+            ** resort.  A start that recovers here reports no bind failure
+            ** at all: the FTPD053I lines and FTPD054I tell the story, and an
+            ** E-message in front of a successful start only alarms. */
+            __asm__("STIMER WAIT,BINTVL==F'200'");
+            rc  = bind(sock, &saddr, sizeof(saddr));
+            err = (rc < 0) ? errno : 0;
         }
     }
 
-    if (bind(sock, &saddr, sizeof(saddr)) < 0) {
-        int err = errno;
+    if (rc < 0) {
         ftpd_log_wto("FTPD051E BIND() FAILED ON %s PORT %d, ERRNO=%d",
                      server->config.bind_ip, server->config.port, err);
-        if (err == EADDRINUSE) {
-            ftpd_log_wto("FTPD051I EADDRINUSE, RETRYING IN 10S");
-            __asm__("STIMER WAIT,BINTVL==F'1000'");
-            if (bind(sock, &saddr, sizeof(saddr)) < 0) {
-                ftpd_log_wto("FTPD051E BIND() RETRY FAILED, ERRNO=%d",
-                             errno);
-                closesocket(sock);
-                return 8;
-            }
-        } else {
+        if (err != EADDRINUSE) {
+            closesocket(sock);
+            return 8;
+        }
+
+        ftpd_log_wto("FTPD051I EADDRINUSE, RETRYING IN 10S");
+        __asm__("STIMER WAIT,BINTVL==F'1000'");
+        if (bind(sock, &saddr, sizeof(saddr)) < 0) {
+            ftpd_log_wto("FTPD051E BIND() RETRY FAILED, ERRNO=%d", errno);
             closesocket(sock);
             return 8;
         }
