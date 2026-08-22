@@ -157,11 +157,30 @@ main(int argc, char **argv)
     if (server.listen_sock >= 0) {
         ftpd_log_wto("FTPD001I FTPD %s READY", vers);
     } else {
-        /* Say it plainly.  The console command handler below stays up, so
-        ** without this line an idle FTPD answers MODIFY exactly like a
-        ** working one. */
+        /* End, rather than sit there.  An FTPD that cannot listen has
+        ** nothing left to do: there is no console command that retries the
+        ** bind, so /P and /S is the only way back either way -- and until
+        ** the operator does that, the idle address space answers STATS,
+        ** SESSIONS and CONFIG exactly like a working one.
+        **
+        ** The socket thread returning without signalling shutdown was not
+        ** a decision about how a failed start should behave.  It came from
+        ** 72e8a7a, the S0A3 fix (#1), where the same commit also taught
+        ** terminate() to wait for sock_task->termecb before DETACH -- an
+        ** un-DETACHed subtask at end-of-task was the actual abend.  With
+        ** that in place ending here is safe, and terminate() finds the
+        ** socket thread already gone and moves straight on.
+        **
+        ** HTTPD ends its address space in the same situation
+        ** (httpprm.c/httpd.c: `if (!httpd->listen) goto cleanup`), and
+        ** carries the refusal out as the step code.  FTPD returned 0
+        ** whatever happened, so a start that never listened still ended
+        ** COND CODE 0000.
+        */
         ftpd_log_wto("FTPD056E FTPD IS NOT LISTENING ON PORT %d, "
-                     "NO CLIENT CAN CONNECT", server.config.port);
+                     "THIS INSTANCE ENDS", server.config.port);
+        server.flags &= ~FTPD_ACTIVE;
+        rc = 8;
     }
 
     /* ----------------------------------------------------------------
@@ -202,7 +221,10 @@ main(int argc, char **argv)
 
     ftpd_log_wto("FTPD099I FTPD SHUTDOWN COMPLETE");
 
-    return 0;
+    /* 0 after a normal /P, 8 when the listener never came up.  The step
+    ** code is the only part of a start an automation product can read
+    ** without parsing the console. */
+    return rc;
 }
 
 /* ====================================================================
