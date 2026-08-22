@@ -30,6 +30,9 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     strcpy(cfg->pasv_bind, "ANY");  /* bind every address, as before */
     cfg->pasv_lo = 22000;
     cfg->pasv_hi = 22200;
+    cfg->bind_tries = 10;           /* HTTPD's defaults: up to 100s of
+                                    ** patience before the STC ends   */
+    cfg->bind_wait = 10;
     /* Limits */
     cfg->max_sessions = 10;
     cfg->idle_timeout = 300;
@@ -151,6 +154,31 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
             strcpy(cfg->bind_ip, "ANY");
         }
         cfg->bind_ip_alias = (strcmp(key, "SRVIP") == 0);
+    }
+    else if (strcmp(key, "BINDTRIES") == 0 ||
+             strcmp(key, "BINDWAIT") == 0) {
+        /* How long to keep trying a bind that failed for a reason waiting
+        ** can fix.  Clamped rather than refused: an out-of-range value here
+        ** is a typo, and the nearest legal one is what was meant.  100 is
+        ** the ceiling on both, so the longest possible wait is bounded --
+        ** the operator can always /P, the retry checks for it every second.
+        **
+        ** HTTPD spells these BIND_TRIES and BIND_SLEEP with the same
+        ** defaults; the underscore is dropped here because every other FTPD
+        ** keyword is written without one (SRVPORT, PASVPORTS, MAXSESSIONS).
+        */
+        int v = atoi(value);
+
+        if (v < 1 || v > 100) {
+            int clamped = (v < 1) ? 1 : 100;
+            ftpd_log(LOG_WARN, "%s: %s %s out of range 1-100, using %d",
+                     __func__, key, value, clamped);
+            v = clamped;
+        }
+        if (strcmp(key, "BINDTRIES") == 0)
+            cfg->bind_tries = v;
+        else
+            cfg->bind_wait = v;
     }
     else if (strcmp(key, "PASVADR") == 0) {
         /* What the client is told to connect to.  ANY -- and anything
@@ -334,6 +362,8 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
                      ? "ANY (CONTROL CONNECTION)" : cfg->pasv_addr,
                  cfg->pasv_lo, cfg->pasv_hi,
                  cfg->pasv_bind);
+    ftpd_log_wto("FTPD057I   BINDTRIES=%d BINDWAIT=%d",
+                 cfg->bind_tries, cfg->bind_wait);
     ftpd_log_wto("FTPD043I   MAXSESSIONS=%d IDLETIMEOUT=%d",
                  cfg->max_sessions, cfg->idle_timeout);
     ftpd_log_wto("FTPD044I   BANNER=%s", cfg->banner);

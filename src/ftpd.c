@@ -28,6 +28,8 @@
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);
 static int  close_stale_port(ftpd_server_t *server, int own, unsigned want);
+static int  bind_retryable(int err);
+static int  bind_wait(ftpd_server_t *server, int secs);
 static int  initialize(ftpd_server_t *server);
 static void terminate(ftpd_server_t *server);
 
@@ -184,25 +186,55 @@ main(int argc, char **argv)
     ** console read like a healthy start and the contradiction arrived
     ** afterwards, where it is easy to miss.
     **
-    ** The cap is now 20 seconds because that is what it has to outlast --
-    ** sweep, 2s settle, rebind, 10s wait, rebind.  It is only a backstop
-    ** against a socket thread that neither listens nor ends; the normal
-    ** exits are both immediate.  A NULL sock_task (cthread_create_ex
-    ** failed) is the same answer arrived at sooner: nothing will listen.
+    ** The cap is derived, not a constant.  A fixed 20 seconds looked
+    ** generous against a hardcoded 10 second retry and became wrong the
+    ** moment BINDTRIES and BINDWAIT could raise the socket thread's budget
+    ** past it (#113): main hit its cap mid-retry, called the start failed,
+    ** and -- because giving up clears FTPD_ACTIVE -- aborted the very retry
+    ** it was waiting for.  Measured at 10x10s: FTPD056E at 21 seconds, on
+    ** the third of ten tries.  So the cap follows the budget, plus slack
+    ** for the sweep and the settle before it.
+    **
+    ** It is only a backstop against a socket thread that neither listens
+    ** nor ends; both normal exits are immediate.  A NULL sock_task
+    ** (cthread_create_ex failed) is the same answer arrived at sooner:
+    ** nothing will listen.
     */
     {
         int w;
+        int cap = (server.config.bind_tries * server.config.bind_wait + 30)
+                  * 10;             /* tenths of a second */
 
-        for (w = 0; w < 200 && server.listen_sock < 0; w++) {
+        for (w = 0; w < cap && server.listen_sock < 0; w++) {
             if (!server.sock_task ||
                 (server.sock_task->termecb & ECB_POSTED_BIT))
                 break;
-            __asm__("STIMER WAIT,BINTVL==F'10'");
+
+            /* Drain CIBs here as well, not only in the event loop below.
+            ** A bind retry runs for up to BINDTRIES x BINDWAIT seconds and
+            ** main spends all of it in this loop, so an operator's /P used
+            ** to sit unread on the CIB queue until the retries gave up by
+            ** themselves: measured at 10x10s, /P did nothing and the STC
+            ** ran the full 100 seconds.  Reading them here is what makes
+            ** the FTPD_ACTIVE check in bind_wait() mean anything. */
+            while ((cib = __cibget()) != NULL) {
+                ftpd_process_cib(&server, cib);
+                __cibdel(cib);
+            }
+            if (!(server.flags & FTPD_ACTIVE))
+                break;
+
+            __asm__("STIMER WAIT,BINTVL==F'10'" : : : "0", "1", "14", "15");
         }
     }
 
     if (server.listen_sock >= 0) {
         ftpd_log_wto("FTPD001I FTPD %s READY", vers);
+    } else if (!(server.flags & FTPD_ACTIVE)) {
+        /* Stopped before the listener came up.  Nothing to announce and
+        ** nothing to complain about: the operator asked for this, the
+        ** socket thread already said it abandoned its retry, and rc stays
+        ** 0 because a /P that worked is not a failed start. */
     } else {
         /* End, rather than sit there.  An FTPD that cannot listen has
         ** nothing left to do: there is no console command that retries the
@@ -261,7 +293,7 @@ main(int argc, char **argv)
         if (!(server.flags & FTPD_ACTIVE)) break;
 
         /* Sleep 1 second (100 centiseconds), then check again */
-        __asm__("STIMER WAIT,BINTVL==F'100'");
+        __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
     }
 
     terminate(&server);
@@ -396,6 +428,57 @@ initialize(ftpd_server_t *server)
 /* ====================================================================
 ** Socket thread -- listener, accept loop
 ** ================================================================= */
+
+/* --------------------------------------------------------------------
+** Which bind() failures are worth waiting out (issue #113).
+**
+** EADDRINUSE -- something still holds the port.  Once close_stale_port()
+** has run, that is either a live foreign listener or a socket the host
+** stack has not released yet; the second clears on its own.
+**
+** EADDRNOTAVAIL -- the address is not on this host.  Started early in an
+** IPL that means the stack has no address yet, which is exactly what
+** waiting fixes, and it is the case the old EADDRINUSE-only retry missed
+** entirely: measured on MVS, binding an address the host does not have
+** gives errno 49, and the start ended without a single retry (issue #111
+** testing).  With SRVBIND naming a wrong address it never clears, and the
+** retries turn a typo into a slow start that says what is wrong
+** BINDTRIES times over -- a better trade than never waiting at all.
+**
+** Everything else is refused at once.  Waiting does not fix a socket
+** that could not be created or a port a caller is not allowed to have.
+** ----------------------------------------------------------------- */
+static int
+bind_retryable(int err)
+{
+    return err == EADDRINUSE || err == EADDRNOTAVAIL;
+}
+
+/* --------------------------------------------------------------------
+** Sleep `secs` seconds between bind retries, in one second steps, and
+** give up early when the server is being stopped.
+**
+** The step is what makes /P work during a retry run.  BINDTRIES x
+** BINDWAIT can now be 100 seconds; terminate() waits 10 for the socket
+** thread and then says FTPD095W SOCKET THREAD DID NOT TERMINATE, so a
+** thread asleep in one long STIMER would make every longer retry setting
+** worse for the operator than the short one it replaced.
+**
+** Returns 0 when the wait completed, -1 when shutdown was signalled.
+** ----------------------------------------------------------------- */
+static int
+bind_wait(ftpd_server_t *server, int secs)
+{
+    int s;
+
+    for (s = 0; s < secs; s++) {
+        if (!(server->flags & FTPD_ACTIVE))
+            return -1;
+        __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
+    }
+
+    return (server->flags & FTPD_ACTIVE) ? 0 : -1;
+}
 
 /* --------------------------------------------------------------------
 ** Close every socket still sitting on our listen port.
@@ -536,24 +619,40 @@ socket_thread(void *arg1, void *arg2)
             ** resort.  A start that recovers here reports no bind failure
             ** at all: the FTPD053I lines and FTPD054I tell the story, and an
             ** E-message in front of a successful start only alarms. */
-            __asm__("STIMER WAIT,BINTVL==F'200'");
+            __asm__("STIMER WAIT,BINTVL==F'200'" : : : "0", "1", "14", "15");
             rc  = bind(sock, &saddr, sizeof(saddr));
             err = (rc < 0) ? errno : 0;
         }
     }
 
     if (rc < 0) {
+        int tries = 0;
+
         ftpd_log_wto("FTPD051E BIND() FAILED ON %s PORT %d, ERRNO=%d",
                      server->config.bind_ip, server->config.port, err);
-        if (err != EADDRINUSE) {
-            closesocket(sock);
-            return 8;
+
+        while (rc < 0 && bind_retryable(err)
+                      && tries < server->config.bind_tries) {
+            tries++;
+            ftpd_log_wto("FTPD051I RETRYING BIND IN %dS (%d OF %d)",
+                         server->config.bind_wait, tries,
+                         server->config.bind_tries);
+            if (bind_wait(server, server->config.bind_wait) < 0) {
+                ftpd_log_wto("FTPD051I BIND RETRY ABANDONED, "
+                             "FTPD IS STOPPING");
+                closesocket(sock);
+                return 8;
+            }
+            rc  = bind(sock, &saddr, sizeof(saddr));
+            err = (rc < 0) ? errno : 0;
         }
 
-        ftpd_log_wto("FTPD051I EADDRINUSE, RETRYING IN 10S");
-        __asm__("STIMER WAIT,BINTVL==F'1000'");
-        if (bind(sock, &saddr, sizeof(saddr)) < 0) {
-            ftpd_log_wto("FTPD051E BIND() RETRY FAILED, ERRNO=%d", errno);
+        if (rc < 0) {
+            /* A non-retryable errno said everything it had to say in the
+            ** FTPD051E above; only a run of retries needs its own verdict. */
+            if (tries)
+                ftpd_log_wto("FTPD051E BIND() STILL FAILING AFTER %d "
+                             "TRIES, ERRNO=%d", tries, err);
             closesocket(sock);
             return 8;
         }
@@ -675,7 +774,7 @@ terminate(ftpd_server_t *server)
                 ftpd_log_wto("FTPD095I WAITING FOR SOCKET THREAD "
                              "TO TERMINATE (%d)", i);
             }
-            __asm__("STIMER WAIT,BINTVL==F'100'");
+            __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
         }
         if (!(server->sock_task->termecb & 0x40000000U)) {
             ftpd_log_wto("FTPD095W SOCKET THREAD DID NOT TERMINATE");

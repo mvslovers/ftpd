@@ -23,6 +23,19 @@ SRVBIND=ANY
 #
 PASVPORTS=22000-22200
 #
+# A bind() that fails for a reason waiting can fix -- the port still held
+# by something, or the stack not up yet at IPL -- is retried BINDTRIES
+# times, BINDWAIT seconds apart.  Both 1-100, both default 10, so FTPD
+# waits up to 100 seconds before giving up.
+#
+# Giving up ends the started task (FTPD056E): an FTPD that cannot listen
+# has nothing left to do, and no console command re-tries the bind.  So
+# these two decide how much transient trouble a start survives.  Raise
+# BINDTRIES where FTPD is started before TCP/IP is reliably up.
+#
+BINDTRIES=10
+BINDWAIT=10
+#
 # PASVBIND is where the passive listener binds, PASVADR is what the
 # client is told to connect to -- they are only the same by default.
 # ANY (the default) binds every address of the host, as before.

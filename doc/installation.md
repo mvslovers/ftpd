@@ -371,6 +371,10 @@ DEFVOLUME=PUB001
 - `SSLPROXY=YES` is only for a TLS-terminating proxy in front of FTPD. Run bare
   it promises clients a confidentiality it does not deliver; the member's own
   comments spell this out.
+- `BINDTRIES`/`BINDWAIT` (both 1–100, both default 10) decide how long FTPD
+  keeps trying a listener port it cannot have yet — a port still held, or a
+  stack that is not up. Giving up ends the started task, so raise `BINDTRIES`
+  if `/S FTPD` runs early in an IPL.
 
 A `#` in the first non-blank column comments a line out — it has to be first,
 because a `#` anywhere else is data.
