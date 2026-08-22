@@ -125,17 +125,63 @@ main(int argc, char **argv)
         cthread_post(&server.mgr->wait, CTHDMGR_POST_DATA);
     }
 
-    /* Wait for socket thread to finish bind/listen before
-    ** announcing READY.  listen_sock is set by the socket thread
-    ** after successful listen().  Poll with short STIMER.
+    /* Wait for the socket thread to bind and listen before announcing
+    ** READY.  Two things end the wait, and which one it was decides what
+    ** gets announced: listen_sock published means we are listening;
+    ** termecb posted means the socket thread gave up and returned.  It
+    ** ends without signalling shutdown on purpose (see socket_thread), so
+    ** the operator can read the error and /P -- but until issue #111 the
+    ** wait here was a plain 5 second timeout that looked at neither, and
+    ** a bind that never succeeded still produced FTPD001I READY.  Ahead of
+    ** the FTPD051E lines at that, because the retry path outlasts 5s: the
+    ** console read like a healthy start and the contradiction arrived
+    ** afterwards, where it is easy to miss.
+    **
+    ** The cap is now 20 seconds because that is what it has to outlast --
+    ** sweep, 2s settle, rebind, 10s wait, rebind.  It is only a backstop
+    ** against a socket thread that neither listens nor ends; the normal
+    ** exits are both immediate.  A NULL sock_task (cthread_create_ex
+    ** failed) is the same answer arrived at sooner: nothing will listen.
     */
     {
         int w;
-        for (w = 0; w < 50 && server.listen_sock < 0; w++)
+
+        for (w = 0; w < 200 && server.listen_sock < 0; w++) {
+            if (!server.sock_task ||
+                (server.sock_task->termecb & ECB_POSTED_BIT))
+                break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
+        }
     }
 
-    ftpd_log_wto("FTPD001I FTPD %s READY", vers);
+    if (server.listen_sock >= 0) {
+        ftpd_log_wto("FTPD001I FTPD %s READY", vers);
+    } else {
+        /* End, rather than sit there.  An FTPD that cannot listen has
+        ** nothing left to do: there is no console command that retries the
+        ** bind, so /P and /S is the only way back either way -- and until
+        ** the operator does that, the idle address space answers STATS,
+        ** SESSIONS and CONFIG exactly like a working one.
+        **
+        ** The socket thread returning without signalling shutdown was not
+        ** a decision about how a failed start should behave.  It came from
+        ** 72e8a7a, the S0A3 fix (#1), where the same commit also taught
+        ** terminate() to wait for sock_task->termecb before DETACH -- an
+        ** un-DETACHed subtask at end-of-task was the actual abend.  With
+        ** that in place ending here is safe, and terminate() finds the
+        ** socket thread already gone and moves straight on.
+        **
+        ** HTTPD ends its address space in the same situation
+        ** (httpprm.c/httpd.c: `if (!httpd->listen) goto cleanup`), and
+        ** carries the refusal out as the step code.  FTPD returned 0
+        ** whatever happened, so a start that never listened still ended
+        ** COND CODE 0000.
+        */
+        ftpd_log_wto("FTPD056E FTPD IS NOT LISTENING ON PORT %d, "
+                     "THIS INSTANCE ENDS", server.config.port);
+        server.flags &= ~FTPD_ACTIVE;
+        rc = 8;
+    }
 
     /* ----------------------------------------------------------------
     ** Main event loop
@@ -175,7 +221,10 @@ main(int argc, char **argv)
 
     ftpd_log_wto("FTPD099I FTPD SHUTDOWN COMPLETE");
 
-    return 0;
+    /* 0 after a normal /P, 8 when the listener never came up.  The step
+    ** code is the only part of a start an automation product can read
+    ** without parsing the console. */
+    return rc;
 }
 
 /* ====================================================================
