@@ -209,12 +209,32 @@ main(int argc, char **argv)
             if (!server.sock_task ||
                 (server.sock_task->termecb & ECB_POSTED_BIT))
                 break;
+
+            /* Drain CIBs here as well, not only in the event loop below.
+            ** A bind retry runs for up to BINDTRIES x BINDWAIT seconds and
+            ** main spends all of it in this loop, so an operator's /P used
+            ** to sit unread on the CIB queue until the retries gave up by
+            ** themselves: measured at 10x10s, /P did nothing and the STC
+            ** ran the full 100 seconds.  Reading them here is what makes
+            ** the FTPD_ACTIVE check in bind_wait() mean anything. */
+            while ((cib = __cibget()) != NULL) {
+                ftpd_process_cib(&server, cib);
+                __cibdel(cib);
+            }
+            if (!(server.flags & FTPD_ACTIVE))
+                break;
+
             __asm__("STIMER WAIT,BINTVL==F'10'" : : : "0", "1", "14", "15");
         }
     }
 
     if (server.listen_sock >= 0) {
         ftpd_log_wto("FTPD001I FTPD %s READY", vers);
+    } else if (!(server.flags & FTPD_ACTIVE)) {
+        /* Stopped before the listener came up.  Nothing to announce and
+        ** nothing to complain about: the operator asked for this, the
+        ** socket thread already said it abandoned its retry, and rc stays
+        ** 0 because a /P that worked is not a failed start. */
     } else {
         /* End, rather than sit there.  An FTPD that cannot listen has
         ** nothing left to do: there is no console command that retries the
