@@ -186,16 +186,26 @@ main(int argc, char **argv)
     ** console read like a healthy start and the contradiction arrived
     ** afterwards, where it is easy to miss.
     **
-    ** The cap is now 20 seconds because that is what it has to outlast --
-    ** sweep, 2s settle, rebind, 10s wait, rebind.  It is only a backstop
-    ** against a socket thread that neither listens nor ends; the normal
-    ** exits are both immediate.  A NULL sock_task (cthread_create_ex
-    ** failed) is the same answer arrived at sooner: nothing will listen.
+    ** The cap is derived, not a constant.  A fixed 20 seconds looked
+    ** generous against a hardcoded 10 second retry and became wrong the
+    ** moment BINDTRIES and BINDWAIT could raise the socket thread's budget
+    ** past it (#113): main hit its cap mid-retry, called the start failed,
+    ** and -- because giving up clears FTPD_ACTIVE -- aborted the very retry
+    ** it was waiting for.  Measured at 10x10s: FTPD056E at 21 seconds, on
+    ** the third of ten tries.  So the cap follows the budget, plus slack
+    ** for the sweep and the settle before it.
+    **
+    ** It is only a backstop against a socket thread that neither listens
+    ** nor ends; both normal exits are immediate.  A NULL sock_task
+    ** (cthread_create_ex failed) is the same answer arrived at sooner:
+    ** nothing will listen.
     */
     {
         int w;
+        int cap = (server.config.bind_tries * server.config.bind_wait + 30)
+                  * 10;             /* tenths of a second */
 
-        for (w = 0; w < 200 && server.listen_sock < 0; w++) {
+        for (w = 0; w < cap && server.listen_sock < 0; w++) {
             if (!server.sock_task ||
                 (server.sock_task->termecb & ECB_POSTED_BIT))
                 break;
