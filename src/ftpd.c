@@ -125,17 +125,44 @@ main(int argc, char **argv)
         cthread_post(&server.mgr->wait, CTHDMGR_POST_DATA);
     }
 
-    /* Wait for socket thread to finish bind/listen before
-    ** announcing READY.  listen_sock is set by the socket thread
-    ** after successful listen().  Poll with short STIMER.
+    /* Wait for the socket thread to bind and listen before announcing
+    ** READY.  Two things end the wait, and which one it was decides what
+    ** gets announced: listen_sock published means we are listening;
+    ** termecb posted means the socket thread gave up and returned.  It
+    ** ends without signalling shutdown on purpose (see socket_thread), so
+    ** the operator can read the error and /P -- but until issue #111 the
+    ** wait here was a plain 5 second timeout that looked at neither, and
+    ** a bind that never succeeded still produced FTPD001I READY.  Ahead of
+    ** the FTPD051E lines at that, because the retry path outlasts 5s: the
+    ** console read like a healthy start and the contradiction arrived
+    ** afterwards, where it is easy to miss.
+    **
+    ** The cap is now 20 seconds because that is what it has to outlast --
+    ** sweep, 2s settle, rebind, 10s wait, rebind.  It is only a backstop
+    ** against a socket thread that neither listens nor ends; the normal
+    ** exits are both immediate.  A NULL sock_task (cthread_create_ex
+    ** failed) is the same answer arrived at sooner: nothing will listen.
     */
     {
         int w;
-        for (w = 0; w < 50 && server.listen_sock < 0; w++)
+
+        for (w = 0; w < 200 && server.listen_sock < 0; w++) {
+            if (!server.sock_task ||
+                (server.sock_task->termecb & ECB_POSTED_BIT))
+                break;
             __asm__("STIMER WAIT,BINTVL==F'10'");
+        }
     }
 
-    ftpd_log_wto("FTPD001I FTPD %s READY", vers);
+    if (server.listen_sock >= 0) {
+        ftpd_log_wto("FTPD001I FTPD %s READY", vers);
+    } else {
+        /* Say it plainly.  The console command handler below stays up, so
+        ** without this line an idle FTPD answers MODIFY exactly like a
+        ** working one. */
+        ftpd_log_wto("FTPD056E FTPD IS NOT LISTENING ON PORT %d, "
+                     "NO CLIENT CAN CONNECT", server.config.port);
+    }
 
     /* ----------------------------------------------------------------
     ** Main event loop
