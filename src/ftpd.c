@@ -19,13 +19,11 @@
 
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "clibgrt.h"
 #include "clibppa.h"
 #include "clibos.h"
 #include "clibenq.h"
 #include "clibver.h"
-
-/* Global server state */
-ftpd_server_t *ftpd_server = NULL;
 
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);
@@ -40,10 +38,12 @@ int
 main(int argc, char **argv)
 {
     ftpd_server_t server;
+    CLIBGRT *grt;
     COM *com;
     CIB *cib;
     int rc;
     int apf_rc;
+    int apf_at_entry;           /* authorized before clib_apf_setup()?   */
     char vers[24];              /* MBT_VERSION, upper case: FTPD000I+001I */
 
     (void)argc;
@@ -51,7 +51,31 @@ main(int argc, char **argv)
     memset(&server, 0, sizeof(server));
     strcpy(server.eye, FTPD_EYE);
     server.flags |= FTPD_ACTIVE;
-    ftpd_server = &server;
+
+    /* --- Publish the server, before anything can want it ------------
+    ** The server block is a main() local on purpose.  It used to be
+    ** anchored in a module-scope `ftpd_server` pointer, and that single
+    ** store was enough to kill FTPD outright the moment FTPD.LINKLIB got
+    ** an APF entry: an AC(1) module fetched from an authorized library
+    ** lands in subpool 252 key 0, the STC runs problem state key 8, and
+    ** the store abends S0C4 here -- ahead of the first WTO, so the whole
+    ** JESMSGLG was one IEF450I and nothing else (#101).
+    **
+    ** The GRT is the process-level home for exactly this: heap, key 8,
+    ** and inherited by every subtask, so a session worker sees what main
+    ** put there.  grtapp1 is the anchor a dump reader follows to the
+    ** server (no code reads it); grtapp2 carries the log/trace state,
+    ** which ftpd#log.c does read, on every ftpd_log() and ftpd_trace().
+    **
+    ** level first, anchor second: the memset above leaves it at
+    ** LOG_ERROR, and everything from here on logs.
+    */
+    server.log.level = LOG_INFO;
+    ftpd_log_anchor(&server.log);
+
+    grt = __grtget();
+    if (grt)
+        grt->grtapp1 = &server;
 
     /* Get COM area and set CIB limit BEFORE creating any threads.
     **
@@ -84,7 +108,15 @@ main(int argc, char **argv)
     ** message saying which server is starting.  FTPD warns and continues
     ** where UFSD gives up -- the commands that need authorization fail
     ** individually and say so.
+    **
+    ** Ask __isauth() first.  Which route authorizes the STC decides
+    ** whether its own module storage is writable -- authorized at entry
+    ** means the job step was already authorized when program fetch ran,
+    ** so MVS took the job pack area in subpool 252 key 0 (#101) -- and
+    ** clib_apf_setup() destroys the distinction by returning 0 either
+    ** way.  One TESTAUTH, no supervisor state.
     */
+    apf_at_entry = __isauth();
     apf_rc = clib_apf_setup(argv[0]);
 
     /* --- Startup banner ------------------------------------------
@@ -108,8 +140,23 @@ main(int argc, char **argv)
 #endif
     }
 
+    /* Which route got us here, and what it costs.  Both routes end in an
+    ** authorized task and neither says a word on its own: clib_apf_setup()
+    ** returns 0 either way and libc370's diagnostics on that path are
+    ** commented out.  That silence is what made #101 hard to place -- the
+    ** route is what decides whether FTPD's own module storage is writable,
+    ** so it belongs next to the version banner.
+    **
+    ** The key is inferred from the route, not measured: an authorized job
+    ** step has its module fetched key 0, an unauthorized one key 8, and
+    ** SVC 244 arrives too late to change either.
+    */
     if (apf_rc)
         ftpd_log_wto("FTPD003W APF SETUP FAILED RC=%d", apf_rc);
+    else if (apf_at_entry)
+        ftpd_log_wto("FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)");
+    else
+        ftpd_log_wto("FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)");
 
     /* Initialize server (config, trace, socket thread, worker pool) */
     rc = initialize(&server);

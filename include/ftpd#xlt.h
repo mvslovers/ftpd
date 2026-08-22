@@ -16,9 +16,13 @@
 #define ASCII_LF   0x0A
 #define ASCII_CRLF "\x0D\x0A"
 
-/* Active translation table pointers — always IBM-1047 */
-extern unsigned char *asc2ebc;
-extern unsigned char *ebc2asc;
+/* Active translation table pointers — always IBM-1047.
+**
+** const both ways on purpose: an AC(1) module fetched from an APF-
+** authorized library is key-0 storage, so reassigning either pointer
+** from the key-8 STC is an S0C4 (#101), not a codepage switch. */
+extern const unsigned char * const asc2ebc;
+extern const unsigned char * const ebc2asc;
 
 /* In-place buffer translation (active tables = IBM-1047) */
 void ftpd_xlat_a2e(unsigned char *buf, int len)                 asm("FTPXLA2E");

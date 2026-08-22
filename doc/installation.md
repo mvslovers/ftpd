@@ -117,6 +117,30 @@ clean alternative is to add `FTPD.<vrm>.LINKLIB` to the APF list in
 library name carries the version — so this is one IPL per release, not one IPL
 ever.
 
+The two routes are not equivalent in one respect that matters if you ever have
+to debug FTPD. An **APF entry** authorises the job step *before* program fetch,
+so MVS loads FTPD into subpool 252 **key 0** — authorised code must not be
+patchable by problem-key code. **SVC 244** sets `JSCBAUTH` *after* the fetch and
+cannot relabel storage that is already allocated, so the module stays key 8.
+FTPD runs problem state key 8 either way, which means that under an APF entry it
+must never store into its own module storage. It does not, as of 1.0.1: the
+server block, the log level and the trace ring all live in `main()`'s storage
+and are reached through the C runtime's process anchor. **On 1.0.0 an APF entry
+kills FTPD outright** — see the `S0C4` row under Troubleshooting.
+
+You do not have to work out which route you got: FTPD says so at startup, on
+the line after the version banner.
+
+```
+FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)     APF list entry
+FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)         SVC 244, from RAKF
+```
+
+The key is inferred from the route rather than measured — an authorised job
+step has its module fetched key 0, an unauthorised one key 8, and SVC 244
+arrives too late to change either. Neither line is a warning: both routes end
+in an authorised started task, and which one you want is a site decision.
+
 Unlike UFSD, FTPD **warns and keeps running** when authorisation fails:
 
 ```
@@ -400,6 +424,7 @@ A healthy start ends in `FTPD001I … READY`:
 ```
 FTPD000I FTPD <version> (A3F2C91) STARTING
 FTPD005I LIBC370 V1.0.2 (22B4870)
+FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC IDENTITY SET TO FTPD/USER VIA RACINIT
 FTPD054I LISTENING ON 0.0.0.0 PORT 2121
 FTPD001I FTPD <version> READY
@@ -409,6 +434,11 @@ The two build stamps identify exactly what is running: `FTPD000I` gives the
 version and the commit it was built from, `FTPD005I` the libc370 it was linked
 against — quote both in a bug report. A build made from a modified working tree
 marks its hash `-DIRTY` and adds `FTPD006W`; a released build never does.
+
+`FTPD008I` says which of the two authorisation routes the start took, and
+reads `AUTHORIZED BY LIBRARY (MODULE KEY 0)` on a system with the LINKLIB in
+the APF list — see step 2. Quote it in a bug report too: it decides the storage
+key FTPD's own module runs in.
 
 Then log in from a client:
 
@@ -490,6 +520,7 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 | `550 UFS service not available` | The UFSD started task is not running (installed is not enough) |
 | Passive transfer stalls after `227` | `PASVPORTS` not reachable, or `PASVADR` wrong behind NAT — step 7 |
 | `S106` at start on a freshly installed library | The XMIT was uploaded in text mode. Re-upload in **binary** and re-run the install job |
+| `S0C4` at start, JESMSGLG holds only the `IEF450I` — no `FTPD000I`, no banner | FTPD 1.0.0 started from an **APF-authorised** LINKLIB. The module is then key 0 and the first store into its own storage abends before the first WTO. Upgrade to 1.0.1, or take the APF entry back out and let SVC 244 authorise instead — step 2 |
 
 For the RAKF message reference, see
 [FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_RAKF_SETUP.md).

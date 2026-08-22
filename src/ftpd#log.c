@@ -12,23 +12,46 @@
 #include <stdarg.h>
 #include <ctype.h>
 
+#include "clibgrt.h"
 #include "clibwto.h"
 #include "ftpd#log.h"
 
 /* --- Log level names --- */
 static const char *level_names[] = { "ERROR", "WARN ", "INFO ", "DEBUG" };
 
-/* --- Current log level (default INFO) --- */
-static int log_level = LOG_INFO;
-
 /* --- Trace ring buffer --- */
 #define TRACE_ENTRY_LEN     120     /* max length of one trace entry  */
 
-static char     *trace_buf = NULL;  /* ring buffer storage            */
-static int      trace_size = 0;     /* number of entries              */
-static int      trace_head = 0;     /* next write position            */
-static int      trace_count = 0;    /* total entries written          */
-static int      trace_on = 0;       /* tracing enabled flag           */
+/* ====================================================================
+** Log/trace state
+**
+** All of it used to be file-scope variables here.  In an AC(1) module
+** fetched from an APF-authorized library that storage is key 0 and a
+** store from the key-8 STC abends S0C4 (#101), so the state now lives in
+** ftpd_server -- a main() local -- and is reached through grtapp2.
+**
+** The GRT is per process and inherited by every subtask (@@CRTSET copies
+** crtgrt from the mother task's CLIBCRT), so a session worker resolves
+** the same block main published.  A NULL slot means main has not got
+** there yet: the callers below fall back to LOG_INFO and no tracing
+** rather than to a wild store.
+** ================================================================= */
+static ftpd_logst_t *
+logst(void)
+{
+    CLIBGRT *grt = __grtget();
+
+    return grt ? (ftpd_logst_t *)grt->grtapp2 : NULL;
+}
+
+void
+ftpd_log_anchor(ftpd_logst_t *st)
+{
+    CLIBGRT *grt = __grtget();
+
+    if (grt)
+        grt->grtapp2 = st;
+}
 
 /* ====================================================================
 ** WTO logging
@@ -77,8 +100,9 @@ ftpd_log(int level, const char *fmt, ...)
     char buf[256];
     va_list ap;
     const char *lvl;
+    ftpd_logst_t *st = logst();
 
-    if (level > log_level)
+    if (level > (st ? st->level : LOG_INFO))
         return;
 
     lvl = (level >= 0 && level <= LOG_DEBUG) ? level_names[level] : "?????";
@@ -93,14 +117,18 @@ ftpd_log(int level, const char *fmt, ...)
 void
 ftpd_log_set_level(int level)
 {
-    if (level >= LOG_ERROR && level <= LOG_DEBUG)
-        log_level = level;
+    ftpd_logst_t *st = logst();
+
+    if (st && level >= LOG_ERROR && level <= LOG_DEBUG)
+        st->level = level;
 }
 
 int
 ftpd_log_get_level(void)
 {
-    return log_level;
+    ftpd_logst_t *st = logst();
+
+    return st ? st->level : LOG_INFO;
 }
 
 /* ====================================================================
@@ -109,17 +137,22 @@ ftpd_log_get_level(void)
 int
 ftpd_trace_init(int size)
 {
+    ftpd_logst_t *st = logst();
+
+    if (!st)
+        return -1;
+
     if (size < 1)
         size = 256;
 
-    trace_buf = calloc(size, TRACE_ENTRY_LEN);
-    if (!trace_buf)
+    st->trace_buf = calloc(size, TRACE_ENTRY_LEN);
+    if (!st->trace_buf)
         return -1;
 
-    trace_size = size;
-    trace_head = 0;
-    trace_count = 0;
-    trace_on = 0;
+    st->trace_size = size;
+    st->trace_head = 0;
+    st->trace_count = 0;
+    st->trace_on = 0;
 
     return 0;
 }
@@ -127,14 +160,19 @@ ftpd_trace_init(int size)
 void
 ftpd_trace_free(void)
 {
-    if (trace_buf) {
-        free(trace_buf);
-        trace_buf = NULL;
+    ftpd_logst_t *st = logst();
+
+    if (!st)
+        return;
+
+    if (st->trace_buf) {
+        free(st->trace_buf);
+        st->trace_buf = NULL;
     }
-    trace_size = 0;
-    trace_head = 0;
-    trace_count = 0;
-    trace_on = 0;
+    st->trace_size = 0;
+    st->trace_head = 0;
+    st->trace_count = 0;
+    st->trace_on = 0;
 }
 
 void
@@ -142,61 +180,73 @@ ftpd_trace(const char *fmt, ...)
 {
     char *entry;
     va_list ap;
+    ftpd_logst_t *st = logst();
 
-    if (!trace_on || !trace_buf)
+    if (!st || !st->trace_on || !st->trace_buf)
         return;
 
-    entry = trace_buf + (trace_head * TRACE_ENTRY_LEN);
+    entry = st->trace_buf + (st->trace_head * TRACE_ENTRY_LEN);
 
     va_start(ap, fmt);
     vsnprintf(entry, TRACE_ENTRY_LEN, fmt, ap);
     va_end(ap);
 
-    trace_head = (trace_head + 1) % trace_size;
-    trace_count++;
+    st->trace_head = (st->trace_head + 1) % st->trace_size;
+    st->trace_count++;
 }
 
 void
 ftpd_trace_enable(int on)
 {
-    trace_on = on;
-    if (on && !trace_buf) {
+    ftpd_logst_t *st = logst();
+
+    if (!st)
+        return;
+
+    /* Allocate first, enable second.  ftpd_trace_init() resets trace_on,
+    ** so the old order left TRACE ON reporting FTPD080I with tracing
+    ** still off -- unreachable today because initialize() allocates the
+    ** ring at startup, but wrong the moment that stops being true. */
+    if (on && !st->trace_buf)
         ftpd_trace_init(256);
-    }
+
+    st->trace_on = on;
 }
 
 int
 ftpd_trace_dump(void)
 {
     int i, idx, count;
+    ftpd_logst_t *st = logst();
 
-    if (!trace_buf) {
+    if (!st || !st->trace_buf) {
         printf("Trace buffer not initialized\n");
         return 0;
     }
 
-    count = (trace_count < trace_size) ? trace_count : trace_size;
+    count = (st->trace_count < st->trace_size) ? st->trace_count
+                                               : st->trace_size;
     if (count == 0) {
         printf("Trace buffer empty\n");
         return 0;
     }
 
     /* Start from oldest entry */
-    if (trace_count >= trace_size) {
-        idx = trace_head;  /* oldest is at head (about to be overwritten) */
+    if (st->trace_count >= st->trace_size) {
+        idx = st->trace_head;  /* oldest is at head (next overwritten) */
     } else {
-        idx = 0;           /* buffer not yet wrapped */
+        idx = 0;               /* buffer not yet wrapped */
     }
 
     printf("--- Trace dump: %d entries (%d total written) ---\n",
-           count, trace_count);
+           count, st->trace_count);
 
     for (i = 0; i < count; i++) {
-        char *entry = trace_buf + (idx * TRACE_ENTRY_LEN);
+        char *entry = st->trace_buf + (idx * TRACE_ENTRY_LEN);
         if (entry[0] != '\0') {
             printf("[%04d] %s\n", i, entry);
         }
-        idx = (idx + 1) % trace_size;
+        idx = (idx + 1) % st->trace_size;
     }
 
     printf("--- End of trace dump ---\n");
@@ -207,5 +257,7 @@ ftpd_trace_dump(void)
 int
 ftpd_trace_enabled(void)
 {
-    return trace_on;
+    ftpd_logst_t *st = logst();
+
+    return st ? st->trace_on : 0;
 }

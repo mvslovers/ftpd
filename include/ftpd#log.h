@@ -15,6 +15,42 @@
 #define LOG_DEBUG           3
 
 /*
+** Log and trace state.
+**
+** Not file-scope data in ftpd#log.c, where it used to live: FTPD is
+** link-edited AC(1), and fetched from an APF-authorized library the job
+** step is authorized before program fetch runs, so MVS obtains the job
+** pack area in subpool 252 key 0 -- authorized code must not be patchable
+** by problem-key code.  The STC runs problem state key 8, so every store
+** into the module's own storage is a protection exception (#101).
+**
+** It lives in ftpd_server (a main() local, hence key 8) and is published
+** for the whole process by ftpd_log_anchor().  The struct is here rather
+** than in ftpd.h so ftpd#log.c can stay off ftpd.h and out of sockets,
+** RACF and the thread manager.
+*/
+typedef struct ftpd_logst {
+    int             level;          /* current log level             */
+    char            *trace_buf;     /* trace ring storage            */
+    int             trace_size;     /* number of entries             */
+    int             trace_head;     /* next write position           */
+    int             trace_count;    /* total entries written         */
+    int             trace_on;       /* tracing enabled flag          */
+} ftpd_logst_t;
+
+/*
+** Publish the log/trace state for the process.  Call once from main(),
+** before the first ftpd_log() or ftpd_trace() -- and set `level` first,
+** because a memset server leaves it at LOG_ERROR.
+**
+** Until this is called (and if it ever fails) ftpd_log() falls back to
+** LOG_INFO and tracing stays off; ftpd_log_wto() keeps no state and works
+** either way.  Worker threads see the same state: a subtask inherits the
+** GRT from its mother task (@@CRTSET), so it is process-level.
+*/
+void ftpd_log_anchor(ftpd_logst_t *st)                      asm("FTPLOGAN");
+
+/*
 ** Write a message to the operator console (WTO).
 ** Use for important events only: startup, shutdown, errors, console responses.
 ** Format: FTPDnnnX message
