@@ -44,6 +44,14 @@ typedef struct ftpd_config {
                                     ** connect to                     */
     int             pasv_lo;        /* PASV port range low           */
     int             pasv_hi;        /* PASV port range high          */
+    int             bind_tries;     /* BINDTRIES: how many times to
+                                    ** retry a bind() that failed for
+                                    ** a reason waiting can fix       */
+    int             bind_wait;      /* BINDWAIT: seconds between those
+                                    ** retries.  Both matter more since
+                                    ** a bind that never succeeds ends
+                                    ** the STC (#111) instead of
+                                    ** leaving it idle                */
     /* Limits */
     int             max_sessions;   /* max concurrent sessions       */
     int             idle_timeout;   /* idle timeout in seconds       */

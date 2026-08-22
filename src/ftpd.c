@@ -28,6 +28,8 @@
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);
 static int  close_stale_port(ftpd_server_t *server, int own, unsigned want);
+static int  bind_retryable(int err);
+static int  bind_wait(ftpd_server_t *server, int secs);
 static int  initialize(ftpd_server_t *server);
 static void terminate(ftpd_server_t *server);
 
@@ -398,6 +400,57 @@ initialize(ftpd_server_t *server)
 ** ================================================================= */
 
 /* --------------------------------------------------------------------
+** Which bind() failures are worth waiting out (issue #113).
+**
+** EADDRINUSE -- something still holds the port.  Once close_stale_port()
+** has run, that is either a live foreign listener or a socket the host
+** stack has not released yet; the second clears on its own.
+**
+** EADDRNOTAVAIL -- the address is not on this host.  Started early in an
+** IPL that means the stack has no address yet, which is exactly what
+** waiting fixes, and it is the case the old EADDRINUSE-only retry missed
+** entirely: measured on MVS, binding an address the host does not have
+** gives errno 49, and the start ended without a single retry (issue #111
+** testing).  With SRVBIND naming a wrong address it never clears, and the
+** retries turn a typo into a slow start that says what is wrong
+** BINDTRIES times over -- a better trade than never waiting at all.
+**
+** Everything else is refused at once.  Waiting does not fix a socket
+** that could not be created or a port a caller is not allowed to have.
+** ----------------------------------------------------------------- */
+static int
+bind_retryable(int err)
+{
+    return err == EADDRINUSE || err == EADDRNOTAVAIL;
+}
+
+/* --------------------------------------------------------------------
+** Sleep `secs` seconds between bind retries, in one second steps, and
+** give up early when the server is being stopped.
+**
+** The step is what makes /P work during a retry run.  BINDTRIES x
+** BINDWAIT can now be 100 seconds; terminate() waits 10 for the socket
+** thread and then says FTPD095W SOCKET THREAD DID NOT TERMINATE, so a
+** thread asleep in one long STIMER would make every longer retry setting
+** worse for the operator than the short one it replaced.
+**
+** Returns 0 when the wait completed, -1 when shutdown was signalled.
+** ----------------------------------------------------------------- */
+static int
+bind_wait(ftpd_server_t *server, int secs)
+{
+    int s;
+
+    for (s = 0; s < secs; s++) {
+        if (!(server->flags & FTPD_ACTIVE))
+            return -1;
+        __asm__("STIMER WAIT,BINTVL==F'100'");
+    }
+
+    return (server->flags & FTPD_ACTIVE) ? 0 : -1;
+}
+
+/* --------------------------------------------------------------------
 ** Close every socket still sitting on our listen port.
 **
 ** The X'75' socket table lives in Hercules and is global to the whole
@@ -543,17 +596,33 @@ socket_thread(void *arg1, void *arg2)
     }
 
     if (rc < 0) {
+        int tries = 0;
+
         ftpd_log_wto("FTPD051E BIND() FAILED ON %s PORT %d, ERRNO=%d",
                      server->config.bind_ip, server->config.port, err);
-        if (err != EADDRINUSE) {
-            closesocket(sock);
-            return 8;
+
+        while (rc < 0 && bind_retryable(err)
+                      && tries < server->config.bind_tries) {
+            tries++;
+            ftpd_log_wto("FTPD051I RETRYING BIND IN %dS (%d OF %d)",
+                         server->config.bind_wait, tries,
+                         server->config.bind_tries);
+            if (bind_wait(server, server->config.bind_wait) < 0) {
+                ftpd_log_wto("FTPD051I BIND RETRY ABANDONED, "
+                             "FTPD IS STOPPING");
+                closesocket(sock);
+                return 8;
+            }
+            rc  = bind(sock, &saddr, sizeof(saddr));
+            err = (rc < 0) ? errno : 0;
         }
 
-        ftpd_log_wto("FTPD051I EADDRINUSE, RETRYING IN 10S");
-        __asm__("STIMER WAIT,BINTVL==F'1000'");
-        if (bind(sock, &saddr, sizeof(saddr)) < 0) {
-            ftpd_log_wto("FTPD051E BIND() RETRY FAILED, ERRNO=%d", errno);
+        if (rc < 0) {
+            /* A non-retryable errno said everything it had to say in the
+            ** FTPD051E above; only a run of retries needs its own verdict. */
+            if (tries)
+                ftpd_log_wto("FTPD051E BIND() STILL FAILING AFTER %d "
+                             "TRIES, ERRNO=%d", tries, err);
             closesocket(sock);
             return 8;
         }
