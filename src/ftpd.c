@@ -459,10 +459,12 @@ bind_retryable(int err)
 ** give up early when the server is being stopped.
 **
 ** The step is what makes /P work during a retry run.  BINDTRIES x
-** BINDWAIT can now be 100 seconds; terminate() waits 10 for the socket
-** thread and then says FTPD095W SOCKET THREAD DID NOT TERMINATE, so a
-** thread asleep in one long STIMER would make every longer retry setting
-** worse for the operator than the short one it replaced.
+** BINDWAIT is 15 seconds by default but goes to 100 x 100 -- and the
+** sites that raise it are exactly the ones that will need to interrupt
+** it.  terminate() waits 10 seconds for the socket thread and then says
+** FTPD095W SOCKET THREAD DID NOT TERMINATE, so a thread asleep in one
+** long STIMER would make every longer retry setting worse for the
+** operator than the short one it replaced.
 **
 ** Returns 0 when the wait completed, -1 when shutdown was signalled.
 ** ----------------------------------------------------------------- */
