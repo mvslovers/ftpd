@@ -769,14 +769,14 @@ terminate(ftpd_server_t *server)
 
     if (server->sock_task) {
         int i;
-        for (i = 0; (i < 10) && (!(server->sock_task->termecb & 0x40000000U)); i++) {
+        for (i = 0; (i < 10) && (!(server->sock_task->termecb & ECB_POSTED_BIT)); i++) {
             if (i) {
                 ftpd_log_wto("FTPD095I WAITING FOR SOCKET THREAD "
                              "TO TERMINATE (%d)", i);
             }
             __asm__("STIMER WAIT,BINTVL==F'100'" : : : "0", "1", "14", "15");
         }
-        if (!(server->sock_task->termecb & 0x40000000U)) {
+        if (!(server->sock_task->termecb & ECB_POSTED_BIT)) {
             ftpd_log_wto("FTPD095W SOCKET THREAD DID NOT TERMINATE");
         }
         cthread_delete(&server->sock_task);
