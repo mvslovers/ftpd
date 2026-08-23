@@ -1,6 +1,6 @@
 [project]
 name = "ftpd"
-version = "1.0.1"
+version = "1.0.2-dev"
 type = "application"
 
 [toolchain]
