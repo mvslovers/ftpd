@@ -12,7 +12,7 @@ type = "application"
 # Without this the release CI builds against libc370 main, which is how the
 # first 1.0.0 attempt shipped reporting "FTPD005I LIBC370 1.0.3-DEV (F14AD04)"
 # -- an unreleased runtime nobody can reproduce from a tag.
-libc370 = "1.0.2"
+libc370 = "1.0.3"
 
 [build]
 # -DVERSION from the project version (v1's mbt injected it automatically;
@@ -52,7 +52,7 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # mvssupa.h, haspjqe.h, socket.h, ...) and its runtime routines are now in
 # the cc370 sysroot (libc370), same as the ufsd v2 migration.
 [dependencies]
-"mvslovers/ufsd" = ">=1.2.0"
+"mvslovers/ufsd" = ">=1.2.1"
 
 # ── Distribution (SMP4 install package) ──────────────────
 # Turns `make package` into an installable product, the same two transports
@@ -84,8 +84,8 @@ readme = "doc/installation.md"
 # answered RC 04 with an empty list on mvsdev (MVS/CE) and drnmig3a (TK5).
 # A test install must use a throwaway id -- a half-applied FMID leaves this one
 # occupied, and the CDS cannot be queried to find out.
-fmid    = "TFTP100"
-system  = "Z038"
+fmid = "TFTP100"
+system = "Z038"
 
 # Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
 # libufs is linked statically, so nothing of ufsd has to be installed for FTPD
@@ -98,16 +98,16 @@ system  = "Z038"
 # answered RC 04 on 2026-08-13. ufsd's own prereq is empty for the same kind of
 # reason: RAKF is a runtime dependency, not a SYSMOD one. The guide documents
 # UFSD as an optional runtime prerequisite instead.
-prereq  = []
+prereq = []
 
-accept_fmid = true               # accept the FMID once so a PTF can be RESTOREd
-lklib   = "FTPD.@VRM@.FTPDLOAD"  # staging: what the load XMIT is received into
-target  = "FTPD.@VRM@.LINKLIB"   # where the load module ends up
+accept_fmid = true              # accept the FMID once so a PTF can be RESTOREd
+lklib = "FTPD.@VRM@.FTPDLOAD"   # staging: what the load XMIT is received into
+target = "FTPD.@VRM@.LINKLIB"   # where the load module ends up
 distlib = "FTPD.@VRM@.AFTPDLOD"
 
 [[distribution.library]]
-dir     = "samplib"
-target  = "FTPD.@VRM@.SAMPLIB"
+dir = "samplib"
+target = "FTPD.@VRM@.SAMPLIB"
 
 # ── Release ──────────────────────────────────────────────
 [release]
