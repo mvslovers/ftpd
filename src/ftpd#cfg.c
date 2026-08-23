@@ -30,9 +30,23 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     strcpy(cfg->pasv_bind, "ANY");  /* bind every address, as before */
     cfg->pasv_lo = 22000;
     cfg->pasv_hi = 22200;
-    cfg->bind_tries = 10;           /* HTTPD's defaults: up to 100s of
-                                    ** patience before the STC ends   */
-    cfg->bind_wait = 10;
+    /* 15 seconds of patience, not HTTPD's 100.  HTTPD's number predates a
+    ** stale port sweep: there, a repeated bind was the only defence against
+    ** a port a dead instance still held.  Here close_stale_port() has
+    ** already cleared that case before the retry loop is reached (#109), so
+    ** what still answers EADDRINUSE afterwards is most likely a LIVE foreign
+    ** listener -- and waiting on one does not help, it does not go away.
+    **
+    ** The cost of waiting also changed: since #111 a bind that never
+    ** succeeds ends the STC, so the operator who typed /S and is watching
+    ** the console waits out the whole budget for a verdict.  15 seconds
+    ** covers TIME_WAIT and a tight restart; a failed start is recognisable
+    ** as one while someone is still looking at it.
+    **
+    ** The one case that wants far more patience is EADDRNOTAVAIL early in an
+    ** IPL, and that is what raising BINDTRIES is for. */
+    cfg->bind_tries = 3;
+    cfg->bind_wait = 5;
     /* Limits */
     cfg->max_sessions = 10;
     cfg->idle_timeout = 300;
