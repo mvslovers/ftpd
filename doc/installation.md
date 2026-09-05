@@ -517,10 +517,12 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 | `/S FTPD` rejected — procedure not found | Procedure not copied into a PROCLIB in the started-task concatenation |
 | `FTPD003W APF SETUP FAILED` / `FTPD004W RACINIT FAILED` | No RAKF (so no SVC 244) and no APF entry — step 2 |
 | `FTPD002E FTPD IS ALREADY ACTIVE ON PORT n` | An older instance is still up. `/P FTPD` first |
+| `FTPD009E PARMLIB (DD:FTPDPRM) READ FAILED` | An I/O error on the parmlib data set, not a syntax error. FTPD refuses to start on a half-read configuration -- the member is unreadable where it stopped, so copy it in again |
 | `530 Login incorrect` for a valid user | RAKF user or password wrong — step 8 |
 | `530 Not authorized for FTP access` | The `FTPAUTH` FACILITY profile denies this user — step 8 |
 | `550 Access denied to <dsn>` | A RAKF `DATASET` profile denies it, checked under the client's identity |
 | `451` on every JES command | `HASPCKPT`/`HASPACE1` missing or wrong in the procedure — step 7 |
+| `451 Read error on data set` / `451 Write error on data set` after a partial transfer | An uncorrectable I/O error on the data set itself. The transfer is incomplete and reported as such rather than as a success — the byte count in the reply says how far it got |
 | `550 UFS service not available` | The UFSD started task is not running (installed is not enough) |
 | Passive transfer stalls after `227` | `PASVPORTS` not reachable, or `PASVADR` wrong behind NAT — step 7 |
 | `S106` at start on a freshly installed library | The XMIT was uploaded in text mode. Re-upload in **binary** and re-run the install job |

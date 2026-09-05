@@ -12,7 +12,7 @@ type = "application"
 # Without this the release CI builds against libc370 main, which is how the
 # first 1.0.0 attempt shipped reporting "FTPD005I LIBC370 1.0.3-DEV (F14AD04)"
 # -- an unreleased runtime nobody can reproduce from a tag.
-libc370 = "1.0.3"
+libc370 = "1.0.4"
 
 [build]
 # -DVERSION from the project version (v1's mbt injected it automatically;
@@ -46,13 +46,34 @@ sources = ["test/tstadr.c", "src/ftpd#adr.c"]
 name = "TSTDSN"
 sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 
+# ftpdcfg_load() -- a read error on DD:FTPDPRM must abandon the start (#119).
+# MVS-only: the vector is a real BSAM wrong-length record, built here by
+# allocating the same data set through two DDs that disagree about BLKSIZE,
+# so there is nothing on the host to run it against.  ftpd#log.c comes along
+# because ftpd#cfg.c logs; it needs no GRT anchor (logst() answers NULL and
+# the callers fall back), so no main() is required.
+#
+# parm names the scratch data set the test creates and deletes.  mbt passes
+# it to the program verbatim -- there is no $(MBT_MVS_HLQ) expansion here the
+# way [build] cflags gets $(PROJECT_VERSION) -- so the HLQ is written out.
+# Change it when running against a system where IBMUSER is not the runner --
+# and keep it short: mbt puts parm on the EXEC card without wrapping, and a
+# name long enough to push that card past column 71 produces JCL that fails
+# with IEF629I INCORRECT USE OF APOSTROPHE instead of running the test.
+[[test]]
+name = "TSTPRM"
+host = false
+parm = "IBMUSER.FTPD.TPRM"
+sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
+           "src/ftpd#adr.c"]
+
 # ── Dependencies ─────────────────────────────────────────
 # Only ufsd remains a real dependency: libufs.h / libufs.a are ufsd-specific.
 # crent370 was dropped -- every crent370 header ftpd uses (clib*.h, racf.h,
 # mvssupa.h, haspjqe.h, socket.h, ...) and its runtime routines are now in
 # the cc370 sysroot (libc370), same as the ufsd v2 migration.
 [dependencies]
-"mvslovers/ufsd" = ">=1.2.1"
+"mvslovers/ufsd" = ">=1.2.2"
 
 # ── Distribution (SMP4 install package) ──────────────────
 # Turns `make package` into an installable product, the same two transports
