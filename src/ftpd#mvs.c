@@ -1238,6 +1238,8 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     int lrecl;
     int is_fixed;
     int aborted = 0;            /* data connection died mid-transfer */
+    int io_err  = 0;            /* uncorrectable read error on the data set */
+    int io_errno = 0;           /* errno as of that error, before fclose()  */
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing dataset name");
@@ -1391,8 +1393,23 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         }
     }
 
+    /* Since libc370 1.0.4 an uncorrectable I/O error is ferror() + EIO
+    ** instead of ABEND S001, and feof() is deliberately NOT set -- so a bad
+    ** track ends every one of the loops above exactly like the end of the
+    ** data set, with no way for the client to tell a fragment from the whole
+    ** thing.  The flag is sticky on the FILE, so one check covers all three
+    ** transfer modes; it has to be read before fclose() frees it. */
+    io_err = (ferror(fp) != 0);
+
+    /* fclose() and ftpd_data_close() below both issue services of their own
+    ** and either can overwrite errno.  Take it while it still belongs to the
+    ** read that failed -- the log line exists to be believed. */
+    if (io_err)
+        io_errno = errno;
+
     ftpd_log(LOG_INFO, "RETR: %s %s after %ld bytes",
-             aborted ? "aborting" : "closing", fname, total);
+             io_err ? "read error on" : aborted ? "aborting" : "closing",
+             fname, total);
     sess->cur_file = NULL;
     fclose(fp);
     ftpd_data_close(sess);
@@ -1414,9 +1431,52 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
+    /* The data set is at fault, not the connection -- 451, and the byte
+    ** count so the client knows how far the fragment it holds reaches. */
+    if (io_err) {
+        ftpd_log(LOG_ERROR,
+                 "RETR: read error on %s after %ld bytes (errno=%d)",
+                 fname, total, io_errno);
+        ftpd_session_reply(sess, FTP_451,
+                           "Read error on data set after %ld bytes: "
+                           "transfer is incomplete.", total);
+        return 0;
+    }
+
     ftpd_session_reply(sess, FTP_250,
                        "Transfer completed successfully.");
     return 0;
+}
+
+/* --------------------------------------------------------------------
+** Helper: one STOR record out to the data set.
+**
+** Since libc370 1.0.4 an uncorrectable I/O error is ferror() + EIO instead
+** of ABEND S001, so a failing PUT no longer stops the transfer by itself:
+** unchecked, STOR keeps issuing writes against a DCB that already failed and
+** still ends in 250 with an incomplete data set on DASD.  ferror() is the
+** reliable witness here -- it is set whether the failure surfaces in the
+** fwrite() count, in the fflush() return, or only in the sticky flag -- so
+** the write sequence stays exactly as it was and the flag decides.
+**
+** On failure errno is handed back through *saved_errno: a lot of the STOR
+** path runs between the failing record and the 451 that reports it, and any
+** of it may overwrite errno.  Taking it here is the only place it is still
+** the write's own.
+**
+** Returns 0 on success, -1 once the FILE is in error.
+** ----------------------------------------------------------------- */
+static int
+stor_put(const void *buf, size_t len, FILE *fp, int *saved_errno)
+{
+    fwrite(buf, 1, len, fp);
+    fflush(fp);
+
+    if (!ferror(fp))
+        return 0;
+
+    *saved_errno = errno;
+    return -1;
 }
 
 /* --------------------------------------------------------------------
@@ -1689,6 +1749,8 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     int recpos;
     int nread;
     int is_fixed;
+    int io_err = 0;             /* uncorrectable write error on the data set */
+    int io_errno = 0;           /* errno as of that error, before fclose()   */
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing dataset name");
@@ -1859,23 +1921,26 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             record_pos += n;
 
             if (record_pos >= eff_lrecl) {
-                fwrite(record_buffer, 1, record_pos, fp);
-                fflush(fp);
+                if (stor_put(record_buffer, record_pos, fp, &io_errno) != 0) {
+                    io_err = 1;
+                    break;
+                }
                 record_pos = 0;
                 recnum++;
             }
         }
 
         /* Final partial record: pad with 0x00 (skip for RECFM=U) */
-        if (record_pos > 0) {
+        if (!io_err && record_pos > 0) {
             if (!is_undefined) {
                 memset(record_buffer + record_pos, 0x00,
                        eff_lrecl - record_pos);
                 record_pos = eff_lrecl;
             }
-            fwrite(record_buffer, 1, record_pos, fp);
-            fflush(fp);
-            recnum++;
+            if (stor_put(record_buffer, record_pos, fp, &io_errno) != 0)
+                io_err = 1;
+            else
+                recnum++;
         }
 
         free(record_buffer);
@@ -1904,29 +1969,34 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
                     if (is_fixed && fp->lrecl > 0) {
                         while (recpos < fp->lrecl)
                             recbuf[recpos++] = ' ';  /* EBCDIC blank */
-                        fwrite(recbuf, 1, fp->lrecl, fp);
-                        fflush(fp);
+                        if (stor_put(recbuf, fp->lrecl, fp, &io_errno) != 0)
+                            io_err = 1;
                     } else {
-                        fwrite(recbuf, 1, recpos, fp);
-                        fflush(fp);
+                        if (stor_put(recbuf, recpos, fp, &io_errno) != 0)
+                            io_err = 1;
                     }
                     recpos = 0;
+                    if (io_err)
+                        break;
                     continue;
                 }
                 if (recpos < (int)sizeof(recbuf) - 1)
                     recbuf[recpos++] = netbuf[i];
             }
+
+            if (io_err)
+                break;
         }
 
         /* Flush any remaining partial record */
-        if (recpos > 0) {
+        if (!io_err && recpos > 0) {
             ftpd_xlat_mvs_a2e((unsigned char *)recbuf, recpos);
             if (is_fixed && fp->lrecl > 0) {
                 while (recpos < fp->lrecl)
                     recbuf[recpos++] = ' ';  /* EBCDIC blank */
             }
-            fwrite(recbuf, 1, recpos, fp);
-            fflush(fp);
+            if (stor_put(recbuf, recpos, fp, &io_errno) != 0)
+                io_err = 1;
         }
     }
     else {
@@ -1956,26 +2026,44 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
                 record_pos += n;
 
                 if (record_pos >= eff_lrecl) {
-                    fwrite(record_buffer, 1, record_pos, fp);
-                    fflush(fp);
+                    if (stor_put(record_buffer, record_pos, fp, &io_errno) != 0) {
+                        io_err = 1;
+                        break;
+                    }
                     record_pos = 0;
                 }
             }
-            if (record_pos > 0) {
+            if (!io_err && record_pos > 0) {
                 if (!is_undefined) {
                     memset(record_buffer + record_pos, 0x00,
                            eff_lrecl - record_pos);
                     record_pos = eff_lrecl;
                 }
-                fwrite(record_buffer, 1, record_pos, fp);
-                fflush(fp);
+                if (stor_put(record_buffer, record_pos, fp, &io_errno) != 0)
+                    io_err = 1;
             }
             free(record_buffer);
         }
     }
 
-    ftpd_log(LOG_INFO, "STOR: closing %s", fname);
+    ftpd_log(LOG_INFO, "STOR: %s %s",
+             io_err ? "write error on" : "closing", fname);
     sess->cur_file = NULL;
+
+    /* stor_put() flushed every record, so this normally has nothing left to
+    ** do -- but fclose() would flush and CLOSE anyway, and once it has run
+    ** the FILE is freed and ferror() can no longer be asked.  Flush here
+    ** instead, while there is still someone to ask. */
+    fflush(fp);
+    if (ferror(fp)) {
+        /* Only the final flush's own errno is new here -- an error the loop
+        ** already reported carries the errno stor_put() saved at the time,
+        ** and that is the one worth keeping. */
+        if (!io_err)
+            io_errno = errno;
+        io_err = 1;
+    }
+
     fclose(fp);
     ftpd_data_close(sess);
 
@@ -1983,6 +2071,23 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     sess->xfer_count++;
     if (sess->server) {
         sess->server->total_bytes_in += total;
+    }
+
+    /* An incomplete data set on DASD must not be reported as a stored one:
+    ** the client is the only party that still holds the whole file, and it
+    ** will delete its copy on a 250. */
+    if (io_err) {
+        ftpd_log(LOG_ERROR,
+                 "STOR: write error on %s after %ld bytes received "
+                 "(errno=%d)", fname, total, io_errno);
+        /* total counts what arrived from the client, not what reached
+        ** DASD -- the record that failed is the boundary, and it is less
+        ** than this.  Say "received" rather than imply a byte offset in
+        ** the data set that nobody measured. */
+        ftpd_session_reply(sess, FTP_451,
+                           "Write error on data set after %ld bytes "
+                           "received: the data set is incomplete.", total);
+        return 0;
     }
 
     ftpd_session_reply(sess, FTP_250,
