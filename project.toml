@@ -92,7 +92,10 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
 #
 # Every value is a dataset name; the ddname SMP addresses it by is always the
 # last qualifier, so LINKLIB, SAMPLIB, FTPDLOAD and AFTPDLOD fall out of the
-# names. @VRM@ becomes V1R0M0 at package time.
+# names. @VRM@ becomes the *patch* level at package time -- V1R0M2 for 1.0.2,
+# not V1R0M0 for all of 1.0.x. The FMID above is per minor, so the two move at
+# different rates on purpose: a patch's libraries never collide with its
+# predecessor's, only its FMID does.
 [distribution]
 readme = "doc/installation.md"
 

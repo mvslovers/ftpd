@@ -18,9 +18,17 @@ its FMID for a re-install.
 | Distribution library | `FTPD.<vrm>.AFTPDLOD` |
 | Sample library | `FTPD.<vrm>.SAMPLIB` |
 
-`<vrm>` is the release as MVS qualifier — `V1R0M0` for 1.0.x. The staging
-library `FTPD.<vrm>.FTPDLOAD` is not listed because the install job's
-`CLEANUP` step already scratched it.
+`<vrm>` is the release as MVS qualifier, and it carries the **patch** level:
+`V1R0M0` for 1.0.0, `V1R0M1` for 1.0.1, `V1R0M2` for 1.0.2. The FMID does not
+work that way -- `TFTP100` names the whole 1.0.x functional level -- so a patch
+release collides with its predecessor in the SMP inventory while its libraries
+sit beside them untouched. Read `<vrm>` as the release you are removing, and
+check the name against ISPF 3.4 before running anything below: the wrong one
+scratches an installation you meant to keep and leaves the live one standing,
+with SMP reporting success throughout.
+
+The staging library `FTPD.<vrm>.FTPDLOAD` is not listed because the install
+job's `CLEANUP` step already scratched it.
 
 ---
 

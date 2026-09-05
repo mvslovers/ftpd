@@ -28,7 +28,7 @@ Two placeholders are used throughout:
 | | |
 |---|---|
 | `<version>` | the release, e.g. `1.0.0` — it appears in every shipped file name |
-| `<vrm>` | the same release as MVS dataset qualifier, e.g. `V1R0M0` |
+| `<vrm>` | the same release as MVS dataset qualifier, patch level included — `V1R0M0` for 1.0.0, `V1R0M1` for 1.0.1, `V1R0M2` for 1.0.2 |
 
 Both are already filled in inside the shipped jobs; you only need them to
 recognise which file is which.
