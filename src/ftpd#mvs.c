@@ -956,7 +956,27 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         ** find a single exact dataset), fall back to DSCB lookup.
         */
         recfm[0] = '\0';
+
+        /* Under the session identity: __listds() reaches IDCAMS.
+        **
+        ** libc370 routes it __listds() -> __listc() -> idcams(" LISTC
+        ** LEVEL(...) OUTFILE(...)"), so this is a catalog-management request
+        ** and catalog management issues its own RACHECK per entry it
+        ** returns.  Outside a window that check answers against the STC, and
+        ** RAKF logs the refusal naming FTPD instead of the logged-in user --
+        ** RAKF0005 / RAKF000A plus S056 out of IGG0CLBM, a CSECT of the
+        ** catalog management module IGG0CLA1 (#123).
+        **
+        ** Every idcams() FTPD calls by name is already wrapped; these two
+        ** __listds() calls are the places it is reached through a list
+        ** builder instead, which is exactly how they were missed.
+        **
+        ** Safe against the ENQ invariant in ftpd#aut.h: the __listpd()
+        ** window above has closed and pds is an in-memory list, so this task
+        ** holds no data set ENQ when it enters. */
+        ftpd_acee_enter(sess);
         dsl = __listds(prefix, "NONVSAM VOLUME", NULL);
+        ftpd_acee_leave(sess);
         if (dsl && dsl[0])
             strncpy(recfm, dsl[0]->recfm, sizeof(recfm) - 1);
         if (dsl)
@@ -1023,13 +1043,24 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         has_wildcard = (has_filter &&
                         (strchr(arg, '*') || strchr(arg, '%')));
 
-        /* __listds() is a catalog/VTOC operation (LISTCAT-style): it reads
-        ** catalog entries for the prefix with no dataset OPEN, so unlike
-        ** the __listpd() OPEN above it should neither ABEND on a protected
-        ** prefix nor need a user-ACEE switch -- confirm on TK5. A prefix
-        ** such as "SYS1." spans many datasets and is not a single RACF
-        ** DATASET resource, so there is no per-dataset READ check here. */
+        /* Under the session identity, for the reason spelled out at the
+        ** other __listds() above: this is IDCAMS LISTC, and catalog
+        ** management authorizes each entry it returns.
+        **
+        ** The comment this replaces said the opposite -- that a prefix is
+        ** not a single RACF DATASET resource, so no user-ACEE switch was
+        ** needed -- and marked itself "confirm on TK5".  That confirmation
+        ** came from the field and went the other way (#123).  The half that
+        ** was right is that FTPD makes no check of its own here, because a
+        ** prefix is not a resource it can ask about; the half that was wrong
+        ** is concluding that nobody else checks either.  IDCAMS does, per
+        ** data set, which is why the refusal named one.
+        **
+        ** Nothing is open at this point, so the ftpd#aut.h ENQ invariant
+        ** holds. */
+        ftpd_acee_enter(sess);
         dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
+        ftpd_acee_leave(sess);
 
         /* __listds() returns NULL both for "prefix not cataloged" and
         ** "prefix exists but has no children".  Use __locate() to tell
