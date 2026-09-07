@@ -956,6 +956,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         ** find a single exact dataset), fall back to DSCB lookup.
         */
         recfm[0] = '\0';
+        /* No identity window -- see the other __listds() below for why. */
         dsl = __listds(prefix, "NONVSAM VOLUME", NULL);
         if (dsl && dsl[0])
             strncpy(recfm, dsl[0]->recfm, sizeof(recfm) - 1);
@@ -1023,12 +1024,35 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         has_wildcard = (has_filter &&
                         (strchr(arg, '*') || strchr(arg, '%')));
 
-        /* __listds() is a catalog/VTOC operation (LISTCAT-style): it reads
-        ** catalog entries for the prefix with no dataset OPEN, so unlike
-        ** the __listpd() OPEN above it should neither ABEND on a protected
-        ** prefix nor need a user-ACEE switch -- confirm on TK5. A prefix
-        ** such as "SYS1." spans many datasets and is not a single RACF
-        ** DATASET resource, so there is no per-dataset READ check here. */
+        /* No identity window here, and that is measured rather than assumed
+        ** -- the "confirm on TK5" this comment used to carry was confirmed
+        ** on 2026-09-07 (#123).
+        **
+        ** __listds() is not the plain catalog read it looks like.  libc370
+        ** routes it __listds() -> __listc() -> idcams(" LISTC LEVEL(...)"),
+        ** and idcams() LINKs IDCAMS into this very task, so IDCAMS does see
+        ** whatever ASXBSENV holds.  A window would therefore reach it.
+        **
+        ** It would have nothing to act on.  LISTC LEVEL performs no
+        ** per-entry data set authorization: on a stand where the started
+        ** task is an ordinary unprivileged userid, a session listed
+        ** SYS1.SECURE. (profile NONE for every group but RAKFADM) and got
+        ** both members back, under the STC identity and under the session's
+        ** alike -- while RETR of the same member was refused 550.
+        **
+        ** That is not a leak, it is how MVS works: a catalog LEVEL listing
+        ** returns names, and RACF DATASET profiles gate access rather than
+        ** catalog enumeration.  LISTC ENTRIES from TSO answers the same for
+        ** a data set you cannot read, and ISPF 3.4 shows it too.  The
+        ** boundary that matters sits one level in and is already enforced --
+        ** the member listing via __listpd() above, and the content via
+        ** RETR, both check and both run under the session ACEE.
+        **
+        ** So the original conclusion stands; only its reasoning was a guess.
+        ** Do not "fix" this by adding a window: it costs an address-space
+        ** wide ENQ per LIST and changes nothing.  #123's RAKF refusal named
+        ** for the started task does not come from here -- ruled out, along
+        ** with __locate(), by the same run. */
         dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
 
         /* __listds() returns NULL both for "prefix not cataloged" and
