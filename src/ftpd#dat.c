@@ -7,6 +7,10 @@
 #include "ftpd#ses.h"
 #include "ftpd#dat.h"
 
+/* The X'75' copy segment.  See ftpd_data_recv() for why a receive may not
+** exceed it, and #124 for when this goes away again. */
+#define FTPD_X75_SEGMENT    256
+
 /* --------------------------------------------------------------------
 ** Parse PORT command arguments: h1,h2,h3,h4,p1,p2
 ** Stores address and port in session.
@@ -342,8 +346,52 @@ int
 ftpd_data_recv(ftpd_session_t *sess, void *buf, int len)
 {
     int rc;
+    int want;
 
-    rc = recv(sess->data_sock, buf, len, 0);
+    /* WORKAROUND for mvslovers/libc370#154 -- remove with #124, and only
+    ** together with the toolchain pin, never on its own.
+    **
+    ** libc370 1.0.4's recv() asks the emulator for up to 4096 bytes per
+    ** X'75'.  X'75' copies in 256-byte segments and the instruction is
+    ** restartable: a page translation exception on this buffer is
+    ** nullifying, so it runs again from the top.  The guest side resumes
+    ** correctly -- R1 holds the bytes remaining and the base register was
+    ** advanced -- but the host side has nothing to resume from and starts
+    ** over at the beginning of its buffer.  The tail of the read becomes a
+    ** replay of its head, silently, with the right byte count and the right
+    ** total length.
+    **
+    ** #122 is what that looks like from outside: a 4577-byte ASCII upload
+    ** stored as bytes [0:2560] + [0:1536] + [4096:4577] -- a JCL member with
+    ** its middle replaced by its own opening lines, and nothing anywhere
+    ** reporting an error.
+    **
+    ** A request of 256 or less is one segment, and one segment either faults
+    ** having moved nothing -- where resuming from the start is correct -- or
+    ** completes.  So this is not a mitigation that makes corruption rarer;
+    ** it removes the case that produces it.
+    **
+    ** It belongs here and not in FTPD_DATA_BUF_SIZE.  The binary and TYPE E
+    ** paths do not receive into that buffer at all: they pass eff_lrecl,
+    ** which for RECFM=U is the BLKSIZE and routinely exceeds 4096.  This is
+    ** the one place every data-connection read goes through.  The control
+    ** connection already reads a byte at a time (ftpd#ses.c) and is immune
+    ** for the same reason.
+    **
+    ** Every caller loops on a short read, so returning less than asked for
+    ** is not a behaviour change for any of them -- and the count of X'75'
+    ** instructions is unchanged either way, because libc370 1.0.5 caps at
+    ** the same 256 internally.
+    **
+    ** Capped into a local rather than onto len: cc370 compiles an assignment
+    ** to a parameter as a store into the CALLER's argument list, which a
+    ** caller that builds that list once outside its loop would then see on
+    ** every later iteration.  Harmless for this value -- 256 is always a
+    ** legal length -- but not worth leaving as a question.
+    */
+    want = (len > FTPD_X75_SEGMENT) ? FTPD_X75_SEGMENT : len;
+
+    rc = recv(sess->data_sock, buf, want, 0);
     if (rc < 0) {
         ftpd_log(LOG_ERROR, "%s: recv failed, errno=%d", __func__, errno);
         return -1;
