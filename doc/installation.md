@@ -359,6 +359,9 @@ MAXSESSIONS=10
 IDLETIMEOUT=300
 DEFUNIT=3390
 DEFVOLUME=PUB001
+DEFPRIMARY=10
+DEFSECONDARY=5
+DEFSPACETYPE=TRACK
 ```
 
 - `SRVPORT` is 2121, not 21 — nothing else on the system has to move out of the
@@ -368,6 +371,17 @@ DEFVOLUME=PUB001
 - `DEFUNIT`/`DEFVOLUME` are where FTPD allocates a dataset a client creates
   without saying where. `PUB001` is a development volume — name one that exists
   on your system.
+- `DEFPRIMARY`/`DEFSECONDARY`/`DEFSPACETYPE` are how much space that dataset
+  gets. **The shipped `TRACK 10,5` caps an upload at 85 tracks** — 10 tracks
+  plus at most 15 secondary extents of 5, roughly 4 MB at FB/80/3120 — and a
+  larger upload ends in an x37 ABEND. FTP tells the server no size at `STOR`
+  time, so the allocation cannot come from the transfer; these numbers are all
+  there is. On a system that receives large files set
+  `DEFSPACETYPE=CYLINDER`, `DEFPRIMARY=10`, `DEFSECONDARY=10` for about 2400
+  tracks. The 16-extent limit and the single volume stay either way, so a larger
+  `DEFPRIMARY` buys more than a larger `DEFSECONDARY`. A client can override all
+  three per session with `SITE PRIMARY=`, `SECONDARY=`, `TRACKS`, `CYLINDERS`
+  or `BLOCKS`.
 - `SSLPROXY=YES` is only for a TLS-terminating proxy in front of FTPD. Run bare
   it promises clients a confidentiality it does not deliver; the member's own
   comments spell this out.

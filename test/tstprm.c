@@ -1,6 +1,7 @@
 /*
 ** TSTPRM -- ftpd#119: a read error on DD:FTPDPRM must abandon the start,
 **           not come up on half a configuration.
+**           ftpd#100: the space defaults parse, and are range checked.
 **
 ** Since libc370 1.0.4 an uncorrectable I/O error is ferror() + errno EIO
 ** instead of ABEND S001, and feof() is deliberately NOT set.  That turns
@@ -55,10 +56,22 @@
 #define TSTPRM_PORT     2121
 #define TSTPRM_MAXSESS  17
 
+/* #100: the space defaults, and what the parser must refuse.  Each key is
+** given a good value first and a bad one after it, so a rejected value is
+** visible as "the good one survived" rather than as a default that might
+** have been there all along. */
+#define TSTPRM_PRIMARY  200
+#define TSTPRM_SECOND   0       /* 0 is a REQUEST -- no secondary extents */
+
 static const char * const parmlines[] = {
-    "# TSTPRM -- ftpd#119 parmlib read-error probe",
+    "# TSTPRM -- ftpd#119 parmlib read-error probe, ftpd#100 space defaults",
     "SRVPORT=2121",
     "MAXSESSIONS=17",
+    "DEFPRIMARY=200",
+    "DEFPRIMARY=0",             /* out of range (1..): must be refused    */
+    "DEFSECONDARY=0",           /* in range, and must NOT be overridden   */
+    "DEFSPACETYPE=CYLINDER",
+    "DEFSPACETYPE=FURLONGS",    /* not a space type: must be refused      */
     NULL
 };
 
@@ -157,6 +170,19 @@ main(int argc, char **argv)
         CHECK_EQ(cfg.port, TSTPRM_PORT, "healthy FTPDPRM: SRVPORT parsed");
         CHECK_EQ(cfg.max_sessions, TSTPRM_MAXSESS,
                  "healthy FTPDPRM: MAXSESSIONS parsed");
+
+        /* #100.  The two range checks are the point: DEFPRIMARY=0 must not
+        ** land (a data set with no primary quantity cannot be allocated),
+        ** while DEFSECONDARY=0 must, because "no secondary extents" is a
+        ** legitimate request and the code this replaced silently turned it
+        ** into 50 tracks. */
+        CHECK_EQ(cfg.defaults.primary, TSTPRM_PRIMARY,
+                 "healthy FTPDPRM: DEFPRIMARY parsed, DEFPRIMARY=0 refused");
+        CHECK_EQ(cfg.defaults.secondary, TSTPRM_SECOND,
+                 "healthy FTPDPRM: DEFSECONDARY=0 survives");
+        CHECK(strcmp(cfg.defaults.spacetype, "CYL") == 0,
+              "healthy FTPDPRM: DEFSPACETYPE=CYLINDER parsed, "
+              "unknown value refused");
 
         __dsfree("FTPDPRM");
     } else {

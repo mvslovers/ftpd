@@ -1504,6 +1504,41 @@ stor_put(const void *buf, size_t len, FILE *fp, int *saved_errno)
 }
 
 /* --------------------------------------------------------------------
+** Helper: the SPACE= operand for the session's allocation unit.
+**
+** TRK and CYL name themselves.  BLOCK has no keyword: SVC 99 takes an
+** average block length (DALBLKLN) and the opts-string form __dsalc()
+** understands is the block length itself -- "SPACE=3120(10,5)", which it
+** rewrites to "3120=10,5" and passes to __txblk().  Writing "BLK" there
+** would hand __txblk() the literal string.
+**
+** A block unit with no block size cannot be expressed at all, so it falls
+** back to tracks; ftpdcfg_load() and SITE both refuse that combination up
+** front, this is the belt to their braces.
+**
+** Returns buf.
+** ----------------------------------------------------------------- */
+static const char *
+space_operand(ftpd_session_t *sess, char *buf, size_t bufsz)
+{
+    if (strcmp(sess->alloc.spacetype, "CYL") == 0) {
+        strcpy(buf, "CYL");
+    }
+    else if (strcmp(sess->alloc.spacetype, "BLK") == 0 &&
+             sess->alloc.blksize > 0) {
+        snprintf(buf, bufsz, "%d", sess->alloc.blksize);
+    }
+    else {
+        if (strcmp(sess->alloc.spacetype, "BLK") == 0)
+            ftpd_log(LOG_WARN, "%s: BLOCK allocation unit without a "
+                     "BLKSIZE, using TRK", __func__);
+        strcpy(buf, "TRK");
+    }
+
+    return buf;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: allocate a NEW dataset via SVC99 using session alloc params.
 ** Returns allocated ddname in ddout (8 chars + null).
 ** Returns 0 on success, -1 on error.
@@ -1538,7 +1573,6 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
     void *tu_list[13];
     int idx = 0;
     int err;
-    char spacestr[32];
 
     memset(&rb, 0, sizeof(rb));
     memset(tu, 0, sizeof(tu));
@@ -1627,15 +1661,32 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
         idx++;
     }
 
-    /* Space type: TRK or CYL */
+    /* Space unit: TRK, CYL, or an average block length (BLOCK).
+    ** The quantities below are the session's, without a fallback: they come
+    ** from DEFPRIMARY/DEFSECONDARY and are range-checked at config load and
+    ** at SITE time, so anything arriving here was asked for (#100). */
     tu_list[idx] = &tu[idx];
     if (strcmp(sess->alloc.spacetype, "CYL") == 0) {
         tu[idx].key = 0x0008;   /* DALCYL */
+        tu[idx].numparms = 0;
+        tu[idx].parm1_len = 0;
+    } else if (strcmp(sess->alloc.spacetype, "BLK") == 0 &&
+               sess->alloc.blksize > 0) {
+        int b = sess->alloc.blksize;
+        tu[idx].key = 0x0009;   /* DALBLKLN — average block length */
+        tu[idx].numparms = 1;
+        tu[idx].parm1_len = 3;
+        tu[idx].parm1[0] = (char)((b >> 16) & 0xFF);
+        tu[idx].parm1[1] = (char)((b >> 8) & 0xFF);
+        tu[idx].parm1[2] = (char)(b & 0xFF);
     } else {
+        if (strcmp(sess->alloc.spacetype, "BLK") == 0)
+            ftpd_log(LOG_WARN, "%s: BLOCK allocation unit without a "
+                     "BLKSIZE, using TRK", __func__);
         tu[idx].key = 0x0007;   /* DALTRK */
+        tu[idx].numparms = 0;
+        tu[idx].parm1_len = 0;
     }
-    tu[idx].numparms = 0;
-    tu[idx].parm1_len = 0;
     idx++;
 
     /* Primary + secondary space */
@@ -1644,7 +1695,7 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
     tu[idx].numparms = 1;
     tu[idx].parm1_len = 3;
     {
-        int p = sess->alloc.primary > 0 ? sess->alloc.primary : 10;
+        int p = sess->alloc.primary;
         tu[idx].parm1[0] = (char)((p >> 16) & 0xFF);
         tu[idx].parm1[1] = (char)((p >> 8) & 0xFF);
         tu[idx].parm1[2] = (char)(p & 0xFF);
@@ -1656,7 +1707,7 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
     tu[idx].numparms = 1;
     tu[idx].parm1_len = 3;
     {
-        int s = sess->alloc.secondary > 0 ? sess->alloc.secondary : 5;
+        int s = sess->alloc.secondary;
         tu[idx].parm1[0] = (char)((s >> 16) & 0xFF);
         tu[idx].parm1[1] = (char)((s >> 8) & 0xFF);
         tu[idx].parm1[2] = (char)(s & 0xFF);
@@ -1806,12 +1857,19 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    /* Step 1: If dataset doesn't exist, create it via __dsalcf().
-    ** This is the proven mvsMF DSAPI pattern (dsapi.c line 1794):
-    ** __dsalcf() for SVC 99 allocation, __dsfree() to release DD,
-    ** then fopen("wb") reads DCB from the new DSCB on DASD. */
+    /* Step 1: If dataset doesn't exist, create it via __dsalcf():
+    ** SVC 99 allocation, __dsfree() to release the DD, then fopen("wb")
+    ** reads the DCB back from the new DSCB on DASD.
+    **
+    ** The space quantities are the session's, with no fallback behind them.
+    ** They start at DEFPRIMARY/DEFSECONDARY/DEFSPACETYPE and are range
+    ** checked there and in SITE, so what arrives here was asked for -- the
+    ** fallbacks this used to carry substituted 100/50 for any value atoi()
+    ** turned into 0, which is how "SITE PRIMARY=abc" silently allocated
+    ** something nobody had requested (#100). */
     if (!ds_exists) {
         char opts[256];
+        char spc[16];
         snprintf(opts, sizeof(opts),
             "DSN=%s;DISP=(NEW,CATLG,DELETE);DSORG=PS;RECFM=%s;"
             "LRECL=%d;BLKSIZE=%d;SPACE=%s(%d,%d)",
@@ -1819,9 +1877,9 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             sess->alloc.recfm,
             sess->alloc.lrecl,
             sess->alloc.blksize,
-            sess->alloc.spacetype[0] ? sess->alloc.spacetype : "TRK",
-            sess->alloc.primary   > 0 ? sess->alloc.primary   : 100,
-            sess->alloc.secondary > 0 ? sess->alloc.secondary : 50);
+            space_operand(sess, spc, sizeof(spc)),
+            sess->alloc.primary,
+            sess->alloc.secondary);
 
         ftpd_log(LOG_INFO, "STOR: __dsalcf opts='%s'", opts);
 

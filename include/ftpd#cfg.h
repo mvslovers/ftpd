@@ -14,6 +14,11 @@ typedef struct ftpd_dasd {
 
 #define FTPD_MAX_DASD       32      /* max configured DASD volumes   */
 
+/* Largest space quantity SVC 99 can carry: DALPRIME / DALSECND / DALDIR
+** are 3-byte binary fields, so 2^24-1 units.  Same ceiling z/OS documents
+** for SITE PRIMARY / SECONDARY (1-16777215).                          */
+#define FTPD_SPACE_MAX      16777215
+
 /* --- Server configuration --- */
 /*
 ** The three address fields below are all written by ftpd_adr_parse(), so
@@ -68,11 +73,25 @@ typedef struct ftpd_config {
     /* JES */
     int             jes_level;      /* default JES interface level   */
 
-    /* Default allocation parameters */
+    /* Default allocation parameters.
+    **
+    ** These are the values a session starts with; SITE overrides them for
+    ** the rest of that session.  The keys are named after the z/OS FTP.DATA
+    ** statements they mirror (RECFM, LRECL, BLKSIZE, PRIMARY, SECONDARY,
+    ** SPACETYPE, UNIT, VOLUME) with the DEF prefix FTPD has always used.  */
     struct {
         char        recfm[4];
         int         lrecl;
         int         blksize;
+        int         primary;        /* DEFPRIMARY,   1..FTPD_SPACE_MAX  */
+        int         secondary;      /* DEFSECONDARY, 0..FTPD_SPACE_MAX;
+                                    ** 0 legitimately means "no secondary
+                                    ** extents", as on z/OS             */
+        char        spacetype[4];   /* DEFSPACETYPE: "TRK", "CYL" or
+                                    ** "BLK".  BLK measures the space in
+                                    ** units of BLKSIZE, so it needs a
+                                    ** non-zero block size to mean
+                                    ** anything -- see ftpdcfg_load()   */
         char        unit[5];
         char        volume[7];
     } defaults;

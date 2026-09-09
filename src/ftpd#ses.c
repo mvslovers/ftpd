@@ -49,9 +49,9 @@ ftpd_session_new(ftpd_server_t *server, int sock)
     strcpy(sess->alloc.recfm, server->config.defaults.recfm);
     sess->alloc.lrecl = server->config.defaults.lrecl;
     sess->alloc.blksize = server->config.defaults.blksize;
-    sess->alloc.primary = 10;
-    sess->alloc.secondary = 5;
-    strcpy(sess->alloc.spacetype, "TRK");
+    sess->alloc.primary = server->config.defaults.primary;
+    sess->alloc.secondary = server->config.defaults.secondary;
+    strcpy(sess->alloc.spacetype, server->config.defaults.spacetype);
     strcpy(sess->alloc.volume, server->config.defaults.volume);
     strcpy(sess->alloc.unit, server->config.defaults.unit);
     sess->alloc.dirblks = 0;
