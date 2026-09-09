@@ -323,6 +323,11 @@ space_abend(unsigned abcode)
 ** Called through try() by the session loop, not from the recovery handler
 ** itself: an ABEND inside this window must not be what leaves the window
 ** open, and the loop can re-assert the identity afterwards.
+**
+** idcams() takes a format string and cmd is not a literal, which is safe
+** only because the name in it came through resolve_dsn(): ftpd_dsn_valid()
+** admits alphanumerics, @ # $, the dot and parentheses, so a '%' cannot
+** reach here.  Keep that true if the name ever arrives another way.
 ** ----------------------------------------------------------------- */
 static int
 ftpd_session_scratch(ftpd_session_t *sess)
