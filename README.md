@@ -116,15 +116,23 @@ ftp mvshost 2121
 | RECFM=*fmt* | Record format (FB, VB, F, V, U) |
 | LRECL=*n* | Logical record length |
 | BLKSIZE=*n* | Block size |
-| PRIMARY=*n* | Primary space allocation |
-| SECONDARY=*n* | Secondary space allocation |
-| TRACKS / CYLINDERS | Space allocation unit |
+| PRIMARY=*n* | Primary space allocation (1-16777215) |
+| SECONDARY=*n* | Secondary space allocation (0-16777215; 0 = none) |
+| DIRECTORY=*n* | PDS directory blocks |
+| TRACKS / CYLINDERS / BLOCKS | Space allocation unit |
 | FILETYPE=JES / SEQ | Switch to JES or dataset mode |
 | JESOWNER=*name* | JES job owner filter |
 | JESJOBNAME=*name* | JES job name filter |
 | JESSTATUS=*status* | JES job status filter (OUTPUT, ALL) |
-| JESINTERFACELEVEL=*n* | JES interface level (1 or 2) |
 | TRAILING | Toggle trailing blanks in text transfers |
+
+A parameter given without a value returns to the configured default — so
+`SITE PRIMARY` undoes an earlier `SITE PRIMARY=200` for the rest of the
+session. `BLOCKS` counts the space in units of the current `BLKSIZE`.
+
+Allocation parameters are sticky for the session and apply to a dataset FTPD
+has to create; their starting values come from `DEFPRIMARY`, `DEFSECONDARY`
+and `DEFSPACETYPE` in `FTPDPRM`.
 
 ## Architecture
 

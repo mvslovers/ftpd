@@ -59,10 +59,18 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     /* JES */
     cfg->jes_level = 2;
 
-    /* Default allocation parameters */
+    /* Default allocation parameters.
+    ** TRK(10,5) is what every session used to get hardcoded (#100); keeping
+    ** it as the shipped default means an upgrade changes nothing until an
+    ** administrator sets DEFPRIMARY/DEFSECONDARY/DEFSPACETYPE.  It also caps
+    ** an upload at 85 tracks -- 10 plus 15 secondary extents -- which is
+    ** exactly why the keys exist. */
     strcpy(cfg->defaults.recfm, "FB");
     cfg->defaults.lrecl = 80;
     cfg->defaults.blksize = 3120;
+    cfg->defaults.primary = 10;
+    cfg->defaults.secondary = 5;
+    strcpy(cfg->defaults.spacetype, "TRK");
     strcpy(cfg->defaults.unit, "3390");
     strcpy(cfg->defaults.volume, "PUB001");
 
@@ -142,6 +150,39 @@ parse_dasd_line(ftpd_config_t *cfg, const char *line)
     cfg->num_dasd++;
 
     return 1;
+}
+
+/* --------------------------------------------------------------------
+** Map a DEFSPACETYPE value to the three-character form kept in the
+** config and in ftpd_alloc_t.
+**
+** z/OS FTP.DATA spells the SPACETYPE values out (TRACK / CYLINDER /
+** BLOCK) while SITE uses the plurals and JCL uses the abbreviations.
+** All three reach an administrator's fingers, so all three are taken.
+**
+** Returns "TRK", "CYL", "BLK", or NULL when the value is none of them.
+** ----------------------------------------------------------------- */
+static const char *
+spacetype_of(const char *value)
+{
+    char u[12];
+    int i;
+
+    for (i = 0; i < (int)sizeof(u) - 1 && value[i]; i++)
+        u[i] = (char)toupper((unsigned char)value[i]);
+    u[i] = '\0';
+
+    if (strcmp(u, "TRACK") == 0 || strcmp(u, "TRACKS") == 0 ||
+        strcmp(u, "TRK") == 0)
+        return "TRK";
+    if (strcmp(u, "CYLINDER") == 0 || strcmp(u, "CYLINDERS") == 0 ||
+        strcmp(u, "CYL") == 0)
+        return "CYL";
+    if (strcmp(u, "BLOCK") == 0 || strcmp(u, "BLOCKS") == 0 ||
+        strcmp(u, "BLK") == 0)
+        return "BLK";
+
+    return NULL;
 }
 
 /* --------------------------------------------------------------------
@@ -269,6 +310,39 @@ parse_keyvalue(ftpd_config_t *cfg, const char *key, const char *value)
     else if (strcmp(key, "DEFBLKSIZE") == 0) {
         cfg->defaults.blksize = atoi(value);
     }
+    else if (strcmp(key, "DEFPRIMARY") == 0) {
+        /* z/OS range is 1-16777215.  Zero is not "unset" here: a data set
+        ** with no primary quantity cannot be allocated, and silently
+        ** substituting one is how the old hardcoded path hid its limits. */
+        int v = atoi(value);
+        if (v < 1 || v > FTPD_SPACE_MAX)
+            ftpd_log(LOG_WARN, "%s: DEFPRIMARY must be 1..%d, keeping %d",
+                     __func__, FTPD_SPACE_MAX, cfg->defaults.primary);
+        else
+            cfg->defaults.primary = v;
+    }
+    else if (strcmp(key, "DEFSECONDARY") == 0) {
+        /* 0 is a legitimate request -- "no secondary extents" -- and must
+        ** survive, so the range starts one lower than DEFPRIMARY's. */
+        int v = atoi(value);
+        if (v < 0 || v > FTPD_SPACE_MAX)
+            ftpd_log(LOG_WARN, "%s: DEFSECONDARY must be 0..%d, keeping %d",
+                     __func__, FTPD_SPACE_MAX, cfg->defaults.secondary);
+        else
+            cfg->defaults.secondary = v;
+    }
+    else if (strcmp(key, "DEFSPACETYPE") == 0) {
+        /* Spelled as the z/OS FTP.DATA statement does (TRACK/CYLINDER/
+        ** BLOCK); the JCL short forms and the plural SITE spellings are
+        ** taken too, because both are what a reader expects to work. */
+        const char *st = spacetype_of(value);
+        if (!st)
+            ftpd_log(LOG_WARN, "%s: DEFSPACETYPE must be TRACK, CYLINDER "
+                     "or BLOCK, keeping %s", __func__,
+                     cfg->defaults.spacetype);
+        else
+            strcpy(cfg->defaults.spacetype, st);
+    }
     else if (strcmp(key, "DEFUNIT") == 0) {
         strncpy(cfg->defaults.unit, value, sizeof(cfg->defaults.unit) - 1);
     }
@@ -365,6 +439,19 @@ ftpdcfg_load(ftpd_config_t *cfg)
 
     fclose(fp);
 
+    /* DEFSPACETYPE=BLOCK measures the space in units of DEFBLKSIZE, so the
+    ** two keys are only meaningful together -- and they can be given in
+    ** either order, which is why this is checked here and not while
+    ** parsing.  A block count against no block size would reach SVC 99 as
+    ** a zero-length block, so fall back to tracks and say so rather than
+    ** allocate something nobody asked for. */
+    if (strcmp(cfg->defaults.spacetype, "BLK") == 0 &&
+        cfg->defaults.blksize <= 0) {
+        ftpd_log(LOG_WARN, "%s: DEFSPACETYPE=BLOCK needs a non-zero "
+                 "DEFBLKSIZE, using TRACK", __func__);
+        strcpy(cfg->defaults.spacetype, "TRK");
+    }
+
     ftpd_log(LOG_INFO, "%s: loaded, port=%d, max_sessions=%d, "
              "DASD volumes=%d", __func__,
              cfg->port, cfg->max_sessions, cfg->num_dasd);
@@ -404,6 +491,9 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
                  cfg->defaults.blksize);
     ftpd_log_wto("FTPD046I   DEFUNIT=%s DEFVOLUME=%s",
                  cfg->defaults.unit, cfg->defaults.volume);
+    ftpd_log_wto("FTPD058I   DEFPRIMARY=%d DEFSECONDARY=%d DEFSPACETYPE=%s",
+                 cfg->defaults.primary, cfg->defaults.secondary,
+                 cfg->defaults.spacetype);
     ftpd_log_wto("FTPD047I   DASD VOLUMES=%d:", cfg->num_dasd);
     for (i = 0; i < cfg->num_dasd; i++) {
         ftpd_log_wto("FTPD048I     %s,%s",

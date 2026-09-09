@@ -60,6 +60,24 @@ parse_kv(const char *arg, char *key, int keysz, char *val, int valsz)
 }
 
 /* --------------------------------------------------------------------
+** Record a warning for the final reply.
+**
+** First writer wins, matching how the unrecognized-parameter path keeps
+** the FIRST offending token: one SITE command carries many parameters and
+** the reply has room for one warning, so it should name the problem the
+** client hit first rather than the last one that happened to overwrite it.
+** ----------------------------------------------------------------- */
+static void
+site_warn(char *warn, int warnsz, const char *text)
+{
+    if (!warn || warnsz <= 0 || warn[0] != '\0')
+        return;
+
+    strncpy(warn, text, warnsz - 1);
+    warn[warnsz - 1] = '\0';
+}
+
+/* --------------------------------------------------------------------
 ** Apply a single SITE KEY=VALUE parameter.
 ** Does not send any reply — caller sends one reply after all tokens.
 ** warn/warnsz: optional buffer filled with a warning message; caller
@@ -71,11 +89,28 @@ site_apply_one(ftpd_session_t *sess,
                const char *key, const char *val,
                char *warn, int warnsz)
 {
-    /* --- Allocation parameters --- */
+    const ftpd_config_t *cfg = &sess->server->config;
+
+    /* --- Allocation parameters ---
+    **
+    ** A keyword given without a value cancels the setting on z/OS.  FTPD
+    ** reads that as "back to the configured default", which is the same
+    ** thing here: DEFRECFM/DEFLRECL/DEFBLKSIZE/DEFPRIMARY/DEFSECONDARY are
+    ** what the session started with, so returning to them is the only
+    ** cancellation that has a meaning.  DIRECTORY has no DEF key and so
+    ** cancels to unset, as on z/OS.
+    **
+    ** It also disposes of atoi("") == 0 without a special case: before
+    ** #100 a bare SITE PRIMARY stored a primary quantity of zero and the
+    ** allocation path quietly replaced it with 100 tracks. */
 
     if (strcmp(key, "RECFM") == 0) {
         char uval[16];
         int i;
+        if (val[0] == '\0') {           /* bare keyword: back to default */
+            strcpy(sess->alloc.recfm, cfg->defaults.recfm);
+            return 0;
+        }
         strncpy(uval, val, sizeof(uval) - 1);
         uval[sizeof(uval) - 1] = '\0';
         for (i = 0; uval[i]; i++)
@@ -86,38 +121,83 @@ site_apply_one(ftpd_session_t *sess,
     }
 
     if (strcmp(key, "LRECL") == 0) {
-        sess->alloc.lrecl = atoi(val);
+        if (val[0] == '\0')
+            sess->alloc.lrecl = cfg->defaults.lrecl;
+        else
+            sess->alloc.lrecl = atoi(val);
         return 0;
     }
 
     if (strcmp(key, "BLKSIZE") == 0) {
-        int blk = atoi(val);
+        int blk;
+        if (val[0] == '\0') {
+            sess->alloc.blksize = cfg->defaults.blksize;
+            return 0;
+        }
+        blk = atoi(val);
         /* For FB, BLKSIZE must be a multiple of LRECL; adjust if needed */
         if (sess->alloc.recfm[0] == 'F' && sess->alloc.lrecl > 0 &&
             blk % sess->alloc.lrecl != 0) {
             blk = (blk / sess->alloc.lrecl) * sess->alloc.lrecl;
             if (blk == 0) blk = sess->alloc.lrecl;
-            if (warn && warnsz > 0)
-                strncpy(warn,
-                    "BLOCKSIZE must be a multiple of LRECL for RECFM FB",
-                    warnsz - 1);
+            site_warn(warn, warnsz,
+                "BLOCKSIZE must be a multiple of LRECL for RECFM FB");
         }
         sess->alloc.blksize = blk;
         return 0;
     }
 
     if (strcmp(key, "PRIMARY") == 0) {
-        sess->alloc.primary = atoi(val);
+        /* 1..16777215 on z/OS.  Out of range leaves the current setting
+        ** alone and says so: the old code stored whatever atoi() produced
+        ** -- 0 for "PRIMARY=" and for "PRIMARY=abc" alike -- and the
+        ** allocation path then substituted a number nobody had asked for
+        ** (#100). */
+        int v;
+        if (val[0] == '\0') {
+            sess->alloc.primary = cfg->defaults.primary;
+            return 0;
+        }
+        v = atoi(val);
+        if (v < 1 || v > FTPD_SPACE_MAX)
+            site_warn(warn, warnsz,
+                "PRIMARY must be 1-16777215; keeping the current value");
+        else
+            sess->alloc.primary = v;
         return 0;
     }
 
     if (strcmp(key, "SECONDARY") == 0) {
-        sess->alloc.secondary = atoi(val);
+        /* 0..16777215.  Unlike PRIMARY, 0 is a real request -- "no
+        ** secondary extents" -- and must reach the allocation. */
+        int v;
+        if (val[0] == '\0') {
+            sess->alloc.secondary = cfg->defaults.secondary;
+            return 0;
+        }
+        v = atoi(val);
+        if (v < 0 || v > FTPD_SPACE_MAX)
+            site_warn(warn, warnsz,
+                "SECONDARY must be 0-16777215; keeping the current value");
+        else
+            sess->alloc.secondary = v;
         return 0;
     }
 
     if (strcmp(key, "DIRECTORY") == 0) {
-        sess->alloc.dirblks = atoi(val);
+        /* No configured default to fall back to, so a bare DIRECTORY
+        ** clears the setting the way z/OS does. */
+        int v;
+        if (val[0] == '\0') {
+            sess->alloc.dirblks = 0;
+            return 0;
+        }
+        v = atoi(val);
+        if (v < 1 || v > FTPD_SPACE_MAX)
+            site_warn(warn, warnsz,
+                "DIRECTORY must be 1-16777215; keeping the current value");
+        else
+            sess->alloc.dirblks = v;
         return 0;
     }
 
@@ -128,6 +208,19 @@ site_apply_one(ftpd_session_t *sess,
 
     if (strcmp(key, "CYLINDERS") == 0) {
         strcpy(sess->alloc.spacetype, "CYL");
+        return 0;
+    }
+
+    if (strcmp(key, "BLOCKS") == 0) {
+        /* BLOCKS counts the space in units of the current BLKSIZE, so
+        ** without one there is nothing to count -- refuse rather than
+        ** allocate against a zero-length block. */
+        if (sess->alloc.blksize <= 0) {
+            site_warn(warn, warnsz,
+                "BLOCKS needs a non-zero BLKSIZE; allocation unit unchanged");
+            return 0;
+        }
+        strcpy(sess->alloc.spacetype, "BLK");
         return 0;
     }
 

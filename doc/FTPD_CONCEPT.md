@@ -828,6 +828,9 @@ DEFLRECL=80
 DEFBLKSIZE=3120
 DEFUNIT=3390
 DEFVOLUME=PUB001
+DEFPRIMARY=10
+DEFSECONDARY=5
+DEFSPACETYPE=TRACK
 
 # DASD volumes (optional — only needed for SITE VOLUME=xxx fallback)
 # With the catalog-based approach (§4.2), LIST uses IDCAMS LISTC

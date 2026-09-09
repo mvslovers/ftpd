@@ -81,9 +81,42 @@ SSLPROXY=NO
 JESINTERFACELEVEL=2
 #
 # --- Default allocation parameters ---
+#
+# What a session starts with; SITE overrides any of it for the rest of
+# that session.  The keys are named after the z/OS FTP.DATA statements
+# they mirror.
+#
 DEFRECFM=FB
 DEFLRECL=80
 DEFBLKSIZE=3120
 DEFUNIT=3390
 DEFVOLUME=PUB001
+#
+# Space for a data set STOR has to create.  FTP never tells the server
+# how large an upload is -- there is no size at STOR time and no ALLO
+# command -- so the allocation cannot be derived from the transfer, and
+# these are the only numbers there are.
+#
+# The defaults below are what FTPD used to allocate hardcoded, and they
+# cap an upload at 85 tracks: 10 tracks primary plus at most 15 secondary
+# extents of 5, roughly 4 MB at FB/80/3120.  A larger upload ends in an
+# x37 ABEND.  Raise them for a system that receives big files -- e.g.
+#   DEFSPACETYPE=CYLINDER
+#   DEFPRIMARY=10
+#   DEFSECONDARY=10
+# gives 160 cylinders, about 2400 tracks.  Note that the 16-extent limit
+# (1 primary + 15 secondary) and the single volume stay either way, so a
+# larger PRIMARY buys more than a larger SECONDARY.
+#
+# Until unused space is released at close, a generous default is also
+# what every small upload occupies permanently.
+#
+# DEFPRIMARY     1-16777215
+# DEFSECONDARY   0-16777215; 0 means no secondary extents
+# DEFSPACETYPE   TRACK | CYLINDER | BLOCK  (TRK/CYL/BLK are taken too)
+#                BLOCK counts in units of DEFBLKSIZE and needs one.
+#
+DEFPRIMARY=10
+DEFSECONDARY=5
+DEFSPACETYPE=TRACK
 #
