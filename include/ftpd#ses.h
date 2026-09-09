@@ -87,6 +87,22 @@ struct ftpd_session {
     struct libufs_file *cur_ufs_file; /* open UFSD file during a UFS
                                     ** RETR/STOR transfer; NULL else.
                                     ** ufs_fclose() releases it.        */
+    char            cur_new_dsn[FTPD_MAX_DSN_LEN + 1];
+                                    /* data set THIS STOR created for the
+                                    ** transfer in flight, "" otherwise.
+                                    ** Scratched after an ABEND: the
+                                    ** allocation is DISP=(NEW,CATLG,
+                                    ** DELETE), but the DD is freed before
+                                    ** the transfer starts, so nothing
+                                    ** performs that conditional
+                                    ** disposition and the partial data
+                                    ** set stays catalogued -- after which
+                                    ** every retry finds ds_exists, skips
+                                    ** the allocation, and fails
+                                    ** identically (#129).  Lives here and
+                                    ** not on the stack because the
+                                    ** ABEND unwinds every frame below
+                                    ** try().                           */
 #ifdef FTPD_DEBUG_ABEND
     int             debug_abend_xfer; /* armed by SITE ABEND=XFER: the
                                     ** next MVS RETR ABENDs mid-transfer

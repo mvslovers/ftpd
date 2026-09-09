@@ -13,6 +13,8 @@
 #   4.  JES job submission (SITE FILETYPE=JES)
 #   5.  UFS mode switching (CWD / / CWD 'DSN')
 #   5b. UFS file ops: TYPE A + TYPE I roundtrip, LIST, SIZE, DELE, MKD/RMD
+#   6.  Cleanup (DELE/RMD)
+#   7.  Out of space (x37): permanent 552, no hang
 # ============================================================
 
 HOST="${1:-localhost}"
@@ -938,6 +940,94 @@ ftp_run "rmdir '$DSN_PDS'" "$FTP_OUT"
 info "DELE '${HLQ}.TEST.JESBACK'"
 ftp_run "delete '${HLQ}.TEST.JESBACK'" "$FTP_OUT"
 ! grep -qi "^550" "$FTP_OUT" && pass "Delete JES test DS" || fail "Delete JES test DS"
+
+# ============================================================
+# TEST 7: Out of space (x37) — ftpd#129
+#
+# An upload that does not fit must fail PERMANENTLY, and must not leave the
+# session hanging.  Both were wrong before:
+#
+#   - recovery answered 451, which RFC 959 defines as transient, so a
+#     conforming client retries something that cannot succeed;
+#   - recovery ABENDed a second time in fclose() and never reached the data
+#     connection close, so the client sat writing into a dead transfer until
+#     the idle timeout fired 300 seconds later.
+#
+# TRK(1,0) has no secondary extents, so ~700 KB cannot fit however the
+# volume is laid out.  SECONDARY=0 must reach the allocation as zero for
+# this to be a one-track data set at all (ftpd#100) — run this against a
+# build without that fix and the 0 becomes 50, the data set becomes 51
+# tracks, the upload succeeds and this whole section measures nothing.
+#
+# NOT asserted, and deliberately: that the partial data set is gone
+# afterwards.  The failed CLOSE leaves it allocated to the FTPD address
+# space, so neither FTPD nor the client can delete it until the STC is
+# restarted — mvslovers/libc370#168. The INFO below records which case a
+# run is in.
+# ============================================================
+section "Test 7: Out of space (x37) — permanent failure, no hang"
+
+X37FILE="$TMPDIR/test_x37.bin"
+DSN_X37="${HLQ}.TEST.X37"
+
+generate_binary_testfile "$X37FILE" 720000
+X37SIZE=$(stat -c%s "$X37FILE" 2>/dev/null || stat -f%z "$X37FILE")
+info "Generated $X37SIZE bytes for a TRK(1,0) data set"
+
+# A leftover from an earlier run would make this measure the wrong thing:
+# STOR skips the allocation entirely when the data set already exists.
+ftp_run "delete '$DSN_X37'" "$TMPDIR/ftp_x37_pre.log"
+
+info "STOR into TRK(1,0) -> '$DSN_X37' (expect 552, promptly)"
+FTP_OUT="$TMPDIR/ftp_x37_up.log"
+X37_START=$(date +%s)
+ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=3120
+site tracks
+site primary=1
+site secondary=0
+type binary
+put $X37FILE '$DSN_X37'
+CMDS
+)" "$FTP_OUT"
+X37_ELAPSED=$(( $(date +%s) - X37_START ))
+
+if grep -q "^552" "$FTP_OUT"; then
+    pass "Out-of-space upload answers 552 (permanent)"
+elif grep -q "^451" "$FTP_OUT"; then
+    fail "Out-of-space upload answers 451 (transient — client will retry)"
+    grep -E "^4[0-9][0-9]|^5[0-9][0-9]" "$FTP_OUT" | tail -3 | sed 's/^/    /'
+else
+    fail "Out-of-space upload did not fail as expected"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
+
+# The regression this guards: recovery used to ABEND again in fclose() and
+# skip the data connection close, leaving the client to time out.  30s is
+# far above a healthy run (~2s) and far below the 300s idle timeout.
+if [ "$X37_ELAPSED" -lt 30 ] && ! grep -q "^421" "$FTP_OUT"; then
+    pass "Session ended promptly (${X37_ELAPSED}s) — data connection was closed"
+else
+    fail "Session hung for ${X37_ELAPSED}s — recovery did not close the data connection"
+    grep -E "^421" "$FTP_OUT" | sed 's/^/    /'
+fi
+
+# Whether the partial data set could be scratched. Not a verdict: see the
+# header and libc370#168.
+FTP_OUT="$TMPDIR/ftp_x37_gone.log"
+ftp_run "delete '$DSN_X37'" "$FTP_OUT"
+if grep -qi "does not exist" "$FTP_OUT"; then
+    info "Partial data set was scratched (libc370#168 appears to be fixed —"
+    info "  consider promoting this to an assertion)"
+elif grep -qi "IDCAMS rc=8" "$FTP_OUT"; then
+    info "Partial data set survives and is locked by the address space until"
+    info "  the STC restarts — the known libc370#168 case"
+else
+    info "DELE said something new:"
+    tail -2 "$FTP_OUT" | sed 's/^/    /'
+fi
 
 # ============================================================
 # Summary
