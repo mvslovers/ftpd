@@ -312,7 +312,38 @@ space_abend(unsigned abcode)
 }
 
 /* --------------------------------------------------------------------
+** fclose() under its own ESTAE.
+**
+** Measured on mvsdev 2026-09-09: after an SD37 in a STOR, fclose() on the
+** transfer's FILE does not return.  libc370's fclose() flushes before it
+** closes (fclose.c: __fflush, then __aclose), and the pending block cannot
+** be written to a data set that just ran out of space, so the close ABENDs
+** in turn.  Contained only by the caller's try(), that took the rest of
+** recovery with it -- the data connection was never closed and the client
+** sat until the idle timeout, and fopen's DD was never freed, which is why
+** IDCAMS could not scratch the data set afterwards.
+**
+** So the close gets its own ESTAE and recovery keeps going either way.
+** ----------------------------------------------------------------- */
+static int
+recover_fclose(FILE *fp)
+{
+    fclose(fp);
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** Scratch the data set a STOR created for a transfer that then ABENDed.
+**
+** BEST EFFORT, and for the case that matters most it currently fails.
+** Measured on mvsdev 2026-09-09: after an SD37 the close ABENDs
+** (recover_fclose), so fopen's DD is never freed and __dsfree() on it
+** answers RC=4 -- the data set stays allocated to this address space, and
+** IDCAMS answers RC=8 for as long as the STC lives.  No FTP client can
+** delete it either; only a restart releases it.  Undoing that needs a way
+** to close a FILE whose last write failed, which libc370 does not have
+** (mvslovers/libc370#168).  Until then this succeeds for an ABEND that did
+** not leave the data set open, and logs FTPD073W when it cannot.
 **
 ** Runs under the session's identity: the data set belongs to the logged-in
 ** user, and the STC identity is least-privilege by design, so IDCAMS under
@@ -461,17 +492,20 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
         ftpd_session_reply(sess, FTP_451,
             "Requested action aborted: local error in processing.");
 
-    /* 5. Release the in-flight transfer handle.  Clear the tracking field
-    ** BEFORE closing so a re-ABEND in the close (contained by the caller's
-    ** try()) can never cause a double close on a subsequent recovery.  At
-    ** most one of these is set (a session is in MVS or UFS mode, one
-    ** transfer at a time).  MVS fclose releases the DCB + fopen's SVC 99
-    ** DD; UFS ufs_fclose releases the cross-AS UFSD file. */
-    fp = sess->cur_file;
-    sess->cur_file = NULL;
-    if (fp)
-        fclose(fp);
+    /* 5. Close the data connection BEFORE anything that can fail.
+    **
+    ** It cannot ABEND -- it is a socket -- and until it is closed the
+    ** client is still writing into a connection nobody will read.  It used
+    ** to come last, after the two file closes, and an ABEND in the MVS one
+    ** (step 7, and it does ABEND -- see recover_fclose) skipped it: the
+    ** client then sat on a dead transfer until FTPD's idle timeout fired
+    ** 300 seconds later.  Measured on mvsdev 2026-09-09 with a 720 KB
+    ** upload into TRK(1,0). */
+    ftpd_data_close(sess);
 
+    /* 6. Release the in-flight UFS handle, if this was a UFS transfer.  At
+    ** most one of the two is set: a session is in MVS or UFS mode, and one
+    ** transfer at a time. */
     if (sess->cur_ufs_file) {
         UFSFILE *uf = sess->cur_ufs_file;
         sess->cur_ufs_file = NULL;
@@ -485,7 +519,39 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
         ufs_fclose(&uf);
     }
 
-    ftpd_data_close(sess);
+    /* 7. Release the in-flight MVS transfer handle -- the one step that can
+    ** re-ABEND, so it goes last and under its own ESTAE.  Clear the tracking
+    ** field BEFORE closing so a re-ABEND can never cause a double close on a
+    ** subsequent recovery.
+    **
+    ** fclose() normally releases the DCB and fopen's SVC 99 DD together.
+    ** When it ABENDs it has done neither, and the DD keeps the data set
+    ** allocated to this address space for as long as the STC lives -- which
+    ** is what makes every later attempt to scratch or delete that data set
+    ** answer IDCAMS RC=8.  Freeing the DD by name is the only handle left,
+    ** so take the name before fclose() can free the FILE it lives in.
+    **
+    ** Measured: after an SD37 this __dsfree() answers RC=4, because the DCB
+    ** the failed CLOSE left open still holds the allocation.  It is kept
+    ** because it costs one SVC 99 and does work for an ABEND that did not
+    ** leave a data set open, and because its RC in FTPD076W is what tells an
+    ** operator which of the two cases they are looking at.  Releasing the
+    ** other case needs libc370#168. */
+    fp = sess->cur_file;
+    sess->cur_file = NULL;
+    if (fp) {
+        char ddname[9];
+
+        strncpy(ddname, fp->ddname, sizeof(ddname) - 1);
+        ddname[sizeof(ddname) - 1] = '\0';
+
+        if (try(recover_fclose, fp) != 0) {
+            int frc = ddname[0] ? __dsfree(ddname) : -1;
+
+            ftpd_log_wto("FTPD076W CLOSE ABENDED AFTER %s, DD=%s FREE RC=%d",
+                         verb, ddname[0] ? ddname : "(NONE)", frc);
+        }
+    }
 
     return 0;
 }
