@@ -537,6 +537,7 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 | `550 Access denied to <dsn>` | A RAKF `DATASET` profile denies it, checked under the client's identity |
 | `451` on every JES command | `HASPCKPT`/`HASPACE1` missing or wrong in the procedure — step 7 |
 | `451 Read error on data set` / `451 Write error on data set` after a partial transfer | An uncorrectable I/O error on the data set itself. The transfer is incomplete and reported as such rather than as a success — the byte count in the reply says how far it got |
+| `552 ... out of space on the data set (ABEND S B37)` on an upload | The data set could not grow: the space it was allocated is used up. FTPD scratches the partial data set, so a retry starts clean — but it will fail the same way until more space is asked for. Raise `DEFPRIMARY`/`DEFSECONDARY`/`DEFSPACETYPE` in `FTPDPRM`, or have the client send `SITE CYLINDERS PRIMARY=10 SECONDARY=10` before the transfer. `552` is permanent on purpose: retrying the same upload into the same allocation cannot succeed |
 | `550 UFS service not available` | The UFSD started task is not running (installed is not enough) |
 | Passive transfer stalls after `227` | `PASVPORTS` not reachable, or `PASVADR` wrong behind NAT — step 7 |
 | `S106` at start on a freshly installed library | The XMIT was uploaded in text mode. Re-upload in **binary** and re-run the install job |

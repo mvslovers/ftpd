@@ -1934,11 +1934,25 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     ** fopen's dynalloc DD) if the transfer below ABENDs. */
     sess->cur_file = fp;
 
+    /* And, when this STOR created the data set, name it so recovery can
+    ** scratch it.  DISP=(NEW,CATLG,DELETE) above already says what should
+    ** become of it on an abnormal end -- but the DD carrying that
+    ** disposition was freed before the open, so nothing ever performs it.
+    ** The partial data set stays catalogued, and every retry then finds
+    ** ds_exists, skips the allocation entirely and fails identically, which
+    ** is what an x37 looks like from a client that is only trying again
+    ** (#129). */
+    if (allocated_new) {
+        strncpy(sess->cur_new_dsn, dsn, sizeof(sess->cur_new_dsn) - 1);
+        sess->cur_new_dsn[sizeof(sess->cur_new_dsn) - 1] = '\0';
+    }
+
     ftpd_session_reply(sess, FTP_125, "Storing data set %s",
                        member[0] ? arg : dsn);
 
     if (ftpd_data_open(sess) != 0) {
         sess->cur_file = NULL;
+        sess->cur_new_dsn[0] = '\0';
         fclose(fp);
         ftpd_session_reply(sess, FTP_425,
                            "Cannot open data connection");
@@ -1970,6 +1984,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
 
         if (eff_lrecl == 0) {
             sess->cur_file = NULL;
+            sess->cur_new_dsn[0] = '\0';
             fclose(fp);
             ftpd_data_close(sess);
             ftpd_session_reply(sess, FTP_550,
@@ -1980,6 +1995,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         record_buffer = calloc(1, eff_lrecl);
         if (!record_buffer) {
             sess->cur_file = NULL;
+            sess->cur_new_dsn[0] = '\0';
             fclose(fp);
             ftpd_data_close(sess);
             ftpd_session_reply(sess, FTP_550,
@@ -2131,6 +2147,15 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     ftpd_log(LOG_INFO, "STOR: %s %s",
              io_err ? "write error on" : "closing", fname);
     sess->cur_file = NULL;
+    /* Stop promising a scratch at the same point recovery stops promising
+    ** an fclose.  Past here the FILE is being closed, and an ABEND in the
+    ** final flush or CLOSE -- where a B37 can genuinely still land -- leaves
+    ** fopen's DD allocated with no handle to release it.  Scratching under
+    ** that DD would mean opening an identity window while holding a data set
+    ** ENQ, which ftpd#aut.h forbids for deadlock freedom.  So the close
+    ** window keeps the residual it already had rather than trading it for a
+    ** worse one. */
+    sess->cur_new_dsn[0] = '\0';
 
     /* stor_put() flushed every record, so this normally has nothing left to
     ** do -- but fclose() would flush and CLOSE anyway, and once it has run

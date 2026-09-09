@@ -6,9 +6,11 @@
 */
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "ftpd#aut.h"               /* identity window for the scratch */
 #include "ftpd#cmd.h"
 #include "ftpd#dat.h"
 #include "ftpd#ufs.h"
+#include "mvssupa.h"                /* idcams()                        */
 #include "libufs.h"                 /* UFSFILE, ufs_fclose()          */
 #include "cliblock.h"               /* unlock() — identity window ENQ */
 
@@ -293,6 +295,60 @@ ftpd_run_command(ftpd_session_t *sess, const char *cmd, const char *arg)
 }
 
 /* --------------------------------------------------------------------
+** Is this ABEND code an out-of-space condition (the x37 family)?
+**
+** try() reports a system ABEND as 0x00sssuuu, so the system code is bits
+** 12-23.  SB37 is "no more space on the volume", SD37 "no more directory
+** blocks", SE37 "no more extents" -- three ways of saying the data set
+** cannot grow, and all three are permanent for a client that would only
+** retry the same transfer into the same data set.
+** ----------------------------------------------------------------- */
+static int
+space_abend(unsigned abcode)
+{
+    unsigned sys = (abcode >> 12) & 0xFFF;
+
+    return sys == 0xB37 || sys == 0xD37 || sys == 0xE37;
+}
+
+/* --------------------------------------------------------------------
+** Scratch the data set a STOR created for a transfer that then ABENDed.
+**
+** Runs under the session's identity: the data set belongs to the logged-in
+** user, and the STC identity is least-privilege by design, so IDCAMS under
+** it would be refused.  Safe to open a window here only because the
+** caller has already released the transfer's FILE -- ftpd#aut.h forbids
+** entering one while a data set ENQ is held.
+**
+** Called through try() by the session loop, not from the recovery handler
+** itself: an ABEND inside this window must not be what leaves the window
+** open, and the loop can re-assert the identity afterwards.
+** ----------------------------------------------------------------- */
+static int
+ftpd_session_scratch(ftpd_session_t *sess)
+{
+    char cmd[64];
+    int  rc;
+
+    snprintf(cmd, sizeof(cmd), " DELETE '%s'", sess->cur_new_dsn);
+
+    ftpd_acee_enter(sess);
+    rc = idcams(cmd);
+    ftpd_acee_leave(sess);
+
+    if (rc != 0)
+        ftpd_log_wto("FTPD073W COULD NOT SCRATCH %s AFTER ABEND, "
+                     "IDCAMS RC=%d", sess->cur_new_dsn, rc);
+    else
+        ftpd_log_wto("FTPD074I SCRATCHED %s AFTER ABEND",
+                     sess->cur_new_dsn);
+
+    sess->cur_new_dsn[0] = '\0';
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** Per-command ABEND recovery.
 **
 ** Runs after try() catches an ABEND in ftpd_run_command().  crent370's
@@ -377,9 +433,28 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
                      sess->server->total_recover);
 
     /* 4. Tell the client before touching in-flight resources, so a
-    ** re-ABEND in cleanup cannot leave it hanging until timeout. */
-    ftpd_session_reply(sess, FTP_451,
-        "Requested action aborted: local error in processing.");
+    ** re-ABEND in cleanup cannot leave it hanging until timeout.
+    **
+    ** An x37 gets 552, not 451.  The distinction is not cosmetic: 4xx is
+    ** RFC 959 "transient, the client is encouraged to try again", and a
+    ** conforming client duly does -- against a data set that is now too
+    ** small AND already catalogued, so the retry skips the allocation
+    ** entirely and ABENDs at the same record.  552 is the permanent reply
+    ** RFC 959 defines for exactly this condition, and it names the problem
+    ** instead of calling out-of-space a "local error" (#129).
+    **
+    ** B37 is the sequential case (no more space on the volume), D37 the
+    ** directory one, E37 out of extents.  Everything else keeps 451:
+    ** recovery genuinely does not know what went wrong there. */
+    if (space_abend(abcode))
+        ftpd_session_reply(sess, FTP_552,
+            "Requested file action aborted: out of space on the data set "
+            "(ABEND S%03X). Allocate more space with SITE PRIMARY/SECONDARY "
+            "and CYLINDERS, or ask the administrator to raise DEFPRIMARY.",
+            (abcode >> 12) & 0xFFF);
+    else
+        ftpd_session_reply(sess, FTP_451,
+            "Requested action aborted: local error in processing.");
 
     /* 5. Release the in-flight transfer handle.  Clear the tracking field
     ** BEFORE closing so a re-ABEND in the close (contained by the caller's
@@ -511,6 +586,24 @@ ftpd_session_run(void *udata, CTHDWORK *work)
 
                 /* Contain a re-ABEND during recovery itself. */
                 try(ftpd_session_recover, sess, abcode, cmd);
+
+                /* Scratch a data set the ABENDed STOR had just created.
+                ** Deliberately here and not inside the handler above: it
+                ** needs the session identity, and an ABEND with that window
+                ** open would leave the address space on a foreign ACEE with
+                ** the ENQ held -- the one state the design rules out.  Out
+                ** here the handler has finished, so the identity can simply
+                ** be put back, exactly as its own steps 1 and 2 do. */
+                if (sess->cur_new_dsn[0]) {
+                    if (try(ftpd_session_scratch, sess) != 0) {
+                        racf_set_acee(server->stc_acee);
+                        unlock(&server->acee_lock, LOCK_EXC);
+                        ftpd_log_wto("FTPD075E ABEND WHILE SCRATCHING %s -- "
+                                     "IDENTITY RESTORED, DATA SET LEFT",
+                                     sess->cur_new_dsn);
+                        sess->cur_new_dsn[0] = '\0';
+                    }
+                }
 
                 /* A session that ABENDs every command is wedged (e.g.
                 ** corrupt state); stop recovering and close it cleanly.
