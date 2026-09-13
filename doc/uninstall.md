@@ -3,10 +3,11 @@
 This is the supported way to take FTPD back off an MVS 3.8j system and free
 its FMID for a re-install.
 
-> **The removal instructions inside the shipped release archive are wrong.**
-> `README.md` in `ftpd-<version>-dist.zip` says to run `RESTORE` and then
+> **The removal instructions inside a 1.0.x release archive are wrong.**
+> `README.md` in `ftpd-1.0.?-dist.zip` says to run `RESTORE` and then
 > `REJECT`. Both are refused once the FMID has been accepted — which the
 > install job does, in the same run as the APPLY. Use this document instead.
+> From 1.1.0 the shipped README says so itself and points here.
 
 ## What this release put on the system
 
