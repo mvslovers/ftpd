@@ -93,9 +93,8 @@ in the other is not free.
 ## 4. Scratch the libraries
 
 `UCLIN` edits the inventory only. The load module is still in the target
-library and SMP's accepted copy is still in the distribution library, so a
-re-install would find both datasets already there and its allocation job would
-fail:
+library and SMP's accepted copy is still in the distribution library, and a
+re-install does not clear them out for you:
 
 ```
   DELETE FTPD.LINKLIB  NONVSAM SCRATCH PURGE
@@ -108,8 +107,24 @@ scratches it on its own.
 **These are the live libraries, not a previous release's.** Run this only when
 you mean to remove FTPD, or as the middle of an upgrade: stop the server, cut
 the FMID (step 2), scratch these, then run the new release's allocation and
-install jobs. Skipping the scratch makes the allocation job fail, because it
-allocates `DISP=(NEW,CATLG,DELETE)` and the data sets are already there.
+install jobs.
+
+**Do not count on the allocation job to tell you that you skipped this.** It
+allocates `DISP=(NEW,CATLG,DELETE)`, so a second run over data sets that are
+already there does not fail -- measured on mvsdev, job FTPDALC JOB00273:
+
+```
+IEF142I FTPDALC ALLOC - STEP WAS EXECUTED - COND CODE 0000
+IEF287I   FTPD.LINKLIB      NOT CATLGD  2
+IEF287I   FTPD.AFTPDLOD     NOT CATLGD  2
+```
+
+`NOT CATLGD 2` is the catalog refusing a duplicate name, and it is not an
+error: the step ends RC 0, and the newly allocated data set stays on whatever
+volume `UNIT=SYSDA` picked, uncataloged. In that run it picked the other
+volume of the pair, so the system was left with `FTPD.LINKLIB` on both WORK00
+and WORK01 -- the cataloged one and an empty twin nothing points at. Read the
+`IEF285I`/`IEF287I` lines, not the condition code.
 
 ## 5. What is not removed, because SMP never owned it
 

@@ -181,7 +181,27 @@ DELETE)` and the old ones are what your started task is still loading from.
 2. **Cut `TFTP100` out of the SMP inventory.** It was *accepted* at install
    time, so `RESTORE` and `REJECT` are both refused — the UCLIN job in
    [uninstall.md](uninstall.md) is what does it. Run it with `TFTP100`, not
-   `TFTP110`.
+   `TFTP110`, and run **all** of its `DEL` statements: the `MOD(FTPD)` and
+   `LMOD(FTPD)` lines are the ones that matter here, not the `SYSMOD` line.
+
+   This step is not housekeeping, and skipping it does not fail. The element
+   `FTPD` in the SMP inventory belongs to whichever FMID installed it, and a
+   SYSMOD with a different FMID does not replace an element it does not own —
+   SMP passes over it and says so in one column of a report nobody reads:
+
+   ```
+   ELEM   ELEMENT   ELEM
+   TYPE   NAME      STATUS
+   MOD    FTPD      NOT SEL
+   ```
+
+   Everything else reports success. Measured on mvsdev with a throwaway FMID
+   over the accepted 1.0.1 install (job FTPDINS JOB00269): RECEIVE, APPLY CHECK,
+   APPLY, ACCEPT all `RC 00`, `HMA2270 APPLY PROCESSING SUCCESSFULLY COMPLETED`,
+   `STATUS = REC APP ACC` in both zones — and `FTPD.LINKLIB` and
+   `FTPD.AFTPDLOD` empty, 19 of 20 directory blocks unused. An FTPD installed
+   that way does not exist, and only a member list of the target library says
+   so.
 3. **Find and scratch the old libraries.** Their names carry the patch level of
    whatever you installed, so look them up rather than assuming:
    ISPF 3.4 on `FTPD.*`, or `LISTCAT LEVEL(FTPD)`. Expect three —
@@ -196,7 +216,20 @@ DELETE)` and the old ones are what your started task is still loading from.
 6. **Update the APF entry** if you use one: it names the old library. See
    *Authorisation* above — this is the last time it will need changing.
 
-Steps 3 and 5 are the two that fail silently. Everything else announces itself.
+Steps 2, 3 and 5 are the ones that fail silently — step 2 the most quietly of
+the three, because it fails with a job log that is RC 0 from top to bottom.
+After the install, list the members of `FTPD.LINKLIB` before you trust it:
+
+```
+//LIST    EXEC PGM=IEHLIST
+//SYSPRINT DD  SYSOUT=*
+//DD1      DD  UNIT=SYSALLDA,VOL=SER=your-volume,DISP=SHR
+//SYSIN    DD  *
+ LISTPDS DSNAME=FTPD.LINKLIB,VOL=SYSALLDA=your-volume
+/*
+```
+
+One member, `FTPD`. No member means the APPLY passed the element over.
 
 ---
 
