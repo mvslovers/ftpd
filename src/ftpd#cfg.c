@@ -426,27 +426,46 @@ parse_line(ftpd_config_t *cfg, char *line)
 **
 ** One UCB scan at startup, never per transfer.
 ** ----------------------------------------------------------------- */
+int
+ftpdcfg_volume_online(const char *volser, unsigned short *dasdtype)
+{
+    VOLLIST **vols;
+    int       online = 0;
+
+    if (!volser || !volser[0])
+        return 0;
+
+    vols = __listvl(volser, 0, NULL);
+    if (vols && vols[0] && (vols[0]->status & VOLLIST_STATUS_ONLI)) {
+        online = 1;
+        if (dasdtype)
+            *dasdtype = vols[0]->dasdtype;
+    }
+
+    if (vols)
+        __freevl(&vols);
+
+    return online;
+}
+
 static void
 check_placement(ftpd_config_t *cfg)
 {
-    VOLLIST **vols;
-    VOLLIST  *v = NULL;
+    unsigned short dasdtype = 0;
 
     if (!cfg->defaults.volume[0])
         return;                 /* system chooses: nothing to check */
 
-    vols = __listvl(cfg->defaults.volume, 0, NULL);
-    if (vols && vols[0])
-        v = vols[0];
-
-    if (!v || !(v->status & VOLLIST_STATUS_ONLI)) {
+    if (!ftpdcfg_volume_online(cfg->defaults.volume, &dasdtype)) {
         ftpd_log_wto("FTPD059W DEFVOLUME=%s IS NOT ONLINE -- NEW DATA SETS "
                      "WILL GO WHERE THE SYSTEM CHOOSES",
                      cfg->defaults.volume);
         cfg->defaults.volume[0] = '\0';
         cfg->defaults.unit[0] = '\0';
+        return;
     }
-    else if (cfg->defaults.unit[0]) {
+
+    if (cfg->defaults.unit[0]) {
         /* A device type disagreeing with the volume's own is the other half
         ** of the same typo, and SVC 99 would refuse the pair.  The volume is
         ** the more specific request and the system derives the device from
@@ -462,16 +481,13 @@ check_placement(ftpd_config_t *cfg)
                      isdigit((unsigned char)u[3]);
 
         if (digits &&
-            (unsigned short)strtol(u, NULL, 16) != v->dasdtype) {
+            (unsigned short)strtol(u, NULL, 16) != dasdtype) {
             ftpd_log_wto("FTPD060W DEFUNIT=%s DOES NOT MATCH DEFVOLUME=%s "
                          "(A %04X) -- UNIT IGNORED",
-                         u, cfg->defaults.volume, v->dasdtype);
+                         u, cfg->defaults.volume, dasdtype);
             cfg->defaults.unit[0] = '\0';
         }
     }
-
-    if (vols)
-        __freevl(&vols);
 }
 
 /* --------------------------------------------------------------------

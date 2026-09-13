@@ -1770,7 +1770,12 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
     /* Issue SVC 99 */
     rb.len = 20;
     rb.verb = 0x01;     /* S99VRBAL = ALLOCATE */
-    rb.flag1 = 0x40;    /* S99NOCNV */
+    /* S99NOCNV, and S99NOMNT so a volume that is not mounted FAILS here
+    ** instead of asking the operator to mount it and waiting for an answer
+    ** that may never come (IEF238D).  Measured on mvsdev 2026-09-13 on the
+    ** STOR path, which goes through __dsalc() and cannot set this itself --
+    ** mvslovers/libc370#181. */
+    rb.flag1 = 0x40 | 0x20;
     rb.txtptr = tu_list;
 
     err = __svc99(&rb);
