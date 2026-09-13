@@ -117,9 +117,14 @@ rather than the server's.
 It obtains authorisation itself at startup via `clib_apf_setup()`, which goes
 through **SVC 244 — and that comes from RAKF**, which you need anyway. The
 clean alternative is to add `FTPD.LINKLIB` to the APF list in
-`SYS1.PARMLIB(IEAAPF00)`. On MVS 3.8j the APF list is only read at IPL, and the
-library name carries the version — so this is one IPL per release, not one IPL
-ever.
+`SYS1.PARMLIB(IEAAPF00)`. On MVS 3.8j the APF list is only read at IPL — but
+since 1.1.0 the library name no longer carries the version, so that is **one
+IPL ever**, not one per release. Before 1.1.0 every release needed its own
+entry and its own IPL.
+
+APF on 3.8j is keyed by data set name **and volume serial**, so an entry that
+names `FTPD.LINKLIB` stops covering it if the library is ever moved to another
+volume.
 
 The two routes are not equivalent in one respect that matters if you ever have
 to debug FTPD. An **APF entry** authorises the job step *before* program fetch,
@@ -155,6 +160,43 @@ FTPD004W RACINIT FAILED: CANNOT ENTER SUPERVISOR STATE
 The server starts and accepts connections, but the commands that need
 authorisation fail one by one and say so. Treat those two messages as an
 install that is not finished.
+
+---
+
+## 2a. Upgrading from 1.0.x — read this first
+
+A fresh install can skip this section. An upgrade from any 1.0.x release cannot:
+**1.1.0 changes both the FMID and the data set names**, so the old installation
+does not get replaced, it gets left behind.
+
+| | 1.0.x | 1.1.0 |
+|---|---|---|
+| FMID | `TFTP100` | `TFTP110` |
+| Libraries | `FTPD.V1R0M1.LINKLIB`, … | `FTPD.LINKLIB`, … |
+
+The order matters, because the new libraries are allocated `DISP=(NEW,CATLG,
+DELETE)` and the old ones are what your started task is still loading from.
+
+1. **Stop FTPD** (`/P FTPD`).
+2. **Cut `TFTP100` out of the SMP inventory.** It was *accepted* at install
+   time, so `RESTORE` and `REJECT` are both refused — the UCLIN job in
+   [uninstall.md](uninstall.md) is what does it. Run it with `TFTP100`, not
+   `TFTP110`.
+3. **Find and scratch the old libraries.** Their names carry the patch level of
+   whatever you installed, so look them up rather than assuming:
+   ISPF 3.4 on `FTPD.*`, or `LISTCAT LEVEL(FTPD)`. Expect three —
+   `FTPD.V1R0M?.LINKLIB`, `.AFTPDLOD`, `.SAMPLIB`. Nothing in the 1.1.0 jobs
+   touches them; they are invisible to SMP now and will sit there forever
+   otherwise.
+4. Run the 1.1.0 install from step 3 below as normal.
+5. **Repoint your started task procedure.** The `STEPLIB` you copied at the last
+   install names `FTPD.V1R0M?.LINKLIB`. If you skipped step 3 it still exists,
+   FTPD starts happily, and you are running the old module with no error
+   anywhere. Change it to `FTPD.LINKLIB`.
+6. **Update the APF entry** if you use one: it names the old library. See
+   *Authorisation* above — this is the last time it will need changing.
+
+Steps 3 and 5 are the two that fail silently. Everything else announces itself.
 
 ---
 
