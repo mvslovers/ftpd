@@ -134,7 +134,10 @@ readme = "doc/installation.md"
 # any more.
 #
 # A test install must use a throwaway id -- a half-applied FMID leaves this one
-# occupied, and the CDS cannot be queried to find out.
+# occupied, and the CDS cannot be queried to find out. TTMP110 was that id on
+# 2026-09-13 (mvsdev, FTPDINS JOB00269) and is spent: received, applied and
+# accepted, then UCLIN'd back out. TFTP110 was verified still NOT FOUND in both
+# zones afterwards (FINALCHK JOB00277).
 fmid = "TFTP110"
 system = "Z038"
 
