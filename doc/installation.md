@@ -202,6 +202,19 @@ DELETE)` and the old ones are what your started task is still loading from.
    `FTPD.AFTPDLOD` empty, 19 of 20 directory blocks unused. An FTPD installed
    that way does not exist, and only a member list of the target library says
    so.
+
+   With the UCLIN run first, the same package on the same system installs
+   (job FTPDINS JOB00281) and the difference is visible in the job log — one
+   message that is simply absent from the failing run:
+
+   ```
+   HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB -
+           SYSMOD=... - RETURN CODE=00
+   MOD    FTPD      APPLIED   ...   FTPD      LINKLIB
+   ```
+
+   `HMA2380` in the APPLY step and again in ACCEPT (`LIBRARY=AFTPDLOD`) is what
+   a real install looks like. No `HMA2380`, no install.
 3. **Find and scratch the old libraries.** Their names carry the patch level of
    whatever you installed, so look them up rather than assuming:
    ISPF 3.4 on `FTPD.*`, or `LISTCAT LEVEL(FTPD)`. Expect three —
@@ -229,7 +242,14 @@ After the install, list the members of `FTPD.LINKLIB` before you trust it:
 /*
 ```
 
-One member, `FTPD`. No member means the APPLY passed the element over.
+One member, `FTPD`, with `AUTH REQ = YES`. No member means the APPLY passed
+the element over.
+
+The whole sequence — UCLIN, allocate, install, verify — was run end to end on
+mvsdev on 2026-09-13 against a throwaway FMID (jobs FTPDUCL JOB00279 through
+INSTCHK JOB00282). `AMBLIST LISTLOAD OUTPUT=MODLIST` on the installed module
+reports `APFCODE 00000001` with `RENT`/`REUS` intact, so AC(1) survives SMP's
+COPY and the library only needs to be APF-authorised.
 
 ---
 
