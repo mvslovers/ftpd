@@ -14,7 +14,7 @@
 #   5.  UFS mode switching (CWD / / CWD 'DSN')
 #   5b. UFS file ops: TYPE A + TYPE I roundtrip, LIST, SIZE, DELE, MKD/RMD
 #   6.  Cleanup (DELE/RMD)
-#   7.  Out of space (x37): permanent 552, no hang
+#   7.  Out of space (x37): permanent 552, no hang, data set scratched
 # ============================================================
 
 HOST="${1:-localhost}"
@@ -953,17 +953,16 @@ ftp_run "delete '${HLQ}.TEST.JESBACK'" "$FTP_OUT"
 #     connection close, so the client sat writing into a dead transfer until
 #     the idle timeout fired 300 seconds later.
 #
+# Since libc370 1.0.6 the out-of-space condition is not an ABEND at all
+# (libc370#176): it arrives as a failed write with errno ENOSPC, so the 552
+# now comes from STOR's own error path rather than from the ESTAE, and the
+# partial data set can be — and is — scratched (ftpd#135, ftpd#127).
+#
 # TRK(1,0) has no secondary extents, so ~700 KB cannot fit however the
 # volume is laid out.  SECONDARY=0 must reach the allocation as zero for
 # this to be a one-track data set at all (ftpd#100) — run this against a
 # build without that fix and the 0 becomes 50, the data set becomes 51
 # tracks, the upload succeeds and this whole section measures nothing.
-#
-# NOT asserted, and deliberately: that the partial data set is gone
-# afterwards.  The failed CLOSE leaves it allocated to the FTPD address
-# space, so neither FTPD nor the client can delete it until the STC is
-# restarted — mvslovers/libc370#168. The INFO below records which case a
-# run is in.
 # ============================================================
 section "Test 7: Out of space (x37) — permanent failure, no hang"
 
@@ -1014,20 +1013,45 @@ else
     grep -E "^421" "$FTP_OUT" | sed 's/^/    /'
 fi
 
-# Whether the partial data set could be scratched. Not a verdict: see the
-# header and libc370#168.
+# The partial data set must be gone: DISP=(NEW,CATLG,DELETE) says so, and
+# until libc370 1.0.6 nothing performed it.  A leftover is not cosmetic — the
+# next STOR finds it, skips the allocation entirely and fails identically
+# whatever the client asks for with SITE.
 FTP_OUT="$TMPDIR/ftp_x37_gone.log"
 ftp_run "delete '$DSN_X37'" "$FTP_OUT"
 if grep -qi "does not exist" "$FTP_OUT"; then
-    info "Partial data set was scratched (libc370#168 appears to be fixed —"
-    info "  consider promoting this to an assertion)"
+    pass "Partial data set was scratched"
 elif grep -qi "IDCAMS rc=8" "$FTP_OUT"; then
-    info "Partial data set survives and is locked by the address space until"
-    info "  the STC restarts — the known libc370#168 case"
+    fail "Partial data set survives, locked by the address space (libc370#168 —"
+    fail "  is the sysroot older than 1.0.6?)"
 else
-    info "DELE said something new:"
+    fail "Partial data set was not scratched"
     tail -2 "$FTP_OUT" | sed 's/^/    /'
 fi
+
+# And the retry must now get a clean allocation rather than inheriting the
+# leftover — same failure, reached the same way, not a different code path.
+info "Second attempt — must fail the same way, from a fresh allocation"
+FTP_OUT="$TMPDIR/ftp_x37_retry.log"
+ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=3120
+site tracks
+site primary=1
+site secondary=0
+type binary
+put $X37FILE '$DSN_X37'
+CMDS
+)" "$FTP_OUT"
+if grep -q "^552" "$FTP_OUT"; then
+    pass "Retry answers 552 from a fresh allocation"
+else
+    fail "Retry did not answer 552"
+    tail -5 "$FTP_OUT" | sed 's/^/    /'
+fi
+
+ftp_run "delete '$DSN_X37'" "$TMPDIR/ftp_x37_post.log"
 
 # ============================================================
 # Summary

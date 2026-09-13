@@ -1417,12 +1417,18 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
         }
     }
 
-    /* Since libc370 1.0.4 an uncorrectable I/O error is ferror() + EIO
-    ** instead of ABEND S001, and feof() is deliberately NOT set -- so a bad
-    ** track ends every one of the loops above exactly like the end of the
-    ** data set, with no way for the client to tell a fragment from the whole
-    ** thing.  The flag is sticky on the FILE, so one check covers all three
-    ** transfer modes; it has to be read before fclose() frees it. */
+    /* Since libc370 1.0.4 an I/O error the access method could not correct
+    ** is ferror() + errno instead of ABEND S001, and feof() is deliberately
+    ** NOT set -- so a bad track ends every one of the loops above exactly
+    ** like the end of the data set, with no way for the client to tell a
+    ** fragment from the whole thing.  The flag is sticky on the FILE, so one
+    ** check covers all three transfer modes; it has to be read before the
+    ** FILE is closed and freed.
+    **
+    ** Since 1.0.6 a failed stream also fails fast (libc370#149), so a read
+    ** after the error returns 0 rather than re-driving it.  That ends these
+    ** loops one iteration earlier and changes nothing about the verdict: the
+    ** loops already stop on a short read and ferror() already decides. */
     io_err = (ferror(fp) != 0);
 
     /* fclose() and ftpd_data_close() below both issue services of their own
@@ -1475,8 +1481,9 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
 /* --------------------------------------------------------------------
 ** Helper: one STOR record out to the data set.
 **
-** Since libc370 1.0.4 an uncorrectable I/O error is ferror() + EIO instead
-** of ABEND S001, so a failing PUT no longer stops the transfer by itself:
+** Since libc370 1.0.4 an I/O error the access method could not correct is
+** ferror() + errno instead of ABEND S001, so a failing PUT no longer stops
+** the transfer by itself:
 ** unchecked, STOR keeps issuing writes against a DCB that already failed and
 ** still ends in 250 with an incomplete data set on DASD.  ferror() is the
 ** reliable witness here -- it is set whether the failure surfaces in the
@@ -1804,6 +1811,51 @@ free_ddname(const char *ddname)
 }
 
 /* --------------------------------------------------------------------
+** Scratch a data set a failed transfer created.
+**
+** Runs under the session's identity: the data set belongs to the logged-in
+** user and the STC identity is least-privilege by design, so IDCAMS under
+** it would be refused.  The caller must have closed the transfer's FILE
+** first -- see the header.
+**
+** Sends no reply.  The caller is in the middle of composing one, and what
+** it has to tell the client is why the transfer failed, not what became of
+** the wreckage; that goes to the operator.
+**
+** No try() of its own, and it does not need one from either caller.  On the
+** normal path it runs inside the try()-wrapped command dispatch, so an ABEND
+** in IDCAMS with the identity window open reaches ftpd_session_recover(),
+** whose first two steps are exactly the repair: put the STC identity back,
+** then release the window's ENQ.  On the ABEND path the session loop wraps
+** it and repairs the same two things itself.
+** ----------------------------------------------------------------- */
+int
+ftpd_mvs_scratch(ftpd_session_t *sess, const char *dsn)
+{
+    char cmd[64];
+    int  rc;
+
+    if (!dsn || !dsn[0])
+        return -1;
+
+    /* idcams() takes a format string and cmd is not a literal, which is
+    ** safe only because the name came through resolve_dsn(): a valid MVS
+    ** data set name cannot contain a '%'. */
+    snprintf(cmd, sizeof(cmd), " DELETE '%s'", dsn);
+
+    ftpd_acee_enter(sess);
+    rc = idcams(cmd);
+    ftpd_acee_leave(sess);
+
+    if (rc != 0)
+        ftpd_log_wto("FTPD073W COULD NOT SCRATCH %s, IDCAMS RC=%d", dsn, rc);
+    else
+        ftpd_log_wto("FTPD074I SCRATCHED %s AFTER A FAILED TRANSFER", dsn);
+
+    return rc;
+}
+
+/* --------------------------------------------------------------------
 ** STOR — receive data from client, write to dataset/member
 ** ----------------------------------------------------------------- */
 int
@@ -1918,11 +1970,28 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     else
         snprintf(fname, sizeof(fname), "'%s'", dsn);
 
-    ftpd_log(LOG_INFO, "STOR: fopen('%s', 'wb') new=%d", fname, allocated_new);
+    /* RLSE on a data set THIS STOR created, and only then (#128).
+    **
+    ** FTP tells the server no size at STOR time and FTPD implements no ALLO,
+    ** so the allocation above is a guess that has to be generous enough for
+    ** the largest upload the site expects -- and without RLSE every small
+    ** upload then keeps that whole guess.  Releasing the unused extent at
+    ** CLOSE is what makes a generous DEFPRIMARY affordable.
+    **
+    ** Not for a data set that already existed: its size is somebody's
+    ** decision, and silently shrinking it to whatever this transfer happened
+    ** to contain is not FTPD's call to make.  libc370 ignores the request for
+    ** a PDS member either way (@@fpold.c, @@fpnew.c: !fp->member[0]).
+    **
+    ** Needs libc370 1.0.5 or later -- before that the mode keyword is simply
+    ** not recognised, which is the quiet half of why the toolchain pin in
+    ** project.toml moved with this change. */
+    ftpd_log(LOG_INFO, "STOR: fopen('%s', '%s') new=%d", fname,
+             allocated_new ? "wb,rlse" : "wb", allocated_new);
 
     /* Switch to user's security environment for fopen */
     ftpd_acee_enter(sess);
-    fp = fopen(fname, "wb");
+    fp = fopen(fname, allocated_new ? "wb,rlse" : "wb");
     ftpd_acee_leave(sess);
     if (fp == NULL) {
         ftpd_session_reply(sess, FTP_550,
@@ -2187,13 +2256,43 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
         ftpd_log(LOG_ERROR,
                  "STOR: write error on %s after %ld bytes received "
                  "(errno=%d)", fname, total, io_errno);
-        /* total counts what arrived from the client, not what reached
-        ** DASD -- the record that failed is the boundary, and it is less
-        ** than this.  Say "received" rather than imply a byte offset in
-        ** the data set that nobody measured. */
-        ftpd_session_reply(sess, FTP_451,
-                           "Write error on data set after %ld bytes "
-                           "received: the data set is incomplete.", total);
+
+        /* A data set this STOR created and could not fill is removed.
+        ** DISP=(NEW,CATLG,DELETE) already declares that, but the DD
+        ** carrying the disposition is freed before the transfer starts, so
+        ** nothing performs it -- and a data set left catalogued makes the
+        ** next attempt skip the allocation and fail identically, whatever
+        ** the client asks for with SITE (#127).  Safe here because fclose()
+        ** above has released the DCB and fopen's DD: ftpd#aut.h forbids
+        ** opening an identity window while a data set ENQ is held. */
+        if (allocated_new)
+            ftpd_mvs_scratch(sess, dsn);
+
+        /* Out of space is permanent, and saying so is the whole point.
+        ** RFC 959 reads 4xx as "transient, the client is encouraged to try
+        ** again", and a conforming client does -- into a data set that is
+        ** still exactly as small as the one that just failed.  552 is the
+        ** code RFC 959 defines for an exceeded storage allocation.
+        **
+        ** ENOSPC only started arriving here with libc370 1.0.6 (#176): the
+        ** x37 used to be an ABEND, caught by the ESTAE, and answered 552 by
+        ** ftpd_session_recover() instead.  The exit libc370 now plants means
+        ** the condition arrives as an ordinary failed write, so without this
+        ** split the same upload would go back to answering 451 -- the reply
+        ** #129 removed, for the reason #129 gave (#135).
+        **
+        ** The 552 says nothing about a byte count on purpose: total counts
+        ** what arrived from the client, not what reached DASD. */
+        if (io_errno == ENOSPC)
+            ftpd_session_reply(sess, FTP_552,
+                               "Requested file action aborted: out of space "
+                               "on the data set. Allocate more space with "
+                               "SITE PRIMARY/SECONDARY and CYLINDERS, or ask "
+                               "the administrator to raise DEFPRIMARY.");
+        else
+            ftpd_session_reply(sess, FTP_451,
+                               "Write error on data set after %ld bytes "
+                               "received: the data set is incomplete.", total);
         return 0;
     }
 

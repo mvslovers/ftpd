@@ -421,9 +421,10 @@ ftpdcfg_load(ftpd_config_t *cfg)
         parse_line(cfg, line);
     }
 
-    /* Since libc370 1.0.4 an uncorrectable I/O error is ferror() + EIO
-    ** instead of ABEND S001, and feof() is deliberately NOT set -- so a bad
-    ** track ends the loop above exactly like a clean end of member.  Left
+    /* Since libc370 1.0.4 an I/O error the access method could not correct
+    ** is ferror() + errno instead of ABEND S001, and feof() is deliberately
+    ** NOT set -- so a bad track ends the loop above exactly like a clean end
+    ** of member.  Left
     ** unchecked that starts FTPD on whatever was parsed before the error,
     ** with the rest silently back at ftpdcfg_defaults(): DASD volumes
     ** missing from the list, SITE and JES settings at their default.  A
