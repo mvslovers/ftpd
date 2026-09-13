@@ -23,15 +23,19 @@ console messages and, for an install problem, the job output.
 
 ---
 
-Two placeholders are used throughout:
+One placeholder is used throughout:
 
 | | |
 |---|---|
-| `<version>` | the release, e.g. `1.0.0` — it appears in every shipped file name |
-| `<vrm>` | the same release as MVS dataset qualifier, patch level included — `V1R0M0` for 1.0.0, `V1R0M1` for 1.0.1, `V1R0M2` for 1.0.2 |
+| `<version>` | the release, e.g. `1.1.0` — it appears in every shipped file name |
 
-Both are already filled in inside the shipped jobs; you only need them to
-recognise which file is which.
+It is already filled in inside the shipped jobs; you only need it to recognise
+which file is which.
+
+**The data set names carry no version.** `FTPD.LINKLIB` is `FTPD.LINKLIB` in
+every release. Before 1.1.0 they were versioned (`FTPD.V1R0M2.LINKLIB`), which
+meant two releases could sit side by side and it was easy to act on the wrong
+one; now there is one installation and an upgrade replaces it.
 
 ---
 
@@ -51,9 +55,9 @@ FTPD is a single load module. The sample library holds two members, `FTPD`
 Where everything ends up:
 
 ```
-FTPD.<vrm>.LINKLIB     the load module -- point STEPLIB here
-FTPD.<vrm>.SAMPLIB     the patterns you copy from in step 7
-FTPD.<vrm>.AFTPDLOD    SMP's distribution library, the base a RESTORE returns to
+FTPD.LINKLIB     the load module -- point STEPLIB here
+FTPD.SAMPLIB     the patterns you copy from in step 7
+FTPD.AFTPDLOD    SMP's distribution library, the base a RESTORE returns to
 ```
 
 ---
@@ -112,7 +116,7 @@ rather than the server's.
 
 It obtains authorisation itself at startup via `clib_apf_setup()`, which goes
 through **SVC 244 — and that comes from RAKF**, which you need anyway. The
-clean alternative is to add `FTPD.<vrm>.LINKLIB` to the APF list in
+clean alternative is to add `FTPD.LINKLIB` to the APF list in
 `SYS1.PARMLIB(IEAAPF00)`. On MVS 3.8j the APF list is only read at IPL, and the
 library name carries the version — so this is one IPL per release, not one IPL
 ever.
@@ -222,7 +226,7 @@ Submit `ftpd-<version>-alloc.jcl` unchanged, unless you want a specific unit or
 volume — the `UNIT=SYSDA` and the space on each DD are the only things worth
 editing.
 
-It creates `FTPD.<vrm>.LINKLIB` and `FTPD.<vrm>.AFTPDLOD` and nothing else. The
+It creates `FTPD.LINKLIB` and `FTPD.AFTPDLOD` and nothing else. The
 libraries the next step receives into are deliberately **not** allocated here:
 TSO RECEIVE creates its own target and refuses to merge into an existing
 dataset.
@@ -230,7 +234,7 @@ dataset.
 Expect `COND CODE 0000`.
 
 > **Run this once.** There is no DELETE step in it, on purpose. After the
-> install, `FTPD.<vrm>.AFTPDLOD` holds SMP's accepted copy of the module; a
+> install, `FTPD.AFTPDLOD` holds SMP's accepted copy of the module; a
 > re-run that scratched it would leave the SMP inventory reporting an install
 > that is no longer on the system, and nothing would say so. To start over,
 > reject the SYSMOD first — see [Removing FTPD](#11-removing-ftpd).
@@ -239,10 +243,13 @@ Expect `COND CODE 0000`.
 
 ## 5. Stop a running FTPD
 
-Only relevant when you are upgrading. The APPLY writes into
-`FTPD.<vrm>.LINKLIB`, and each release has its own — so a running *older* FTPD
-does not block the install. It does, however, keep running the old module until
-you restart it (step 9) against the procedure you copy in step 7.
+**Required when you are upgrading, not optional.** The APPLY writes into
+`FTPD.LINKLIB`, and since 1.1.0 that is the same data set every release uses —
+so it is the one a running FTPD is loading from. Replacing it underneath a live
+started task risks a wild load. Stop it first.
+
+(Before 1.1.0 each release had its own library and a running older FTPD did not
+block the install. That is no longer true.)
 
 ```
 /P FTPD
@@ -268,11 +275,11 @@ the first failure rather than building on it:
 | Step | What it does |
 |------|--------------|
 | `DELOLD` | scratches the RECEIVE targets, so the job can be re-run |
-| `RECV1` | load XMIT → `FTPD.<vrm>.FTPDLOAD` (a staging library) |
-| `RECV2` | samplib XMIT → `FTPD.<vrm>.SAMPLIB` |
+| `RECV1` | load XMIT → `FTPD.FTPDLOAD` (a staging library) |
+| `RECV2` | samplib XMIT → `FTPD.SAMPLIB` |
 | `RECV` | receives the SYSMOD into the SMP inventory |
 | `APPLYCHK` | dry run — `APPLY` only proceeds if this ends RC 0 |
-| `APPLY` | copies the load module into `FTPD.<vrm>.LINKLIB` |
+| `APPLY` | copies the load module into `FTPD.LINKLIB` |
 | `ACCEPT` | makes this level the base a later `RESTORE` returns to |
 | `CLEANUP` | scratches the staging library, which is now spent |
 
@@ -288,7 +295,7 @@ HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
-Then check `FTPD.<vrm>.LINKLIB` really holds `FTPD` (ISPF 3.4). Do look: SMP
+Then check `FTPD.LINKLIB` really holds `FTPD` (ISPF 3.4). Do look: SMP
 reports the library by **ddname**, and a ddname says nothing about which dataset
 was behind it.
 
@@ -305,7 +312,7 @@ running procedure, every change you made to it would be silently replaced by
 the next update. So this step is yours, and it is the one place where you have
 to read what you are copying.
 
-Copy from `FTPD.<vrm>.SAMPLIB`:
+Copy from `FTPD.SAMPLIB`:
 
 | Member | Copy to | Adjust |
 |--------|---------|--------|
