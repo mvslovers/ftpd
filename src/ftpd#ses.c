@@ -7,6 +7,7 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"               /* identity window for the scratch */
+#include "ftpd#mvs.h"               /* ftpd_mvs_scratch()              */
 #include "ftpd#cmd.h"
 #include "ftpd#dat.h"
 #include "ftpd#ufs.h"
@@ -312,73 +313,21 @@ space_abend(unsigned abcode)
 }
 
 /* --------------------------------------------------------------------
-** fclose() under its own ESTAE.
-**
-** Measured on mvsdev 2026-09-09: after an SD37 in a STOR, fclose() on the
-** transfer's FILE does not return.  libc370's fclose() flushes before it
-** closes (fclose.c: __fflush, then __aclose), and the pending block cannot
-** be written to a data set that just ran out of space, so the close ABENDs
-** in turn.  Contained only by the caller's try(), that took the rest of
-** recovery with it -- the data connection was never closed and the client
-** sat until the idle timeout, and fopen's DD was never freed, which is why
-** IDCAMS could not scratch the data set afterwards.
-**
-** So the close gets its own ESTAE and recovery keeps going either way.
-** ----------------------------------------------------------------- */
-static int
-recover_fclose(FILE *fp)
-{
-    fclose(fp);
-    return 0;
-}
-
-/* --------------------------------------------------------------------
 ** Scratch the data set a STOR created for a transfer that then ABENDed.
 **
-** BEST EFFORT, and for the case that matters most it currently fails.
-** Measured on mvsdev 2026-09-09: after an SD37 the close ABENDs
-** (recover_fclose), so fopen's DD is never freed and __dsfree() on it
-** answers RC=4 -- the data set stays allocated to this address space, and
-** IDCAMS answers RC=8 for as long as the STC lives.  No FTP client can
-** delete it either; only a restart releases it.  Undoing that needs a way
-** to close a FILE whose last write failed, which libc370 does not have
-** (mvslovers/libc370#168).  Until then this succeeds for an ABEND that did
-** not leave the data set open, and logs FTPD073W when it cannot.
+** The work is ftpd_mvs_scratch()'s; this exists to be the thing the session
+** loop can hand to try(), and to clear the field whatever the outcome so a
+** data set is attempted once and not on every later recovery.
 **
-** Runs under the session's identity: the data set belongs to the logged-in
-** user, and the STC identity is least-privilege by design, so IDCAMS under
-** it would be refused.  Safe to open a window here only because the
-** caller has already released the transfer's FILE -- ftpd#aut.h forbids
-** entering one while a data set ENQ is held.
-**
-** Called through try() by the session loop, not from the recovery handler
-** itself: an ABEND inside this window must not be what leaves the window
-** open, and the loop can re-assert the identity afterwards.
-**
-** idcams() takes a format string and cmd is not a literal, which is safe
-** only because the name in it came through resolve_dsn(): ftpd_dsn_valid()
-** admits alphanumerics, @ # $, the dot and parentheses, so a '%' cannot
-** reach here.  Keep that true if the name ever arrives another way.
+** Called from the loop and not from the recovery handler itself: the scratch
+** opens an identity window, an ABEND with that window open must not be what
+** leaves it open, and out in the loop there is still someone to put the
+** identity back.
 ** ----------------------------------------------------------------- */
 static int
 ftpd_session_scratch(ftpd_session_t *sess)
 {
-    char cmd[64];
-    int  rc;
-
-    snprintf(cmd, sizeof(cmd), " DELETE '%s'", sess->cur_new_dsn);
-
-    ftpd_acee_enter(sess);
-    rc = idcams(cmd);
-    ftpd_acee_leave(sess);
-
-    if (rc != 0)
-        ftpd_log_wto("FTPD073W COULD NOT SCRATCH %s AFTER ABEND, "
-                     "IDCAMS RC=%d", sess->cur_new_dsn, rc);
-    else
-        ftpd_log_wto("FTPD074I SCRATCHED %s AFTER ABEND",
-                     sess->cur_new_dsn);
-
+    ftpd_mvs_scratch(sess, sess->cur_new_dsn);
     sess->cur_new_dsn[0] = '\0';
 
     return 0;
@@ -497,10 +446,9 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
     ** It cannot ABEND -- it is a socket -- and until it is closed the
     ** client is still writing into a connection nobody will read.  It used
     ** to come last, after the two file closes, and an ABEND in the MVS one
-    ** (step 7, and it does ABEND -- see recover_fclose) skipped it: the
-    ** client then sat on a dead transfer until FTPD's idle timeout fired
-    ** 300 seconds later.  Measured on mvsdev 2026-09-09 with a 720 KB
-    ** upload into TRK(1,0). */
+    ** (step 7) skipped it: the client then sat on a dead transfer until
+    ** FTPD's idle timeout fired 300 seconds later.  Measured on mvsdev
+    ** 2026-09-09 with a 720 KB upload into TRK(1,0). */
     ftpd_data_close(sess);
 
     /* 6. Release the in-flight UFS handle, if this was a UFS transfer.  At
@@ -519,38 +467,37 @@ ftpd_session_recover(ftpd_session_t *sess, unsigned abcode, const char *verb)
         ufs_fclose(&uf);
     }
 
-    /* 7. Release the in-flight MVS transfer handle -- the one step that can
-    ** re-ABEND, so it goes last and under its own ESTAE.  Clear the tracking
-    ** field BEFORE closing so a re-ABEND can never cause a double close on a
-    ** subsequent recovery.
+    /* 7. Release the in-flight MVS transfer handle, and NOT with fclose().
     **
-    ** fclose() normally releases the DCB and fopen's SVC 99 DD together.
-    ** When it ABENDs it has done neither, and the DD keeps the data set
-    ** allocated to this address space for as long as the STC lives -- which
-    ** is what makes every later attempt to scratch or delete that data set
-    ** answer IDCAMS RC=8.  Freeing the DD by name is the only handle left,
-    ** so take the name before fclose() can free the FILE it lives in.
+    ** fclose() flushes before it closes, so when the pending block is what
+    ** could not be written it re-drives the failing WRITE and ABENDs inside
+    ** the close -- never reaching the point where it frees fopen's SVC 99
+    ** DD.  The DD then keeps the data set allocated for the life of the STC,
+    ** which is what used to make every later attempt to scratch or delete it
+    ** answer IDCAMS RC=8, from this session and from any other.  Measured on
+    ** mvsdev 2026-09-09, before there was anything to do about it.
     **
-    ** Measured: after an SD37 this __dsfree() answers RC=4, because the DCB
-    ** the failed CLOSE left open still holds the allocation.  It is kept
-    ** because it costs one SVC 99 and does work for an ABEND that did not
-    ** leave a data set open, and because its RC in FTPD076W is what tells an
-    ** operator which of the two cases they are looking at.  Releasing the
-    ** other case needs libc370#168. */
+    ** __fabandon() (libc370#168) is that something: it discards the buffer,
+    ** tells the DCB there is nothing pending, and closes under an ESTAE of
+    ** its own, so recovery continues either way and the DD is released.  It
+    ** exists for exactly this caller -- an ESTAE that has just recovered an
+    ** x37 on a data set it created and now wants to scratch it.
+    **
+    ** Clear the tracking field BEFORE the call so a failure here can never
+    ** cause a double close on a subsequent recovery.  A positive rc is the
+    ** ABEND code from a close that failed anyway, and means the DD is still
+    ** held -- the one case where the scratch in the session loop will still
+    ** be refused. */
     fp = sess->cur_file;
     sess->cur_file = NULL;
     if (fp) {
-        char ddname[9];
+        int arc = __fabandon(fp);
 
-        strncpy(ddname, fp->ddname, sizeof(ddname) - 1);
-        ddname[sizeof(ddname) - 1] = '\0';
-
-        if (try(recover_fclose, fp) != 0) {
-            int frc = ddname[0] ? __dsfree(ddname) : -1;
-
-            ftpd_log_wto("FTPD076W CLOSE ABENDED AFTER %s, DD=%s FREE RC=%d",
-                         verb, ddname[0] ? ddname : "(NONE)", frc);
-        }
+        if (arc != 0)
+            ftpd_log_wto("FTPD076W ABANDON AFTER %s RETURNED %d -- "
+                         "%s", verb, arc,
+                         arc > 0 ? "CLOSE ABENDED, DD STILL HELD"
+                                 : "SEE __fabandon() IN CLIBIO.H");
     }
 
     return 0;

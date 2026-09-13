@@ -86,4 +86,18 @@ int ftpd_mvs_rnfr(ftpd_session_t *sess, const char *arg)
 int ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
                                                     asm("FTPMVRNT");
 
+/*
+** Scratch a data set a failed transfer created, under the session's
+** identity.  Sends no reply -- the caller has its own to send -- and logs
+** the outcome for the operator.
+**
+** The caller MUST have released the transfer's FILE first: this opens an
+** identity window, and ftpd#aut.h forbids entering one while a data set
+** ENQ is held.
+**
+** Returns 0 when the data set is gone, non-zero otherwise.
+*/
+int ftpd_mvs_scratch(ftpd_session_t *sess, const char *dsn)
+                                                    asm("FTPMVSCR");
+
 #endif /* FTPD_MVS_H */

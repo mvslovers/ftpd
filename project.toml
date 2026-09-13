@@ -12,7 +12,11 @@ type = "application"
 # Without this the release CI builds against libc370 main, which is how the
 # first 1.0.0 attempt shipped reporting "FTPD005I LIBC370 1.0.3-DEV (F14AD04)"
 # -- an unreleased runtime nobody can reproduce from a tag.
-libc370 = "1.0.4"
+# 1.0.6 or later is REQUIRED, not merely preferred: __fabandon() (#168) and
+# the "rlse" fopen mode keyword (#167) arrived in 1.0.5 and would not link
+# against 1.0.4, and the ENOSPC reply split (#135) is answering a condition
+# only 1.0.6 produces -- on an older runtime that same STOR abends instead.
+libc370 = "1.0.6"
 
 [build]
 # -DVERSION from the project version (v1's mbt injected it automatically;
