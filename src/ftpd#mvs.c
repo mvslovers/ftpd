@@ -1575,9 +1575,9 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
         short           numparms;
         short           parm1_len;
         char            parm1[98];
-    } tu[12];
+    } tu[14];
 
-    void *tu_list[13];
+    void *tu_list[15];
     int idx = 0;
     int err;
 
@@ -1721,6 +1721,29 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
     }
     idx++;
 
+    /* Placement -- only when asked for.  Empty means the system chooses,
+    ** which is what this path did unconditionally before #133.
+    **
+    ** NB the arrays above were sized to exactly the twelve text units this
+    ** built, with no headroom; they grew with these two. */
+    if (sess->alloc.unit[0]) {
+        tu_list[idx] = &tu[idx];
+        tu[idx].key = 0x0015;   /* DALUNIT */
+        tu[idx].numparms = 1;
+        tu[idx].parm1_len = (short)strlen(sess->alloc.unit);
+        strncpy(tu[idx].parm1, sess->alloc.unit, sizeof(tu[idx].parm1) - 1);
+        idx++;
+    }
+
+    if (sess->alloc.volume[0]) {
+        tu_list[idx] = &tu[idx];
+        tu[idx].key = 0x0010;   /* DALVLSER */
+        tu[idx].numparms = 1;
+        tu[idx].parm1_len = (short)strlen(sess->alloc.volume);
+        strncpy(tu[idx].parm1, sess->alloc.volume, sizeof(tu[idx].parm1) - 1);
+        idx++;
+    }
+
     /* Directory blocks for PDS */
     if (is_pds) {
         int d = sess->alloc.dirblks > 0 ? sess->alloc.dirblks : 10;
@@ -1747,7 +1770,12 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
     /* Issue SVC 99 */
     rb.len = 20;
     rb.verb = 0x01;     /* S99VRBAL = ALLOCATE */
-    rb.flag1 = 0x40;    /* S99NOCNV */
+    /* S99NOCNV, and S99NOMNT so a volume that is not mounted FAILS here
+    ** instead of asking the operator to mount it and waiting for an answer
+    ** that may never come (IEF238D).  Measured on mvsdev 2026-09-13 on the
+    ** STOR path, which goes through __dsalc() and cannot set this itself --
+    ** mvslovers/libc370#181. */
+    rb.flag1 = 0x40 | 0x20;
     rb.txtptr = tu_list;
 
     err = __svc99(&rb);
@@ -1922,7 +1950,9 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     if (!ds_exists) {
         char opts[256];
         char spc[16];
-        snprintf(opts, sizeof(opts),
+        int  n;
+
+        n = snprintf(opts, sizeof(opts),
             "DSN=%s;DISP=(NEW,CATLG,DELETE);DSORG=PS;RECFM=%s;"
             "LRECL=%d;BLKSIZE=%d;SPACE=%s(%d,%d)",
             dsn,
@@ -1932,6 +1962,18 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
             space_operand(sess, spc, sizeof(spc)),
             sess->alloc.primary,
             sess->alloc.secondary);
+
+        /* Placement, when there is any to state.  Empty means "let the
+        ** system choose", which is what every allocation did before #133 --
+        ** DEFUNIT and DEFVOLUME were stored, printed by the CONFIG command
+        ** and read by nobody, so a client's SITE UNIT=/VOLUME= went the same
+        ** way.  __dsalc() understands both keywords (@@dsalc.c). */
+        if (n > 0 && n < (int)sizeof(opts) && sess->alloc.unit[0])
+            n += snprintf(opts + n, sizeof(opts) - n, ";UNIT=%s",
+                          sess->alloc.unit);
+        if (n > 0 && n < (int)sizeof(opts) && sess->alloc.volume[0])
+            snprintf(opts + n, sizeof(opts) - n, ";VOLSER=%s",
+                     sess->alloc.volume);
 
         ftpd_log(LOG_INFO, "STOR: __dsalcf opts='%s'", opts);
 

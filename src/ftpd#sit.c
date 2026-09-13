@@ -227,10 +227,35 @@ site_apply_one(ftpd_session_t *sess,
     if (strcmp(key, "VOLUME") == 0) {
         char uval[8];
         int i;
+        /* Bare VOLUME goes back to the configured default, like every other
+        ** allocation keyword. */
+        if (val[0] == '\0') {
+            strcpy(sess->alloc.volume, cfg->defaults.volume);
+            return 0;
+        }
         strncpy(uval, val, sizeof(uval) - 1);
         uval[sizeof(uval) - 1] = '\0';
         for (i = 0; uval[i]; i++)
             uval[i] = (char)toupper((unsigned char)uval[i]);
+        /* A volume that is not mounted must be refused HERE.  Letting it
+        ** reach SVC 99 does not fail the allocation -- it asks the operator
+        ** (IEF238D REPLY DEVICE NAME OR 'CANCEL') and waits, so the client's
+        ** session hangs with a WTOR sitting on the console until somebody
+        ** answers it.  Measured on mvsdev 2026-09-13 with SITE VOLUME=NOVOL9:
+        ** no reply after the 229, and two outstanding requests on the console.
+        **
+        ** Refusing the value and keeping the current one is the same shape as
+        ** an out-of-range PRIMARY, and it answers the client in the session
+        ** where it asked.  RESIDUAL: a volume that goes offline between this
+        ** check and the transfer is back to the operator prompt; closing that
+        ** needs S99NOMNT on the allocation itself, which __dsalc() does not
+        ** set (mvslovers/libc370#181). */
+        if (!ftpdcfg_volume_online(uval, NULL)) {
+            site_warn(warn, warnsz,
+                "VOLUME is not mounted; keeping the current value");
+            return 0;
+        }
+
         strncpy(sess->alloc.volume, uval, sizeof(sess->alloc.volume) - 1);
         sess->alloc.volume[sizeof(sess->alloc.volume) - 1] = '\0';
         return 0;
@@ -239,6 +264,10 @@ site_apply_one(ftpd_session_t *sess,
     if (strcmp(key, "UNIT") == 0) {
         char uval[8];
         int i;
+        if (val[0] == '\0') {
+            strcpy(sess->alloc.unit, cfg->defaults.unit);
+            return 0;
+        }
         strncpy(uval, val, sizeof(uval) - 1);
         uval[sizeof(uval) - 1] = '\0';
         for (i = 0; uval[i]; i++)

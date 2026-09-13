@@ -113,6 +113,20 @@ int ftpdcfg_load(ftpd_config_t *cfg)                        asm("FTPCFGLD");
 void ftpdcfg_defaults(ftpd_config_t *cfg)                   asm("FTPCFGDF");
 
 /*
+** Is this volume serial mounted and online?  Optionally returns its device
+** type (0x3350, 0x3380, 0x3390) in *dasdtype.
+**
+** One UCB scan.  The reason it exists is not tidiness: SVC 99 asked to
+** allocate on a volume that is not mounted does not fail, it asks the
+** OPERATOR (IEF238D) and waits -- measured on mvsdev 2026-09-13, where a
+** client's SITE VOLUME= of a nonexistent volume hung its session and left a
+** WTOR on the console.  Every path that lets someone name a volume has to
+** check it first.
+*/
+int ftpdcfg_volume_online(const char *volser, unsigned short *dasdtype)
+                                                           asm("FTPCFGVO");
+
+/*
 ** Dump configuration to log (for CONFIG console command).
 */
 void ftpdcfg_dump(const ftpd_config_t *cfg)                 asm("FTPCFGDP");

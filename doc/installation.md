@@ -357,8 +357,6 @@ SRVPORT=2121
 PASVPORTS=22000-22200
 MAXSESSIONS=10
 IDLETIMEOUT=300
-DEFUNIT=3390
-DEFVOLUME=PUB001
 DEFPRIMARY=10
 DEFSECONDARY=5
 DEFSPACETYPE=TRACK
@@ -369,8 +367,20 @@ DEFSPACETYPE=TRACK
 - `PASVPORTS` must be a range your firewall or NAT lets through, or passive
   mode stalls after `227`.
 - `DEFUNIT`/`DEFVOLUME` are where FTPD allocates a dataset a client creates
-  without saying where. `PUB001` is a development volume — name one that exists
-  on your system.
+  without saying where. **Both are unset by default, which means the system
+  chooses** — set them to keep uploads off a system pack. `DEFVOLUME` is checked
+  once at startup against the volumes that are online: one that is not there is
+  reported as `FTPD059W` and ignored rather than failing every upload, and a
+  `DEFUNIT` that disagrees with that volume's device type is reported as
+  `FTPD060W` and dropped. A client overrides both per session with `SITE VOLUME=`
+  and `SITE UNIT=`, and those are deliberately *not* checked — a client that
+  names a volume itself gets a failed allocation if it is wrong, because it is
+  there to read the reply.
+
+  Note for anyone upgrading from 1.0.2 or earlier: these two keys were stored
+  and never used, so whatever your `FTPDPRM` says about them has had no effect
+  until now. Check the value before relying on it — the sample shipped
+  `PUB001` for years while nothing read it.
 - `DEFPRIMARY`/`DEFSECONDARY`/`DEFSPACETYPE` are how much space that dataset
   gets. **The shipped `TRACK 10,5` caps an upload at 85 tracks** — 10 tracks
   plus at most 15 secondary extents of 5, roughly 4 MB at FB/80/3120 — and a
