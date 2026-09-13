@@ -1,6 +1,6 @@
 [project]
 name = "ftpd"
-version = "1.0.3-dev"
+version = "1.1.0-dev"
 type = "application"
 
 [toolchain]
@@ -83,36 +83,64 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
 # Turns `make package` into an installable product, the same two transports
 # ufsd ships with:
 #
-#   FTPD load module -> XMIT -> staging LKLIB -> SMP ++MOD -> FTPD.<vrm>.LINKLIB
-#   samplib/         -> XMIT -> TSO RECEIVE            -> FTPD.<vrm>.SAMPLIB
+#   FTPD load module -> XMIT -> staging LKLIB -> SMP ++MOD -> FTPD.LINKLIB
+#   samplib/         -> XMIT -> TSO RECEIVE            -> FTPD.SAMPLIB
 #
 # SMP *copies* the host-bound module rather than re-binding it (a COPY-style
 # ++JCLIN is what says so), which is what keeps ac = 1 and the entry point
 # exactly as ld370 set them. The sample library stays outside SMP: an MCS card
 # ends at column 72 and FTPDPRM0 already has comment lines past it, so a
-# configuration pattern would have to answer to a delivery mechanism. The
-# datasets are versioned, so every release brings a fresh SAMPLIB anyway --
-# there is no in-place update for SMP to manage.
+# configuration pattern would have to answer to a delivery mechanism.
 #
 # Every value is a dataset name; the ddname SMP addresses it by is always the
 # last qualifier, so LINKLIB, SAMPLIB, FTPDLOAD and AFTPDLOD fall out of the
-# names. @VRM@ becomes the *patch* level at package time -- V1R0M2 for 1.0.2,
-# not V1R0M0 for all of 1.0.x. The FMID above is per minor, so the two move at
-# different rates on purpose: a patch's libraries never collide with its
-# predecessor's, only its FMID does.
+# names.
+#
+# THE NAMES CARRY NO VERSION (#121), and that inverts how an upgrade works.
+# They used to expand @VRM@ to the *patch* level -- FTPD.V1R0M2.LINKLIB for
+# 1.0.2 -- while the FMID moved per minor, so two releases never collided on
+# their libraries, only on the FMID. That is why a patch install needed UCLIN
+# to free the id, and why the uninstall job's DELETE step was a trap: it named
+# the PREDECESSOR's datasets, and running it scratched libraries nobody was
+# using while the live installation stood untouched, with SMP reporting
+# accepted throughout.
+#
+# With one set of names there is one installation, and the two can no longer
+# drift apart. The cost is that the libraries now DO collide: the alloc job is
+# IEFBR14 with DISP=(NEW,CATLG,DELETE) and will not run twice, so an upgrade is
+# a clean cut -- RESTORE + REJECT the old FMID, scratch the libraries, allocate,
+# install. The template already described that as the way to start over; it is
+# now the ordinary path. In exchange the DELETE step means what it says, and
+# nobody has to work out which release a dataset name belongs to.
+#
+# Stop the started task before replacing the load library. It is the one FTPD
+# loads from.
 [distribution]
 readme = "doc/installation.md"
 
 [distribution.smp]
 # One FMID per minor release, spent exactly once: it names a functional level,
-# and a changed one is a new level. Patches on top of it ship as PTFs. 1.0.x is
-# TFTP100; a later 1.1.0 becomes TFTP110 and is installed as a clean cut
-# (RESTORE + REJECT the old, then receive the new). Verified free on 2026-08-13
-# before it was claimed here: LIST CDS and LIST ACDS SYSMOD(TFTP100) both
-# answered RC 04 with an empty list on mvsdev (MVS/CE) and drnmig3a (TK5).
+# and a changed one is a new level. Patches on top of it ship as PTFs. 1.0.x was
+# TFTP100; 1.1.x is TFTP110, installed as a clean cut -- RESTORE + REJECT
+# TFTP100, then receive this one. Since #121 the libraries are shared rather
+# than versioned, so that cut is required and not merely tidy.
+#
+# Verified free on 2026-09-13 before it was claimed here, the same way TFTP100
+# was on 2026-08-13: LIST CDS and LIST ACDS SYSMOD(TFTP110) both answered
+# "THE FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04, on mvsdev
+# (MVS/CE, job FMIDCHK JOB00265) and drnmig3a (TK5, JOB00032).
+#
+# TFTP100 is spent and must never be reused, even though nothing will carry it
+# any more.
+#
 # A test install must use a throwaway id -- a half-applied FMID leaves this one
-# occupied, and the CDS cannot be queried to find out.
-fmid = "TFTP100"
+# occupied, and the CDS cannot be queried to find out. TTMP110 was that id on
+# 2026-09-13 (mvsdev, FTPDINS JOB00269) and is spent: received, applied and
+# accepted, then UCLIN'd back out. TTMP111 is spent the same way, from the
+# second run that verified the upgrade path (FTPDINS JOB00281). TFTP110 was
+# verified still NOT FOUND in both zones after each (FINALCHK JOB00277,
+# TTMPCLN JOB00283).
+fmid = "TFTP110"
 system = "Z038"
 
 # Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
@@ -129,13 +157,13 @@ system = "Z038"
 prereq = []
 
 accept_fmid = true              # accept the FMID once so a PTF can be RESTOREd
-lklib = "FTPD.@VRM@.FTPDLOAD"   # staging: what the load XMIT is received into
-target = "FTPD.@VRM@.LINKLIB"   # where the load module ends up
-distlib = "FTPD.@VRM@.AFTPDLOD"
+lklib = "FTPD.FTPDLOAD"         # staging: what the load XMIT is received into
+target = "FTPD.LINKLIB"         # where the load module ends up
+distlib = "FTPD.AFTPDLOD"
 
 [[distribution.library]]
 dir = "samplib"
-target = "FTPD.@VRM@.SAMPLIB"
+target = "FTPD.SAMPLIB"
 
 # ── Release ──────────────────────────────────────────────
 [release]

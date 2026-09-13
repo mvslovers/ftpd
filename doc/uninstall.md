@@ -3,32 +3,35 @@
 This is the supported way to take FTPD back off an MVS 3.8j system and free
 its FMID for a re-install.
 
-> **The removal instructions inside the shipped release archive are wrong.**
-> `README.md` in `ftpd-<version>-dist.zip` says to run `RESTORE` and then
+> **The removal instructions inside a 1.0.x release archive are wrong.**
+> `README.md` in `ftpd-1.0.?-dist.zip` says to run `RESTORE` and then
 > `REJECT`. Both are refused once the FMID has been accepted — which the
 > install job does, in the same run as the APPLY. Use this document instead.
+> From 1.1.0 the shipped README says so itself and points here.
 
 ## What this release put on the system
 
 | | |
 |---|---|
-| FMID | `TFTP100` |
+| FMID | `TFTP110` (1.1.x) or `TFTP100` (1.0.x) |
 | Load module | `FTPD` |
-| Target library | `FTPD.<vrm>.LINKLIB` |
-| Distribution library | `FTPD.<vrm>.AFTPDLOD` |
-| Sample library | `FTPD.<vrm>.SAMPLIB` |
+| Target library | `FTPD.LINKLIB` |
+| Distribution library | `FTPD.AFTPDLOD` |
+| Sample library | `FTPD.SAMPLIB` |
 
-`<vrm>` is the release as MVS qualifier, and it carries the **patch** level:
-`V1R0M0` for 1.0.0, `V1R0M1` for 1.0.1, `V1R0M2` for 1.0.2. The FMID does not
-work that way -- `TFTP100` names the whole 1.0.x functional level -- so a patch
-release collides with its predecessor in the SMP inventory while its libraries
-sit beside them untouched. Read `<vrm>` as the release you are removing, and
-check the name against ISPF 3.4 before running anything below: the wrong one
-scratches an installation you meant to keep and leaves the live one standing,
-with SMP reporting success throughout.
+**Substitute the FMID of the release you are removing** in every job below.
+One FMID names a whole minor level: `TFTP100` is all of 1.0.x, `TFTP110` all of
+1.1.x. `LIST CDS SYSMOD(...)` tells you which one a system carries.
 
-The staging library `FTPD.<vrm>.FTPDLOAD` is not listed because the install
-job's `CLEANUP` step already scratched it.
+The data set names are the same in every release. Before 1.1.0 they carried the
+patch level (`FTPD.V1R0M2.LINKLIB`) while the FMID moved only per minor, so two
+releases could sit side by side and it was possible -- easy, in fact -- to
+scratch the libraries of one while the other stayed installed, with SMP
+reporting success throughout. That is gone: there is one installation, and the
+names below are it. Which is also why they are worth reading twice.
+
+The staging library `FTPD.FTPDLOAD` is not listed because the install job's
+`CLEANUP` step already scratched it.
 
 ---
 
@@ -49,22 +52,22 @@ Submit this. It edits the CDS and the ACDS and touches no library:
 //UCLIN   EXEC SMPAPP
 //SMPCNTL  DD  *
  UCLIN CDS .
-  DEL SYSMOD(TFTP100) MOD(FTPD) .
+  DEL SYSMOD(TFTP110) MOD(FTPD) .
   DEL MOD(FTPD) .
   DEL LMOD(FTPD) .
-  DEL SYSMOD(TFTP100) .
+  DEL SYSMOD(TFTP110) .
  ENDUCL .
  UCLIN ACDS .
-  DEL SYSMOD(TFTP100) MOD(FTPD) .
+  DEL SYSMOD(TFTP110) MOD(FTPD) .
   DEL MOD(FTPD) .
-  DEL SYSMOD(TFTP100) .
+  DEL SYSMOD(TFTP110) .
  ENDUCL .
 /*
 //LIST    EXEC SMPAPP
 //SMPCNTL  DD  *
  RESETRC .
- LIST CDS  SYSMOD(TFTP100) .
- LIST ACDS SYSMOD(TFTP100) .
+ LIST CDS  SYSMOD(TFTP110) .
+ LIST ACDS SYSMOD(TFTP110) .
 /*
 //
 ```
@@ -80,7 +83,7 @@ The `LIST` step is what tells you whether it worked. Both zones must answer:
 THE FOLLOWING SELECTED ENTRIES WERE NOT FOUND OR WERE NOT ELIGIBLE
 FOR PROCESSING
  TYPE        NAME
- SYSMOD      TFTP100
+ SYSMOD      TFTP110
 ```
 
 with `HIGHEST RETURN CODE IS 04`. **RC 04 and an empty list means the FMID is
@@ -91,17 +94,38 @@ in the other is not free.
 ## 4. Scratch the libraries
 
 `UCLIN` edits the inventory only. The load module is still in the target
-library and SMP's accepted copy is still in the distribution library, so a
-re-install would find both datasets already there and its allocation job would
-fail:
+library and SMP's accepted copy is still in the distribution library, and a
+re-install does not clear them out for you:
 
 ```
-  DELETE FTPD.<vrm>.LINKLIB  NONVSAM SCRATCH PURGE
-  DELETE FTPD.<vrm>.AFTPDLOD NONVSAM SCRATCH PURGE
+  DELETE FTPD.LINKLIB  NONVSAM SCRATCH PURGE
+  DELETE FTPD.AFTPDLOD NONVSAM SCRATCH PURGE
 ```
 
-Leave `FTPD.<vrm>.SAMPLIB` alone if you like — the install job's `DELOLD` step
+Leave `FTPD.SAMPLIB` alone if you like — the install job's `DELOLD` step
 scratches it on its own.
+
+**These are the live libraries, not a previous release's.** Run this only when
+you mean to remove FTPD, or as the middle of an upgrade: stop the server, cut
+the FMID (step 2), scratch these, then run the new release's allocation and
+install jobs.
+
+**Do not count on the allocation job to tell you that you skipped this.** It
+allocates `DISP=(NEW,CATLG,DELETE)`, so a second run over data sets that are
+already there does not fail -- measured on mvsdev, job FTPDALC JOB00273:
+
+```
+IEF142I FTPDALC ALLOC - STEP WAS EXECUTED - COND CODE 0000
+IEF287I   FTPD.LINKLIB      NOT CATLGD  2
+IEF287I   FTPD.AFTPDLOD     NOT CATLGD  2
+```
+
+`NOT CATLGD 2` is the catalog refusing a duplicate name, and it is not an
+error: the step ends RC 0, and the newly allocated data set stays on whatever
+volume `UNIT=SYSDA` picked, uncataloged. In that run it picked the other
+volume of the pair, so the system was left with `FTPD.LINKLIB` on both WORK00
+and WORK01 -- the cataloged one and an empty twin nothing points at. Read the
+`IEF285I`/`IEF287I` lines, not the condition code.
 
 ## 5. What is not removed, because SMP never owned it
 
