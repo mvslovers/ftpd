@@ -89,8 +89,22 @@ JESINTERFACELEVEL=2
 DEFRECFM=FB
 DEFLRECL=80
 DEFBLKSIZE=3120
-DEFUNIT=3390
-DEFVOLUME=PUB001
+#
+# Where a data set FTPD creates is placed.  Both are unset by default,
+# which means the system chooses -- and that is what FTPD did for every
+# allocation until they started being honoured, so leaving them alone
+# changes nothing.
+#
+# Set them to keep uploads off a system pack.  DEFVOLUME is checked once
+# at startup against the volumes that are online: a volume that is not
+# there is reported (FTPD059W) and ignored rather than failing every
+# upload, and a DEFUNIT that disagrees with the volume's own device type
+# is reported (FTPD060W) and dropped.  A client can override both per
+# session with SITE VOLUME= and SITE UNIT=, and those are NOT checked --
+# a volume a client names itself fails the allocation if it is wrong.
+#
+# DEFUNIT=3390
+# DEFVOLUME=PUB000
 #
 # Space for a data set STOR has to create.  FTP never tells the server
 # how large an upload is -- there is no size at STOR time and no ALLO

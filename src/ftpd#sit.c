@@ -227,6 +227,15 @@ site_apply_one(ftpd_session_t *sess,
     if (strcmp(key, "VOLUME") == 0) {
         char uval[8];
         int i;
+        /* Bare VOLUME goes back to the configured default, like every other
+        ** allocation keyword.  A value is NOT checked against the volumes
+        ** that are online, unlike DEFVOLUME (#133): the client is watching
+        ** this session, so a failed allocation is the honest answer to a
+        ** volume it named itself, not a silent substitution. */
+        if (val[0] == '\0') {
+            strcpy(sess->alloc.volume, cfg->defaults.volume);
+            return 0;
+        }
         strncpy(uval, val, sizeof(uval) - 1);
         uval[sizeof(uval) - 1] = '\0';
         for (i = 0; uval[i]; i++)
@@ -239,6 +248,10 @@ site_apply_one(ftpd_session_t *sess,
     if (strcmp(key, "UNIT") == 0) {
         char uval[8];
         int i;
+        if (val[0] == '\0') {
+            strcpy(sess->alloc.unit, cfg->defaults.unit);
+            return 0;
+        }
         strncpy(uval, val, sizeof(uval) - 1);
         uval[sizeof(uval) - 1] = '\0';
         for (i = 0; uval[i]; i++)

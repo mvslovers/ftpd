@@ -9,6 +9,8 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "cliblist.h"               /* __listvl(), __freevl() */
+
 #include "ftpd#cfg.h"
 #include "ftpd#log.h"
 
@@ -71,8 +73,13 @@ ftpdcfg_defaults(ftpd_config_t *cfg)
     cfg->defaults.primary = 10;
     cfg->defaults.secondary = 5;
     strcpy(cfg->defaults.spacetype, "TRK");
-    strcpy(cfg->defaults.unit, "3390");
-    strcpy(cfg->defaults.volume, "PUB001");
+    /* Empty means "let the system choose", which is what FTPD has always
+    ** done in practice: until #133 neither of these reached SVC 99 at all,
+    ** so the shipped 3390/PUB001 described a placement that never happened.
+    ** Starting to honour them had to come with a default that changes
+    ** nothing for an installation that never set them. */
+    cfg->defaults.unit[0] = '\0';
+    cfg->defaults.volume[0] = '\0';
 
     /* DASD */
     cfg->num_dasd = 0;
@@ -397,6 +404,77 @@ parse_line(ftpd_config_t *cfg, char *line)
 }
 
 /* --------------------------------------------------------------------
+** Check the configured placement against the volumes that are actually
+** online, and give up whatever does not fit (#133).
+**
+** A named volume is the whole point of DEFVOLUME, so getting it wrong must
+** not be silent -- but it must not cost an upload either.  The shipped
+** sample named PUB001 for years while nothing read it, so the first system
+** to honour it is quite likely to be one where that volume was never
+** checked: on the development system it is not there at all, next to a
+** PUB000 that is.  An installation that upgrades into a failed allocation
+** on every STOR would have no idea why.
+**
+** So: warn and fall back to what works.  Whoever reads the warning fixes
+** the value and gets the placement they asked for; whoever does not keeps
+** the behaviour they already had.
+**
+** Only the CONFIGURED default is treated this way.  SITE VOLUME= and
+** SITE UNIT= are deliberately not checked: the client naming them is
+** watching this session and reads the reply, so a failed allocation is the
+** honest answer there, not a substitution it never asked for.
+**
+** One UCB scan at startup, never per transfer.
+** ----------------------------------------------------------------- */
+static void
+check_placement(ftpd_config_t *cfg)
+{
+    VOLLIST **vols;
+    VOLLIST  *v = NULL;
+
+    if (!cfg->defaults.volume[0])
+        return;                 /* system chooses: nothing to check */
+
+    vols = __listvl(cfg->defaults.volume, 0, NULL);
+    if (vols && vols[0])
+        v = vols[0];
+
+    if (!v || !(v->status & VOLLIST_STATUS_ONLI)) {
+        ftpd_log_wto("FTPD059W DEFVOLUME=%s IS NOT ONLINE -- NEW DATA SETS "
+                     "WILL GO WHERE THE SYSTEM CHOOSES",
+                     cfg->defaults.volume);
+        cfg->defaults.volume[0] = '\0';
+        cfg->defaults.unit[0] = '\0';
+    }
+    else if (cfg->defaults.unit[0]) {
+        /* A device type disagreeing with the volume's own is the other half
+        ** of the same typo, and SVC 99 would refuse the pair.  The volume is
+        ** the more specific request and the system derives the device from
+        ** it, so the unit is what gets dropped.
+        **
+        ** Only compared when DEFUNIT reads as a device number -- an esoteric
+        ** name (SYSDA, SYSALLDA) is not one and is left to SVC 99. */
+        const char *u = cfg->defaults.unit;
+        int digits = (strlen(u) == 4) &&
+                     isdigit((unsigned char)u[0]) &&
+                     isdigit((unsigned char)u[1]) &&
+                     isdigit((unsigned char)u[2]) &&
+                     isdigit((unsigned char)u[3]);
+
+        if (digits &&
+            (unsigned short)strtol(u, NULL, 16) != v->dasdtype) {
+            ftpd_log_wto("FTPD060W DEFUNIT=%s DOES NOT MATCH DEFVOLUME=%s "
+                         "(A %04X) -- UNIT IGNORED",
+                         u, cfg->defaults.volume, v->dasdtype);
+            cfg->defaults.unit[0] = '\0';
+        }
+    }
+
+    if (vols)
+        __freevl(&vols);
+}
+
+/* --------------------------------------------------------------------
 ** Load configuration from DD:FTPDPRM.
 ** If the DD is not allocated, log a warning and use defaults.
 ** ----------------------------------------------------------------- */
@@ -453,6 +531,8 @@ ftpdcfg_load(ftpd_config_t *cfg)
         strcpy(cfg->defaults.spacetype, "TRK");
     }
 
+    check_placement(cfg);
+
     ftpd_log(LOG_INFO, "%s: loaded, port=%d, max_sessions=%d, "
              "DASD volumes=%d", __func__,
              cfg->port, cfg->max_sessions, cfg->num_dasd);
@@ -491,7 +571,10 @@ ftpdcfg_dump(const ftpd_config_t *cfg)
                  cfg->defaults.recfm, cfg->defaults.lrecl,
                  cfg->defaults.blksize);
     ftpd_log_wto("FTPD046I   DEFUNIT=%s DEFVOLUME=%s",
-                 cfg->defaults.unit, cfg->defaults.volume);
+                 cfg->defaults.unit[0] ? cfg->defaults.unit
+                                       : "(SYSTEM CHOOSES)",
+                 cfg->defaults.volume[0] ? cfg->defaults.volume
+                                         : "(SYSTEM CHOOSES)");
     ftpd_log_wto("FTPD058I   DEFPRIMARY=%d DEFSECONDARY=%d DEFSPACETYPE=%s",
                  cfg->defaults.primary, cfg->defaults.secondary,
                  cfg->defaults.spacetype);
