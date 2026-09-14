@@ -488,6 +488,9 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
     UFSFILE *fp;
     char buf[FTPD_DATA_BUF_SIZE];
     int n;
+    int io_err = 0;             /* a write did not land in full          */
+    int io_rc = UFSD_RC_OK;     /* the UFSD rc at the moment it failed   */
+    long total = 0;             /* bytes handed to ufs_fwrite()          */
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing file path");
@@ -524,16 +527,79 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
 
     // Receive and write
     while ((n = ftpd_data_recv(sess, buf, sizeof(buf))) > 0) {
+        UINT32 written;
+
         if (sess->type == XFER_TYPE_A) {
             // Text mode: ASCII → EBCDIC-1047
             ftpd_xlat_a2e((unsigned char *)buf, n);
         }
-        ufs_fwrite(buf, 1, (UINT32)n, fp);
+
+        /* size is 1, so the item count ufs_fwrite() returns is a byte
+        ** count and a short return means the write did not land in full. */
+        written = ufs_fwrite(buf, 1, (UINT32)n, fp);
+        total += (long)written;
+        if (written < (UINT32)n) {
+            /* Take the rc here and not after the loop: ufs_fclose() makes
+            ** its own request to UFSD, so ufs_last_rc() read past this
+            ** point carries the close's rc rather than the write's. */
+            io_rc = ufs_last_rc(ufs);
+            io_err = 1;
+            break;
+        }
+    }
+
+    /* ufs_fclose() returns void and frees the handle, so ferror() has to be
+    ** asked while there is still a handle to ask. */
+    if (!io_err && ufs_ferror(fp)) {
+        io_rc = ufs_last_rc(ufs);
+        io_err = 1;
     }
 
     sess->cur_ufs_file = NULL;
     ufs_fclose(&fp);
     ftpd_data_close(sess);
+
+    /* The partial file is left where it is.  ftpd_mvs_stor() scratches its
+    ** data set, but only because it knows it allocated it (allocated_new);
+    ** ufs_fopen(path, "w") truncates, so a STOR over an existing file has
+    ** already destroyed the original and removing the remains would make
+    ** that worse rather than better.  Telling a file this STOR created from
+    ** one it truncated would need a ufs_stat() before the open (#148). */
+    if (io_err) {
+        ftpd_log(LOG_ERROR,
+                 "STOR: write error on %s after %ld bytes written (rc=%d)",
+                 path, total, io_rc);
+
+        /* Out of space is permanent, and 4xx invites the retry that meets
+        ** the same full filesystem -- the argument #129/#135 made for the
+        ** MVS side.  ftpd_ufs_rc_to_ftp() still maps NOSPACE to 452 and
+        ** that is left alone on purpose: it is shared with MKD and RNTO,
+        ** where trying later is a reasonable thing to suggest.  STOR is the
+        ** command where it is not. */
+        if (io_rc == UFSD_RC_NOSPACE || io_rc == UFSD_RC_NOINODES)
+            ftpd_session_reply(sess, FTP_552,
+                               "Requested file action aborted: %s. The file "
+                               "on the server is incomplete.",
+                               ftpd_ufs_rc_message(io_rc));
+        else
+            ftpd_ufs_error(sess, io_rc);
+        return 0;
+    }
+
+    /* A data connection that broke is not a transfer that ended.  RFC 959
+    ** has 426 for exactly this, and answering 226 would tell the client --
+    ** the only party still holding the whole file -- to delete its copy. */
+    if (n < 0) {
+        ftpd_log(LOG_ERROR,
+                 "STOR: data connection failed on %s after %ld bytes",
+                 path, total);
+        ftpd_session_reply(sess, FTP_426,
+                           "Connection closed; transfer aborted after %ld "
+                           "bytes. The file on the server is incomplete.",
+                           total);
+        return 0;
+    }
+
     ftpd_session_reply(sess, FTP_226, "Transfer complete");
     sess->xfer_count++;
     return 0;
