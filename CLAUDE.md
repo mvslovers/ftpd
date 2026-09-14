@@ -77,3 +77,28 @@ Naming convention follows UFSD: `ftpd#xxx.c` / `ftpd#xxx.h` with 3-letter domain
 3. **UFS Support** — UFSD client integration, hybrid MVS/UFS navigation
 4. **Polish** — Console commands, timeouts, error handling, packaging
 5. **SITE XMIT** — TRANSMIT-format dataset transfer
+
+## SMP4 FMID — one per release
+
+The id is the release: `T` + three product letters + the three version digits.
+One id per release, **spent exactly once**, and each release's SYSMOD deletes
+its predecessor:
+
+```toml
+[distribution.smp]
+fmid   = "TFTP110"
+delete = ["TFTP100"]
+```
+
+**No version component may ever exceed 9** — a 7-character id has no room for
+a second digit. At patch 9 cut the next minor, at minor 9 the next major;
+ftpd 1.1.10 cannot be expressed and must not be released.
+
+Current: **`TFTP110`** for 1.1.0, deleting `TFTP100`. `TFTP110` is still unspent
+(1.1.0 is unreleased), so it stays; `TFTP100` shipped with 1.0.0–1.0.2 and is
+burned.
+
+Never re-spend an id, and never install a test package under the real one: a
+test needs a throwaway id **and** throwaway module names, because SMP keys
+element ownership on `MOD(name)`, not on the target library. See the root
+`CLAUDE.md` for the full rule and the measurements behind it.
