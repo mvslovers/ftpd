@@ -120,8 +120,8 @@ readme = "doc/installation.md"
 
 [distribution.smp]
 # One FMID per release, spent exactly once: the id *is* the release, not the
-# minor level. 1.0.0 through 1.0.2 were TFTP100; 1.1.0 is TFTP110, and 1.1.1
-# will be TFTP111. CLAUDE.md carries the rule, including the one that
+# minor level. 1.0.0 through 1.0.2 were TFTP100 (the policy before this one);
+# 1.1.0 was TFTP110; this is 1.1.1, so TFTP111. CLAUDE.md carries the rule, including the one that
 # constrains versioning itself: a 7-character id has room for three version
 # digits, so no component may ever exceed 9 -- ftpd 1.1.10 cannot be expressed
 # and must not be released.
@@ -165,15 +165,17 @@ readme = "doc/installation.md"
 # a plain DEL SYSMOD(<old>) in both zones, which works (TTMPCLN JOB00311 took
 # TTMP900 back to NOT FOUND alongside TTMP112).
 #
-# TFTP110 was verified free before it was claimed here, the same way TFTP100
-# was on 2026-08-13: LIST CDS and LIST ACDS SYSMOD(TFTP110) both answered "THE
-# FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04, on mvsdev (MVS/CE,
-# FMIDCHK JOB00265) and drnmig3a (TK5, JOB00032). It is unspent on both systems
-# we can see, which is a measurement and not a guarantee: 1.1.0 was public for
-# some thirteen hours before it was withdrawn, and its archive was downloaded
-# once in that window.
+# TFTP111 was verified free before it was claimed here, the same way TFTP110
+# and TFTP100 were: LIST CDS and LIST ACDS SYSMOD(TFTP111) both answered "THE
+# FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04 on mvsdev (MVS/CE,
+# FMIDCHK JOB00332, 2026-09-14). Not re-checked on drnmig3a (TK5) -- TFTP110
+# and TFTP100 were, on 2026-09-13 and 2026-08-13, and a check there is worth
+# doing before 1.1.1 ships.
 #
-# TFTP100 is spent and must never be reused.
+# TFTP100 and TFTP110 are both spent and must never be reused. TFTP100 shipped
+# with 1.0.0 through 1.0.2. TFTP110 shipped with 1.1.0 on 2026-09-14 -- and
+# also with the build that was published and withdrawn the day before, which is
+# the same id either way.
 #
 # A test install must use a throwaway id *and* throwaway module names. The
 # ownership rule above is keyed on MOD(name), so a test package carrying the
@@ -184,8 +186,8 @@ readme = "doc/installation.md"
 # (FTPDINS JOB00281). TTMP112 and TTMP900 are spent from the fresh-install run
 # above (2026-09-14, JOB00307-JOB00311). TFTP110 was verified still NOT FOUND
 # in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
-fmid = "TFTP110"
-delete = ["TFTP100"]            # the level this one replaces -- see above
+fmid = "TFTP111"
+delete = ["TFTP110"]            # the level this one replaces -- see above
 system = "Z038"
 
 # Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
