@@ -147,7 +147,10 @@ readme = "doc/installation.md"
 # zones and from SMPPTS beforehand (TTMPCHK JOB00307). Every step ended COND
 # CODE 0000, HMA2380 COPY SUCCESSFUL in the APPLY (TTMPLIB) and again in the
 # ACCEPT (ATTMPLOD), and both libraries held the module afterwards (TTMPLST
-# JOB00310). Note the APPLY ends RC 00 here, not the RC 04 on HMA2461 that the
+# JOB00310). That is MVS/CE at HMASMP LVL 04.48; it was not re-run on TK5,
+# which carries the same SMP4 level.
+#
+# Note the APPLY ends RC 00 here, not the RC 04 on HMA2461 that the
 # upgrade path produces: with nothing to delete from the target there is no
 # missing SMPSCDS backup entry to report. accept_fmid's relaxed ACCEPT gate is
 # therefore only load-bearing on an upgrade, and merely harmless on a fresh
