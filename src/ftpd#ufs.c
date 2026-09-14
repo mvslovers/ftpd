@@ -589,8 +589,12 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
         **
         ** The text does not promise the filesystem is full, because NOSPACE
         ** is also what a file hitting the single-indirect ceiling gets: UFS
-        ** implements no double or triple indirect blocks, so the per-file
-        ** maximum is reached on an otherwise empty filesystem.  NOINODES is
+        ** reserves addr[17]/addr[18] and never follows them, so the per-file
+        ** maximum is 16 direct + 1024 single-indirect blocks -- about 4.06 MB
+        ** at blksize 4096, reached on an otherwise empty filesystem (ufsd
+        ** docs/ufsdisk-spec.md section 5.5).  For an FTP server that is an
+        ** ordinary file size, so this is the common way the reply is seen and
+        ** not an edge case.  NOINODES is
         ** deliberately not tested here -- it comes from allocating an inode,
         ** which a write never does; the ufs_fopen() exit above is where it
         ** arrives, and ufs_last_rc() is genuinely set there. */
