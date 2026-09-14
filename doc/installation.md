@@ -166,72 +166,101 @@ install that is not finished.
 ## 2a. Upgrading from 1.0.x — read this first
 
 A fresh install can skip this section. An upgrade from any 1.0.x release cannot:
-**1.1.0 changes both the FMID and the data set names**, so the old installation
-does not get replaced, it gets left behind.
+**1.1.0 changes both the FMID and the data set names.**
 
 | | 1.0.x | 1.1.0 |
 |---|---|---|
 | FMID | `TFTP100` | `TFTP110` |
 | Libraries | `FTPD.V1R0M1.LINKLIB`, … | `FTPD.LINKLIB`, … |
 
-The order matters, because the new libraries are allocated `DISP=(NEW,CATLG,
-DELETE)` and the old ones are what your started task is still loading from.
+**The FMID is handled for you.** If you upgraded before, or read an earlier
+version of this guide, you will remember a `UCLIN` job that had to run first to
+cut the old FMID out of the SMP inventory. **That step is gone.** The 1.1.0
+SYSMOD carries `++VER(Z038) DELETE(TFTP100)`, and SMP transfers the element
+ownership during the `APPLY`. Nothing has to be prepared, and the old
+installation does not have to be removed first.
+
+**The data sets are not handled for you, and cannot be.** That is the whole
+content of this section, so it is worth understanding rather than following.
+
+### Why SMP cannot clean up the old libraries
+
+SMP does not record which *data set* an element lives in. It records the
+**ddname** the install job used:
+
+```
+SMPCDS  LOAD MODULE ENTRIES
+TTMPMOD   LASTUPD         = TTMP113  TYPE=ADD
+          SYSTEM LIBRARY  = OLDLIB          <- a ddname, not a DSN
+```
+
+Both the 1.0.x and the 1.1.0 libraries end in `LINKLIB`, and the ddname comes
+from that last qualifier — so both installs use ddname `LINKLIB`, pointing at
+`FTPD.V1R0M2.LINKLIB` in the one case and `FTPD.LINKLIB` in the other. When
+1.1.0's `APPLY` deletes the predecessor's load module, it resolves ddname
+`LINKLIB` **in its own job**, which points at the new library. It deletes from
+there, reports success, and copies the new module in:
+
+```
+HMA2240 SUCCESSFULLY DELETED LMOD FTPD ON LINKLIB LIBRARY
+HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - ...
+```
+
+`FTPD.V1R0M2.LINKLIB` is never opened. It keeps its copy of the old, still
+APF-authorised `FTPD` module, and nothing in the job log mentions it.
+
+Measured on mvsdev 2026-09-14 with throwaway ids and a throwaway module name,
+in exactly this shape — same ddnames, different data sets (`TTMPDINS JOB00323`
+installs the predecessor, `TTMPEINS JOB00325` upgrades over it, `TTMPECHK
+JOB00326` reads the result). The upgrade completed: the new SYSMOD `REC APP
+ACC` in both zones, `MOD` carrying the new `FMID` and `RMID`, both new
+libraries holding the module — **and the old target library still holding its
+own copy.**
+
+So the two steps that used to look like housekeeping are the ones that matter
+now.
+
+### The procedure
 
 1. **Stop FTPD** (`/P FTPD`).
-2. **Cut `TFTP100` out of the SMP inventory.** It was *accepted* at install
-   time, so `RESTORE` and `REJECT` are both refused — the UCLIN job in
-   [uninstall.md](uninstall.md) is what does it. Run it with `TFTP100`, not
-   `TFTP110`, and run **all** of its `DEL` statements: the `MOD(FTPD)` and
-   `LMOD(FTPD)` lines are the ones that matter here, not the `SYSMOD` line.
-
-   This step is not housekeeping, and skipping it does not fail. The element
-   `FTPD` in the SMP inventory belongs to whichever FMID installed it, and a
-   SYSMOD with a different FMID does not replace an element it does not own —
-   SMP passes over it and says so in one column of a report nobody reads:
+2. **Run the 1.1.0 allocation job** (step 4 below), then the **install job**
+   (step 6). No `UCLIN`, nothing to remove first.
+3. **Scratch the old libraries.** Their names carry the patch level of whatever
+   you installed, so look them up rather than assuming: ISPF 3.4 on `FTPD.*`,
+   or `LISTCAT LEVEL(FTPD)`. Expect three — `FTPD.V1R0M?.LINKLIB`,
+   `.AFTPDLOD`, `.SAMPLIB`:
 
    ```
-   ELEM   ELEMENT   ELEM
-   TYPE   NAME      STATUS
-   MOD    FTPD      NOT SEL
+     DELETE FTPD.V1R0M2.LINKLIB  NONVSAM SCRATCH PURGE
+     DELETE FTPD.V1R0M2.AFTPDLOD NONVSAM SCRATCH PURGE
+     DELETE FTPD.V1R0M2.SAMPLIB  NONVSAM SCRATCH PURGE
    ```
 
-   Everything else reports success. Measured on mvsdev with a throwaway FMID
-   over the accepted 1.0.1 install (job FTPDINS JOB00269): RECEIVE, APPLY CHECK,
-   APPLY, ACCEPT all `RC 00`, `HMA2270 APPLY PROCESSING SUCCESSFULLY COMPLETED`,
-   `STATUS = REC APP ACC` in both zones — and `FTPD.LINKLIB` and
-   `FTPD.AFTPDLOD` empty, 19 of 20 directory blocks unused. An FTPD installed
-   that way does not exist, and only a member list of the target library says
-   so.
+   They are invisible to SMP now — it has moved on to the new names — so
+   nothing will ever report them again.
+4. **Repoint the started task procedure.** The `STEPLIB` you copied at the last
+   install names `FTPD.V1R0M?.LINKLIB`. **This is the step that decides whether
+   you are running 1.1.0 at all.** If you skipped step 3, that library still
+   exists and still holds a working module: FTPD starts, serves, and logs no
+   error — it is simply the old one. Change it to `FTPD.LINKLIB`.
+5. **Update the APF entry** if you use one: it names the old library. See
+   *Authorisation* above — this is the last time it will need changing, because
+   the new name no longer carries a version.
 
-   With the UCLIN run first, the same package on the same system installs
-   (job FTPDINS JOB00281) and the difference is visible in the job log — one
-   message that is simply absent from the failing run:
+### Verifying, since the job log will not tell you
 
-   ```
-   HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB -
-           SYSMOD=... - RETURN CODE=00
-   MOD    FTPD      APPLIED   ...   FTPD      LINKLIB
-   ```
+`FTPD005I` at startup names the release and the library it was built against:
 
-   `HMA2380` in the APPLY step and again in ACCEPT (`LIBRARY=AFTPDLOD`) is what
-   a real install looks like. No `HMA2380`, no install.
-3. **Find and scratch the old libraries.** Their names carry the patch level of
-   whatever you installed, so look them up rather than assuming:
-   ISPF 3.4 on `FTPD.*`, or `LISTCAT LEVEL(FTPD)`. Expect three —
-   `FTPD.V1R0M?.LINKLIB`, `.AFTPDLOD`, `.SAMPLIB`. Nothing in the 1.1.0 jobs
-   touches them; they are invisible to SMP now and will sit there forever
-   otherwise.
-4. Run the 1.1.0 install from step 3 below as normal.
-5. **Repoint your started task procedure.** The `STEPLIB` you copied at the last
-   install names `FTPD.V1R0M?.LINKLIB`. If you skipped step 3 it still exists,
-   FTPD starts happily, and you are running the old module with no error
-   anywhere. Change it to `FTPD.LINKLIB`.
-6. **Update the APF entry** if you use one: it names the old library. See
-   *Authorisation* above — this is the last time it will need changing.
+```
+FTPD000I FTPD 1.1.0 (XXXXXXX) STARTING
+FTPD005I LIBC370 1.0.6
+```
 
-Steps 2, 3 and 5 are the ones that fail silently — step 2 the most quietly of
-the three, because it fails with a job log that is RC 0 from top to bottom.
-After the install, list the members of `FTPD.LINKLIB` before you trust it:
+`LIBC370 1.0.4` on that second line means the started task is still loading the
+1.0.2 module — step 4 did not take, or step 3 was skipped and the `STEPLIB`
+still points at the old library.
+
+And before that, check the new library really holds the module:
 
 ```
 //LIST    EXEC PGM=IEHLIST
@@ -242,14 +271,27 @@ After the install, list the members of `FTPD.LINKLIB` before you trust it:
 /*
 ```
 
-One member, `FTPD`, with `AUTH REQ = YES`. No member means the APPLY passed
-the element over.
+One member, `FTPD`, with `AUTH REQ = YES`. `AMBLIST LISTLOAD OUTPUT=MODLIST`
+on it reports `APFCODE 00000001` with `RENT`/`REUS` intact: `AC(1)` survives
+SMP's `COPY`, so the library only needs to be APF-authorised.
 
-The whole sequence — UCLIN, allocate, install, verify — was run end to end on
-mvsdev on 2026-09-13 against a throwaway FMID (jobs FTPDUCL JOB00279 through
-INSTCHK JOB00282). `AMBLIST LISTLOAD OUTPUT=MODLIST` on the installed module
-reports `APFCODE 00000001` with `RENT`/`REUS` intact, so AC(1) survives SMP's
-COPY and the library only needs to be APF-authorised.
+### One return code that looks wrong and is not
+
+On an upgrade the `APPLY` step ends **`COND CODE 0004`**, not `0000`:
+
+```
+HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - ...
+HMA2270 APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP110
+HMA2461 SYSMOD TFTP100 NOT FOUND ON SMPSCDS LIBRARY
+HMA2050 APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
+```
+
+`HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
+never will, because it was deleted rather than superseded. The `APPLY` itself
+succeeded, which `HMA2270` says. The install job expects this: its `ACCEPT`
+step is gated `COND=(4,LT,APPLY.HMASMP)` rather than `(0,NE,…)`, so `RC 04`
+passes and anything worse still stops the job. A *fresh* install has nothing to
+delete and ends `RC 00`.
 
 ---
 
@@ -380,19 +422,30 @@ the first failure rather than building on it:
 
 The SYSMOD travels inline in the job — there is no third file to upload.
 
-**What a good run looks like.** Every step `COND CODE 0000`, and in the SMP
-output:
+**What a good run looks like.** On a fresh install, every step `COND CODE
+0000`, and in the SMP output:
 
 ```
-HMA3930    SYSMOD TFTP100 SUCCESSFULLY RECEIVED
+HMA3930    SYSMOD TFTP110 SUCCESSFULLY RECEIVED
 HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB
            - RETURN CODE=00
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
-Then check `FTPD.LINKLIB` really holds `FTPD` (ISPF 3.4). Do look: SMP
-reports the library by **ddname**, and a ddname says nothing about which dataset
-was behind it.
+**On an upgrade the `APPLY` ends `COND CODE 0004` instead, and that is
+correct** — `HMA2461` reporting that the deleted level has no backup entry.
+See *One return code that looks wrong and is not* in section 2a. `HMA2270
+APPLY PROCESSING SUCCESSFULLY COMPLETED` is the line that says the `APPLY`
+worked; the return code is not.
+
+`HMA2380` is the message that separates a real install from one that copied
+nothing. **If it is not in the job log, nothing was installed** — whatever the
+condition codes say.
+
+Then check `FTPD.LINKLIB` really holds `FTPD` (ISPF 3.4). Do look: SMP reports
+the library by **ddname**, and a ddname says nothing about which dataset was
+behind it. That is not a nicety — it is exactly why an upgrade leaves the old
+library populated, and section 2a is about the consequences.
 
 SMP **copies** this module rather than re-binding it, which is why the `AC(1)`
 authorisation code and the link attributes are exactly what the build produced.
@@ -625,6 +678,9 @@ route that does work is a `UCLIN` job.
 
 The full procedure, with the job to submit and the messages to check, is in
 [uninstall.md](https://github.com/mvslovers/ftpd/blob/main/doc/uninstall.md).
+
+**This is for removing FTPD, not for upgrading it.** An upgrade installs over
+the release before it — see section 2a — and needs none of this.
 
 What SMP does **not** remove, because it never owned them: the copies you made
 in step 7, and your RAKF definitions. Those are yours to delete.
