@@ -140,6 +140,28 @@ readme = "doc/installation.md"
 # version and nothing else. Set `fmid` to the new id and `delete` to the one it
 # replaces *before* every release, or 1.1.1 re-spends TFTP110.
 #
+# A DELETE of an id the system never had is harmless -- which matters, because
+# every 1.1.0 install carries DELETE(TFTP100), including the fresh ones. SMP4
+# accepts it and installs normally: measured on mvsdev 2026-09-14 (TTMPINS
+# JOB00309) with throwaway id TTMP112 deleting TTMP900, an id absent from both
+# zones and from SMPPTS beforehand (TTMPCHK JOB00307). Every step ended COND
+# CODE 0000, HMA2380 COPY SUCCESSFUL in the APPLY (TTMPLIB) and again in the
+# ACCEPT (ATTMPLOD), and both libraries held the module afterwards (TTMPLST
+# JOB00310). Note the APPLY ends RC 00 here, not the RC 04 on HMA2461 that the
+# upgrade path produces: with nothing to delete from the target there is no
+# missing SMPSCDS backup entry to report. accept_fmid's relaxed ACCEPT gate is
+# therefore only load-bearing on an upgrade, and merely harmless on a fresh
+# install.
+#
+# It does leave a tombstone. The deleted id appears in *both* zones afterwards
+# as "TYPE = FUNCTION" with "DELBY = <the new fmid>" and nothing else -- so
+# after any 1.1.0 install, LIST CDS/ACDS SYSMOD(TFTP100) answers RC 00 with a
+# DELBY line rather than RC 04 NOT FOUND, on a system that never ran 1.0.x.
+# When checking whether an id is free, read the stanza and not just the RC: a
+# bare DELBY is a tombstone, not an install. An uninstall should clear it with
+# a plain DEL SYSMOD(<old>) in both zones, which works (TTMPCLN JOB00311 took
+# TTMP900 back to NOT FOUND alongside TTMP112).
+#
 # TFTP110 was verified free before it was claimed here, the same way TFTP100
 # was on 2026-08-13: LIST CDS and LIST ACDS SYSMOD(TFTP110) both answered "THE
 # FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04, on mvsdev (MVS/CE,
@@ -156,8 +178,9 @@ readme = "doc/installation.md"
 # installs into. TTMP110 was that id on 2026-09-13 (FTPDINS JOB00269) and is
 # spent: received, applied and accepted, then UCLIN'd back out. TTMP111 is
 # spent the same way, from the second run that verified the upgrade path
-# (FTPDINS JOB00281). TFTP110 was verified still NOT FOUND in both zones after
-# each (FINALCHK JOB00277, TTMPCLN JOB00283).
+# (FTPDINS JOB00281). TTMP112 and TTMP900 are spent from the fresh-install run
+# above (2026-09-14, JOB00307-JOB00311). TFTP110 was verified still NOT FOUND
+# in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
 fmid = "TFTP110"
 delete = ["TFTP100"]            # the level this one replaces -- see above
 system = "Z038"
