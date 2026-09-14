@@ -489,8 +489,8 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
     char buf[FTPD_DATA_BUF_SIZE];
     int n;
     int io_err = 0;             /* a write did not land in full          */
-    int io_rc = UFSD_RC_OK;     /* the UFSD rc at the moment it failed   */
-    long total = 0;             /* bytes handed to ufs_fwrite()          */
+    int io_rc = UFSD_RC_OK;     /* the UFSD rc the failing chunk left    */
+    long total = 0;             /* bytes received from the client        */
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing file path");
@@ -534,26 +534,32 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
             ftpd_xlat_a2e((unsigned char *)buf, n);
         }
 
-        /* size is 1, so the item count ufs_fwrite() returns is a byte
-        ** count and a short return means the write did not land in full. */
+        total += n;
+
+        /* size is 1, so the item count ufs_fwrite() returns is a byte count.
+        ** A short return always means failure: the 248-byte segmenting and
+        ** the 4K chunking both live inside ufs_fwrite(), which loops until
+        ** everything is placed, and the server's do_fwrite() never reports
+        ** OK with a partial count.  So there is nothing to retry from -- and
+        ** the error flag is sticky, a second call on this handle returns 0
+        ** at once. */
         written = ufs_fwrite(buf, 1, (UINT32)n, fp);
-        total += (long)written;
         if (written < (UINT32)n) {
-            /* Take the rc here and not after the loop: ufs_fclose() makes
-            ** its own request to UFSD, so ufs_last_rc() read past this
-            ** point carries the close's rc rather than the write's. */
-            io_rc = ufs_last_rc(ufs);
             io_err = 1;
             break;
         }
     }
 
-    /* ufs_fclose() returns void and frees the handle, so ferror() has to be
-    ** asked while there is still a handle to ask. */
-    if (!io_err && ufs_ferror(fp)) {
-        io_rc = ufs_last_rc(ufs);
+    /* ufs_ferror() is not a predicate: it returns the UFSD_RC_* the failing
+    ** chunk recorded on the handle, and 0 when nothing failed.  It is also
+    ** the only place that rc can be read -- ufs_fwrite() and ufs_fclose()
+    ** take a UFSFILE *, never a UFS *, so neither can set the session's
+    ** last_rc, and ufs_last_rc() here would still report the OK that
+    ** ufs_fopen() left behind.  Ask before the close, which frees the
+    ** handle. */
+    io_rc = ufs_ferror(fp);
+    if (io_rc)
         io_err = 1;
-    }
 
     sess->cur_ufs_file = NULL;
     ufs_fclose(&fp);
@@ -566,23 +572,43 @@ ftpd_ufs_stor(ftpd_session_t *sess, const char *arg)
     ** that worse rather than better.  Telling a file this STOR created from
     ** one it truncated would need a ufs_stat() before the open (#148). */
     if (io_err) {
+        /* total counts what arrived from the client, not what reached the
+        ** file: on several of do_fwrite()'s early exits the response carries
+        ** no byte count and ufs_fwrite() reads back the request field
+        ** instead, so its return on a failure measures nothing. */
         ftpd_log(LOG_ERROR,
-                 "STOR: write error on %s after %ld bytes written (rc=%d)",
+                 "STOR: write failed on %s after %ld bytes received (rc=%d)",
                  path, total, io_rc);
 
         /* Out of space is permanent, and 4xx invites the retry that meets
-        ** the same full filesystem -- the argument #129/#135 made for the
+        ** the same condition again -- the argument #129/#135 made for the
         ** MVS side.  ftpd_ufs_rc_to_ftp() still maps NOSPACE to 452 and
         ** that is left alone on purpose: it is shared with MKD and RNTO,
         ** where trying later is a reasonable thing to suggest.  STOR is the
-        ** command where it is not. */
-        if (io_rc == UFSD_RC_NOSPACE || io_rc == UFSD_RC_NOINODES)
+        ** command where it is not.
+        **
+        ** The text does not promise the filesystem is full, because NOSPACE
+        ** is also what a file hitting the single-indirect ceiling gets: UFS
+        ** implements no double or triple indirect blocks, so the per-file
+        ** maximum is reached on an otherwise empty filesystem.  NOINODES is
+        ** deliberately not tested here -- it comes from allocating an inode,
+        ** which a write never does; the ufs_fopen() exit above is where it
+        ** arrives, and ufs_last_rc() is genuinely set there. */
+        if (io_rc == UFSD_RC_NOSPACE)
             ftpd_session_reply(sess, FTP_552,
-                               "Requested file action aborted: %s. The file "
-                               "on the server is incomplete.",
-                               ftpd_ufs_rc_message(io_rc));
-        else
+                               "Requested file action aborted: no space for "
+                               "the file. The filesystem is full or the file "
+                               "reached the maximum size UFS supports. The "
+                               "file on the server is incomplete.");
+        else if (io_rc)
             ftpd_ufs_error(sess, io_rc);
+        else
+            /* Short with no rc on the handle: libufs sets its error flag but
+            ** leaves the code 0 when the request never reached the server.
+            ** Unknown, but never a success. */
+            ftpd_session_reply(sess, FTP_451,
+                               "Write failed on the server after %ld bytes "
+                               "received: the file is incomplete.", total);
         return 0;
     }
 
