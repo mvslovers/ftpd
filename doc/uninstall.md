@@ -20,8 +20,10 @@ its FMID for a re-install.
 | Sample library | `FTPD.SAMPLIB` |
 
 **Substitute the FMID of the release you are removing** in every job below.
-One FMID names a whole minor level: `TFTP100` is all of 1.0.x, `TFTP110` all of
-1.1.x. `LIST CDS SYSMOD(...)` tells you which one a system carries.
+Since 1.1.0 there is one FMID per *release*: `TFTP110` is 1.1.0 and nothing
+else, `TFTP111` will be 1.1.1. `TFTP100` is the exception, from the policy that
+came before it -- it covered 1.0.0, 1.0.1 and 1.0.2 alike. `LIST CDS
+SYSMOD(...)` tells you which one a system carries.
 
 The data set names are the same in every release. Before 1.1.0 they carried the
 patch level (`FTPD.V1R0M2.LINKLIB`) while the FMID moved only per minor, so two
@@ -56,11 +58,13 @@ Submit this. It edits the CDS and the ACDS and touches no library:
   DEL MOD(FTPD) .
   DEL LMOD(FTPD) .
   DEL SYSMOD(TFTP110) .
+  DEL SYSMOD(TFTP100) .
  ENDUCL .
  UCLIN ACDS .
   DEL SYSMOD(TFTP110) MOD(FTPD) .
   DEL MOD(FTPD) .
   DEL SYSMOD(TFTP110) .
+  DEL SYSMOD(TFTP100) .
  ENDUCL .
 /*
 //LIST    EXEC SMPAPP
@@ -68,12 +72,35 @@ Submit this. It edits the CDS and the ACDS and touches no library:
  RESETRC .
  LIST CDS  SYSMOD(TFTP110) .
  LIST ACDS SYSMOD(TFTP110) .
+ LIST CDS  SYSMOD(TFTP100) .
+ LIST ACDS SYSMOD(TFTP100) .
 /*
 //
 ```
 
 Every `DEL` reports `HMA2550 UPDATE COMPLETE`, and each `UCLIN` block ends
 `RC 00`.
+
+### Why `TFTP100` is in a job that removes `TFTP110`
+
+Because installing 1.1.0 left an entry for it. The 1.1.0 SYSMOD carries
+`++VER(Z038) DELETE(TFTP100)`, and SMP records that deletion in both zones as
+a tombstone -- even on a system that never ran 1.0.x:
+
+```
+TFTP100   TYPE  = FUNCTION
+          DELBY = TFTP110
+```
+
+Removing `TFTP110` without removing that leaves the tombstone pointing at a
+SYSMOD which is no longer there. It is harmless in itself, but it is also the
+thing that makes `LIST` ambiguous afterwards -- see the next section. A plain
+`DEL SYSMOD(TFTP100)` clears it; measured on mvsdev 2026-09-14 with throwaway
+ids (`TTMPCLN JOB00311`), where it took the tombstone back to `NOT FOUND`
+alongside the SYSMOD that created it.
+
+Substitute the predecessor of whatever you are removing: for a future
+`TFTP111` that is `TFTP110`.
 
 ## 3. Read the LIST — this is the actual result
 
@@ -91,6 +118,21 @@ free.** Both zones matter: the CDS records what is applied, the ACDS what is
 accepted, and they are separate inventories — an id gone from one and present
 in the other is not free.
 
+**There is a third answer, and the return code alone does not distinguish it.**
+An id that some release deleted comes back at `RC 00` with a stanza holding
+nothing but a `DELBY`:
+
+```
+TFTP100   TYPE  = FUNCTION
+          DELBY = TFTP110
+```
+
+That is a tombstone, not an installation: no `STATUS`, no `FMID`, no elements.
+Read the stanza rather than the return code — `RC 00` here does not mean
+something is installed, and it is what you will see for `TFTP100` on any system
+that installed 1.1.0, including one that never ran 1.0.x. The `DEL
+SYSMOD(TFTP100)` above is what clears it.
+
 ## 4. Scratch the libraries
 
 `UCLIN` edits the inventory only. The load module is still in the target
@@ -106,9 +148,16 @@ Leave `FTPD.SAMPLIB` alone if you like — the install job's `DELOLD` step
 scratches it on its own.
 
 **These are the live libraries, not a previous release's.** Run this only when
-you mean to remove FTPD, or as the middle of an upgrade: stop the server, cut
-the FMID (step 2), scratch these, then run the new release's allocation and
-install jobs.
+you mean to remove FTPD.
+
+**An upgrade does not come through here any more.** It used to: before 1.1.0 a
+new FMID could not take ownership of an element the old one held, so the only
+way forward was to cut the old id out with step 2 first. Since 1.1.0 each
+release's SYSMOD carries `++VER DELETE(<predecessor>)` and SMP moves the
+ownership itself. Install the new release over the old one and follow the
+upgrade section of its `README.md`; the only thing an upgrade still borrows
+from this document is the `DELETE` statements above, for the *previous*
+release's libraries when its data set names differed.
 
 **Do not count on the allocation job to tell you that you skipped this.** It
 allocates `DISP=(NEW,CATLG,DELETE)`, so a second run over data sets that are
