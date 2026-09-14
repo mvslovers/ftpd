@@ -122,9 +122,31 @@ since 1.1.0 the library name no longer carries the version, so that is **one
 IPL ever**, not one per release. Before 1.1.0 every release needed its own
 entry and its own IPL.
 
-APF on 3.8j is keyed by data set name **and volume serial**, so an entry that
-names `FTPD.LINKLIB` stops covering it if the library is ever moved to another
+APF on 3.8j is keyed by data set name **and volume serial** — an `IEAAPF00`
+entry reads `dsname volser`, not a name alone. So an entry naming
+`FTPD.LINKLIB` stops covering it if the library is ever moved to another
 volume.
+
+**The same rule bites the other way round, and that is the direction that
+catches people.** If the entry is already there — added ahead of the install,
+or left from a previous release — it does not merely *permit* a volume, it
+**dictates** one. The shipped allocation job says `UNIT=SYSDA` and no
+`VOL=SER`, so it puts the library wherever `SYSDA` happens to pick. If that is
+not the volume in the entry, you get a library that exists, holds the right
+module, passes every check in section 6 — and is not authorised. Pin it:
+
+```
+//LINKLIB  DD  DSN=FTPD.LINKLIB,DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSDA,VOL=SER=your-apf-volume,
+```
+
+Nothing reports the mismatch, because FTPD recovers from it: `clib_apf_setup()`
+falls back to SVC 244 and the server comes up authorised anyway. The only place
+the two are distinguishable is the startup message below — which is why
+`AUTHORIZED BY SVC` **on a system where you added an APF entry** is not a site
+decision but a symptom. Measured on mvsdev 2026-09-14 by the UFSD install,
+which walked into exactly this: an `IEAAPF00` entry for a data set that did not
+exist yet, and an allocation job free to put it anywhere.
 
 The two routes are not equivalent in one respect that matters if you ever have
 to debug FTPD. An **APF entry** authorises the job step *before* program fetch,
@@ -147,8 +169,16 @@ FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)         SVC 244, from RAKF
 
 The key is inferred from the route rather than measured — an authorised job
 step has its module fetched key 0, an unauthorised one key 8, and SVC 244
-arrives too late to change either. Neither line is a warning: both routes end
-in an authorised started task, and which one you want is a site decision.
+arrives too late to change either. Neither line is a warning *in itself*: both
+routes end in an authorised started task, and which one you want is a site
+decision.
+
+With one exception, from the paragraph above. If you put `FTPD.LINKLIB` in the
+APF list and IPL'd for it, then `AUTHORIZED BY SVC (MODULE KEY 8)` means the
+entry is not covering the library — almost always because the allocation job
+placed it on a different volume than the entry names. Without RAKF there is no
+SVC 244 to fall back on and the start fails outright, which at least says so;
+with RAKF you get a working server and no indication at all.
 
 Unlike UFSD, FTPD **warns and keeps running** when authorisation fails:
 
