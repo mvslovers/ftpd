@@ -166,11 +166,19 @@ readme = "doc/installation.md"
 # TTMP900 back to NOT FOUND alongside TTMP112).
 #
 # TFTP111 was verified free before it was claimed here, the same way TFTP110
-# and TFTP100 were: LIST CDS and LIST ACDS SYSMOD(TFTP111) both answered "THE
-# FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04 on mvsdev (MVS/CE,
-# FMIDCHK JOB00332, 2026-09-14). Not re-checked on drnmig3a (TK5) -- TFTP110
-# and TFTP100 were, on 2026-09-13 and 2026-08-13, and a check there is worth
-# doing before 1.1.1 ships.
+# and TFTP100 were. LIST CDS and LIST ACDS SYSMOD(TFTP111) both answered "THE
+# FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04 on BOTH stands we can
+# reach: mvsdev (MVS/CE, FMIDCHK JOB00332) and drnmig3a (TK5, FTPDCHK JOB00045),
+# 2026-09-14. Name the stands, not just "checked" -- a collision can be
+# distribution-specific (the E??nnnn note above, and the TMVS/TIST/TJES USERMODs
+# that exist on MVS/CE and not on TK5), so one stand cannot establish that an id
+# is free. drnmig3a has never carried an SMP-installed FTPD at all -- its
+# FTPD.LINKLIB is a hand copy SMP knows nothing about, and TFTP110 is unknown in
+# both of its zones too -- so this is a real absence and not an empty system.
+#
+# Residual: SYS1.SMPPTS was checked for TFTP members on mvsdev only. The PTS
+# holds what was RECEIVEd, which a zone LIST does not show, so an id received
+# and never applied on drnmig3a would still be missed.
 #
 # TFTP100 and TFTP110 are both spent and must never be reused. TFTP100 shipped
 # with 1.0.0 through 1.0.2. TFTP110 shipped with 1.1.0 on 2026-09-14 -- and
