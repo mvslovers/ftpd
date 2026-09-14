@@ -79,6 +79,23 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
 [dependencies]
 "mvslovers/ufsd" = ">=1.3.0"
 
+# ── Deploy (make deploy, the inner loop) ─────────────────
+# Where `make deploy` RECEIVEs the LINKLIB XMIT. Without this it would derive
+# a versioned name from the HLQ and the version -- IBMUSER.FTPD.V1R1M1D.LINKLIB
+# today -- which moves with every bump and leaves the previous one catalogued,
+# the same churn #121 took out of the release data sets. One stable name means
+# the STC procedure's STEPLIB can point at it once.
+#
+# NOT the installed library. FTPD.LINKLIB is what SMP installs into and what
+# IEAAPF00 authorises; this one is the development target and deliberately
+# separate, so a deploy cannot overwrite an installed release. It is also not
+# APF-authorised, so a module deployed here is fetched key 8 and authorises
+# itself through SVC 244 instead -- which means the AC(1) module-data trap
+# (#101) does not fire on it. Test that from FTPD.LINKLIB, not from here.
+
+[deploy]
+target = "FTPD.DEV.LINKLIB"
+
 # ── Distribution (SMP4 install package) ──────────────────
 # Turns `make package` into an installable product, the same two transports
 # ufsd ships with:
