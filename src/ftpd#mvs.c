@@ -116,7 +116,7 @@ check_dataset_access(ftpd_session_t *sess, const char *dsn, int attr)
     ** catalog all proceed on that answer, so refusing here would make FTPD
     ** stricter than every other path to the same data set on the system. */
     if (rc == FTPD_RACF_NOTPROT)
-        ftpd_log(LOG_DEBUG, "%s: %s is not protected by RAKF — allowed for %s",
+        ftpd_log(LOG_DEBUG, "%s: %s is not protected by RAKF - allowed for %s",
                  __func__, dsn, sess->user);
 
     if (!ftpd_racf_allowed(rc)) {

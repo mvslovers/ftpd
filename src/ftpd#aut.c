@@ -65,7 +65,7 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
     auth_rc = racf_auth(acee, FTPD_FACILITY_CLASS, FTPD_FACILITY_RESOURCE,
                         RACF_ATTR_READ);
     if (auth_rc == FTPD_RACF_NOTPROT)
-        ftpd_log(LOG_DEBUG, "%s: %s.%s has no profile — FTP access is open",
+        ftpd_log(LOG_DEBUG, "%s: %s.%s has no profile - FTP access is open",
                  __func__, FTPD_FACILITY_CLASS, FTPD_FACILITY_RESOURCE);
     if (!ftpd_racf_allowed(auth_rc)) {
         ftpd_log(LOG_WARN, "%s: %s not authorized for %s.%s",
@@ -138,7 +138,7 @@ ftpd_acee_enter(ftpd_session_t *sess)
 
     if (lock(&sess->server->acee_lock, LOCK_EXC) == 8)
         ftpd_log(LOG_ERROR, "%s: identity window already open on this task "
-                 "— nested enter, window exclusivity is broken", __func__);
+                 "- nested enter, window exclusivity is broken", __func__);
 
     racf_set_acee(sess->acee);
 }
