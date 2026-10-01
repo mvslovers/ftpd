@@ -12,8 +12,8 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-#include "clibgrt.h"
-#include "clibwto.h"
+#include <mvs/crt.h>
+#include <mvs/wto.h>
 #include "ftpd#log.h"
 
 /* --- Log level names --- */

@@ -1,6 +1,6 @@
 [project]
 name = "ftpd"
-version = "1.1.1-dev"
+version = "1.2.0-dev"
 type = "application"
 
 [toolchain]
@@ -12,11 +12,10 @@ type = "application"
 # Without this the release CI builds against libc370 main, which is how the
 # first 1.0.0 attempt shipped reporting "FTPD005I LIBC370 1.0.3-DEV (F14AD04)"
 # -- an unreleased runtime nobody can reproduce from a tag.
-# 1.0.6 or later is REQUIRED, not merely preferred: __fabandon() (#168) and
-# the "rlse" fopen mode keyword (#167) arrived in 1.0.5 and would not link
-# against 1.0.4, and the ENOSPC reply split (#135) is answering a condition
-# only 1.0.6 produces -- on an older runtime that same STOR abends instead.
-libc370 = "1.0.6"
+# 2.0.0 is REQUIRED: the sources include the 2.0 header tree (mvs/, ext/,
+# ibm/, sys/socket.h, ...), which 1.x does not have, and libufs.h from ufsd
+# 1.4.0-dev includes 2.0 headers too.
+libc370 = "2.0.0"
 
 [build]
 # -DVERSION from the project version (v1's mbt injected it automatically;
@@ -72,12 +71,11 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
            "src/ftpd#adr.c"]
 
 # ── Dependencies ─────────────────────────────────────────
-# Only ufsd remains a real dependency: libufs.h / libufs.a are ufsd-specific.
-# crent370 was dropped -- every crent370 header ftpd uses (clib*.h, racf.h,
-# mvssupa.h, haspjqe.h, socket.h, ...) and its runtime routines are now in
-# the cc370 sysroot (libc370), same as the ufsd v2 migration.
+# Only ufsd is a declared dependency: libufs.h / libufs.a are ufsd-specific.
+# The C runtime -- sockets, threads, JES2, RACF, dynalloc -- is libc370, the
+# cc370 sysroot, pinned in [toolchain] above rather than declared here.
 [dependencies]
-"mvslovers/ufsd" = ">=1.3.0"
+"mvslovers/ufsd" = ">=1.4.0-dev"
 
 # ── Deploy (make deploy, the inner loop) ─────────────────
 # Where `make deploy` RECEIVEs the LINKLIB XMIT. Without this it would derive
@@ -138,10 +136,12 @@ readme = "doc/installation.md"
 [distribution.smp]
 # One FMID per release, spent exactly once: the id *is* the release, not the
 # minor level. 1.0.0 through 1.0.2 were TFTP100 (the policy before this one);
-# 1.1.0 was TFTP110; this is 1.1.1, so TFTP111. CLAUDE.md carries the rule, including the one that
-# constrains versioning itself: a 7-character id has room for three version
-# digits, so no component may ever exceed 9 -- ftpd 1.1.10 cannot be expressed
-# and must not be released.
+# 1.1.0 was TFTP110; this is 1.2.0, so TFTP120. TFTP111 was assigned to a
+# 1.1.1 that was never cut -- the libc370 2.0 port made the next release 1.2.0
+# -- and is unspent and unassigned. CLAUDE.md carries the rule, including the
+# one that constrains versioning itself: a 7-character id has room for three
+# version digits, so no component may ever exceed 9 -- ftpd 1.2.10 cannot be
+# expressed and must not be released.
 #
 # `delete` is what makes a successor installable at all. SMP keys element
 # ownership on MOD(name) in the CDS, not on the library the element lives in,
@@ -155,7 +155,7 @@ readme = "doc/installation.md"
 #
 # Neither key moves on its own: `make release` bumps VERSION and the [project]
 # version and nothing else. Set `fmid` to the new id and `delete` to the one it
-# replaces *before* every release, or 1.1.1 re-spends TFTP110.
+# replaces *before* every release, or the next one re-spends TFTP120.
 #
 # A DELETE of an id the system never had is harmless -- which matters, because
 # every 1.1.0 install carries DELETE(TFTP100), including the fresh ones. SMP4
@@ -182,7 +182,13 @@ readme = "doc/installation.md"
 # a plain DEL SYSMOD(<old>) in both zones, which works (TTMPCLN JOB00311 took
 # TTMP900 back to NOT FOUND alongside TTMP112).
 #
-# TFTP111 was verified free before it was claimed here, the same way TFTP110
+# TFTP120 is free on the maintainer's word (2026-10-01): the TFTP ids are
+# assigned here and nowhere else, and he knows the systems. That is not a
+# measurement -- no LIST CDS/ACDS SYSMOD(TFTP120) was run on any stand. If a
+# check is ever run, record the stands and job numbers here, the way it was
+# done for TFTP111 below.
+#
+# TFTP111 was verified free before it was claimed, the same way TFTP110
 # and TFTP100 were. LIST CDS and LIST ACDS SYSMOD(TFTP111) both answered "THE
 # FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04 on BOTH stands we can
 # reach: mvsdev (MVS/CE, FMIDCHK JOB00332) and drnmig3a (TK5, FTPDCHK JOB00045),
@@ -211,7 +217,7 @@ readme = "doc/installation.md"
 # (FTPDINS JOB00281). TTMP112 and TTMP900 are spent from the fresh-install run
 # above (2026-09-14, JOB00307-JOB00311). TFTP110 was verified still NOT FOUND
 # in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
-fmid = "TFTP111"
+fmid = "TFTP120"
 delete = ["TFTP110"]            # the level this one replaces -- see above
 system = "Z038"
 

@@ -19,11 +19,14 @@
 
 #include "ftpd.h"
 #include "ftpd#ses.h"
-#include "clibgrt.h"
-#include "clibppa.h"
-#include "clibos.h"
-#include "clibenq.h"
-#include "clibver.h"
+#include <mvs/crt.h>
+#include <mvs/apf.h>
+#include <mvs/enq.h>
+#include <ext/version.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <mvs/socket.h>
 
 /* Forward declarations */
 static int  socket_thread(void *arg1, void *arg2);

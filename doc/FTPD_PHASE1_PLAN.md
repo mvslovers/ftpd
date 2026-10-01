@@ -9,9 +9,9 @@
 
 ## Environment Notes for Claude Code
 
-- **All mvslovers projects are in the same parent directory.** To understand crent370 APIs, look at `../crent370/include/` headers. For UFSD client APIs, look at `../ufsd/client/` and `../ufsd/include/`. For HTTPD as reference (threading, sockets, EBCDIC), look at `../httpd/src/` and `../httpd/include/`.
+- **All mvslovers projects are in the same parent directory.** To understand libc370 APIs, look at `../libc370/include/` headers. For UFSD client APIs, look at `../ufsd/client/` and `../ufsd/include/`. For HTTPD as reference (threading, sockets, EBCDIC), look at `../httpd/src/` and `../httpd/include/`.
 - **Build system is mbt.** The project uses a 2-line Makefile and `project.toml`. See `../mbt/` for build tool internals, `../mbt/examples/hello370/` for a minimal example project.
-- **Do NOT invent APIs.** Always check the actual crent370 headers before using any runtime function. If a function doesn't exist, flag it — don't guess.
+- **Do NOT invent APIs.** Always check the actual libc370 headers before using any runtime function. If a function doesn't exist, flag it — don't guess.
 - **All code is C (c2asm370 compatible).** This is GCC 3.2.3 targeting S/370. No C99+ features, no stdint.h, no variadic macros. Keep it simple.
 - **All strings are EBCDIC internally.** ASCII only on the wire (network I/O).
 - **Comments and documentation in English.**
@@ -66,11 +66,10 @@ Initialize the repository structure, build configuration, and basic infrastructu
 
 ### Dependencies
 - mbt submodule must be added and `make doctor` must pass
-- crent370 must be resolvable via `make bootstrap`
 
 ### Acceptance Criteria
 - [ ] `make doctor` passes — c2asm370 found, MVS reachable
-- [ ] `make bootstrap` completes — crent370 + ufsd resolved, datasets allocated on MVS
+- [ ] `make bootstrap` completes — ufsd resolved, datasets allocated on MVS
 - [ ] `make build` compiles `ftpdcfg.c` and `ftpdlog.c` without errors
 - [ ] Config parser correctly reads the example FTPDPM00 config (unit test or manual verification)
 - [ ] Logging produces WTO messages and STDOUT output
@@ -100,10 +99,10 @@ Main listener loop, session lifecycle management, data connection handling, and 
 - Parse PARM field for config overrides
 - Call `ftpdcfg_load()` to read config
 - Initialize logging
-- Create listening socket (crent370 socket API)
+- Create listening socket (libc370 socket API)
 - Bind to configured address:port
 - Accept loop: for each connection, spawn session thread via thdmgr
-- Console command handler (MODIFY commands via crent370 COMM interface):
+- Console command handler (MODIFY commands via libc370 COMM interface):
   - `D SESSIONS` — list active sessions (WTO response)
   - `D STATS` — show transfer statistics (WTO response)
   - `D VERSION` — show version string (WTO response)
@@ -141,7 +140,7 @@ Main listener loop, session lifecycle management, data connection handling, and 
 
 ### Dependencies
 - Step 1.1 (config, logging, headers)
-- crent370: socket API, thdmgr, COMM interface
+- libc370: socket API, thdmgr, COMM interface
 
 ### Acceptance Criteria
 - [ ] Server starts as STC (`/S FTPD`), binds to configured port, logs startup via WTO
@@ -166,7 +165,7 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 | File | Purpose |
 |------|---------|
 | `src/ftpdcmd.c` | Command parser: read line, tokenize, dispatch to handler |
-| `src/ftpdauth.c` | Authentication: USER/PASS via crent370 racf module |
+| `src/ftpdauth.c` | Authentication: USER/PASS via libc370 racf module |
 
 ### Implementation Details
 
@@ -199,7 +198,7 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 
 **ftpdauth.c — Authentication:**
 - `USER name` → Save username in session, respond `331 Send password please.` (same response regardless of whether userid exists — no user enumeration)
-- `PASS password` → Verify via crent370 `racf/` module (RAKF SVC 244)
+- `PASS password` → Verify via libc370 `racf/` module (RAKF SVC 244)
   - Check FACILITY class resource `FTPAUTH`
   - On success: set `sess->authenticated = 1`, `sess->hlq = userid`, respond `230-<userid> is logged on.  Working directory is "<userid>.".` / `230 <userid> is logged on.  Working directory is "<userid>.".`
   - On failure: increment attempt counter, respond `530 Login incorrect`
@@ -208,7 +207,7 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 
 ### Dependencies
 - Step 1.2 (session handler, reply function, data connection)
-- crent370: `racf/` module for authentication
+- libc370: `racf/` module for authentication
 
 ### Acceptance Criteria
 - [ ] FTP client can complete `USER` / `PASS` login handshake
@@ -230,7 +229,7 @@ FTP command parser, dispatcher, authentication, and basic commands that don't re
 ## Step 1.4 — MVS Dataset Access ✅ DONE
 
 ### What
-Catalog-based dataset listing, dataset I/O (read/write), and LIST formatting. Uses crent370 catalog functions (`__listds()`, `__listpd()`, `__locate()`, `__dscbdv()`, `__dsalcf()`) instead of VTOC scanning. Dataset I/O via standard C stdio (`fopen`/`fread`/`fwrite`+`fflush`/`fclose`). This is the core of Phase 1.
+Catalog-based dataset listing, dataset I/O (read/write), and LIST formatting. Uses libc370 catalog functions (`__listds()`, `__listpd()`, `__locate()`, `__dscbdv()`, `__dsalcf()`) instead of VTOC scanning. Dataset I/O via standard C stdio (`fopen`/`fread`/`fwrite`+`fflush`/`fclose`). This is the core of Phase 1.
 
 ### Files Created
 
@@ -242,14 +241,14 @@ Catalog-based dataset listing, dataset I/O (read/write), and LIST formatting. Us
 
 ### Implementation Details
 
-**Required crent370 headers:**
+**Required libc370 headers:**
 ```c
 #include "cliblist.h"    /* DSLIST, PDSLIST, ISPFSTAT, LOADSTAT, __listds(), __listpd(), __fmtisp(), __fmtloa() */
 #include "clibdscb.h"    /* DSCB, LOCWORK, __locate(), __dscbdv() */
 #include "clibio.h"      /* __dsalcf(), __dsfree() */
 ```
 
-**Catalog queries (using crent370):**
+**Catalog queries (using libc370):**
 - `LIST` on prefix → `__listds(prefix, "NONVSAM VOLUME", filter)` — returns `DSLIST**` array. Free with `__freeds()`.
 - `LIST` on PDS → `__listpd(dsname, filter)` — returns `PDSLIST**` array. Format with `__fmtisp()` (RECFM=F/V) or `__fmtloa()` (RECFM=U). Free with `__freepd()`.
 - Single dataset lookup → `__locate(dsn, &locwork)` → volser. Then `__dscbdv(dsn, vol, &dscb)` for attributes.
@@ -388,7 +387,7 @@ Verified via `test_ftpd.sh` comprehensive test suite:
 
 **Known issues tracked separately:**
 - TSK-87: AUTH TLS/SSL → 502 statt 530 (To Do, XS)
-- TSK-88: crent370 ropen/rwrite RECFM bug (Backlog, M)
+- TSK-88: libc370 ropen/rwrite RECFM bug (Backlog, M)
 - TSK-89: APPE echtes Append statt Replace (Backlog, S)
 - TSK-90: PDS Member Delete IDCAMS vs STOW (Backlog, S)
 - TSK-91: CWD multi-level navigation (Backlog, S)

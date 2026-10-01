@@ -3,7 +3,7 @@
 /*
 ** FTPD - Standalone FTP Server for MVS 3.8j
 **
-** Main header: system includes, crent370 includes, shared constants,
+** Main header: system includes, libc370 includes, shared constants,
 ** core types, and server state.  Per-module headers in ftpd#xxx.h.
 */
 #include <stddef.h>
@@ -15,14 +15,12 @@
 #include <time.h>
 #include <errno.h>
 
-#include "clibcrt.h"                /* C runtime area               */
-#include "clibwto.h"                /* write to operator            */
-#include "clibthrd.h"               /* basic threads                */
-#include "clibthdi.h"               /* thread management            */
-#include "clibcib.h"                /* console information blocks   */
-#include "socket.h"                 /* sockets via DYN75            */
-#include "racf.h"                   /* security environment         */
-#include "clibtry.h"                /* try(), tryrc() ESTAE recovery */
+#include <mvs/crt.h>                /* C runtime area               */
+#include <mvs/wto.h>                /* write to operator            */
+#include <mvs/thread.h>             /* threads, thread management   */
+#include <mvs/console.h>            /* console information blocks   */
+#include <mvs/racf.h>               /* security environment         */
+#include <mvs/recovery.h>           /* try(), tryrc() ESTAE recovery */
 
 #include "ftpd#adr.h"               /* address parameter parsing    */
 #include "ftpd#cfg.h"               /* configuration                */

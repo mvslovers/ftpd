@@ -1,7 +1,7 @@
 #ifndef FTPD_AUT_H
 #define FTPD_AUT_H
 /*
-** FTPD Authentication via RAKF (crent370 racf module)
+** FTPD Authentication via RAKF (libc370 racf module)
 */
 
 /*

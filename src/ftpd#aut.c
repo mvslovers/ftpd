@@ -1,13 +1,13 @@
 /*
 ** FTPD Authentication
 **
-** RAKF-based authentication via crent370 racf module.
+** RAKF-based authentication via libc370 racf module.
 ** Verifies userid/password and checks FACILITY class FTPAUTH.
 */
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
-#include "cliblock.h"               /* lock()/unlock() — identity window */
+#include <mvs/lock.h>               /* lock()/unlock() — identity window */
 
 #define FTPD_MAX_AUTH_ATTEMPTS  3
 #define FTPD_FACILITY_RESOURCE  "FTPAUTH"

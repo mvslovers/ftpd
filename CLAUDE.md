@@ -36,16 +36,17 @@ register loaded from `=A(@Vn)` or into an X-var.
 
 ### Dependencies
 
-- **crent370** (required): C runtime — sockets, thdmgr (threads), jes, racf, os, emfile, ipc
-- **ufsd** (soft/optional): UFS filesystem access via cross-address-space client library.
+- **libc370 2.0** (required): the C runtime, from the cc370 sysroot (`[toolchain] libc370`) —
+  sockets, threads, JES2, RACF, dynalloc. Not a `[dependencies]` entry.
+- **ufsd** (soft/optional, `>=1.4.0-dev` — the first libc370 2.0 build): UFS filesystem access via cross-address-space client library.
   If UFSD not running, UFS commands return `550 UFS service not available`.
 
 ### Architecture Summary
 
-- **Threading:** One thread per client session via crent370 `thdmgr`
+- **Threading:** One thread per client session via the libc370 thread manager (`<mvs/thread.h>`)
 - **Encoding:** EBCDIC internal, ASCII conversion at network I/O boundary (`ftpdxlat`)
 - **Dataset catalog:** Abstract provider interface; initial impl = per-session filtered VTOC scan
-- **Auth:** RAKF via crent370 `racf` module (FACILITY class FTPAUTH)
+- **Auth:** RAKF via libc370 `<mvs/racf.h>` (FACILITY class FTPAUTH)
 - **Config:** Key=value file via `DD:FTPDPRM` (JCL: `//FTPDPRM DD DSN=&D(&M),DISP=SHR,FREE=CLOSE`)
 - **Console:** `/S FTPD`, `/P FTPD`, `/F FTPD,STATS|SESSIONS|CONFIG|VERSION|HELP|SHUTDOWN`, `/F FTPD,TRACE ON|OFF|DUMP`
 
@@ -64,7 +65,7 @@ Naming convention follows UFSD: `ftpd#xxx.c` / `ftpd#xxx.h` with 3-letter domain
 | `ftpd#jes.c` | JES interface (submit, list, retrieve spool) |
 | `ftpd#dat.c` | Data connection management (PORT/PASV) |
 | `ftpd#xlt.c` | EBCDIC ↔ ASCII translation tables |
-| `ftpd#aut.c` | Authentication (RAKF via crent370 racf) |
+| `ftpd#aut.c` | Authentication (RAKF via libc370 racf) |
 | `ftpd#sit.c` | SITE command processing |
 | `ftpd#lst.c` | LIST/NLST formatting (MVS + UFS + JES) |
 | `ftpd#log.c` | Logging (WTO + STDOUT) + trace ring buffer |
@@ -86,17 +87,19 @@ its predecessor:
 
 ```toml
 [distribution.smp]
-fmid   = "TFTP110"
-delete = ["TFTP100"]
+fmid   = "TFTP120"
+delete = ["TFTP110"]
 ```
 
 **No version component may ever exceed 9** — a 7-character id has no room for
 a second digit. At patch 9 cut the next minor, at minor 9 the next major;
-ftpd 1.1.10 cannot be expressed and must not be released.
+ftpd 1.2.10 cannot be expressed and must not be released.
 
-Current: **`TFTP110`** for 1.1.0, deleting `TFTP100`. `TFTP110` is still unspent
-(1.1.0 is unreleased), so it stays; `TFTP100` shipped with 1.0.0–1.0.2 and is
-burned.
+Current: **`TFTP120`** for 1.2.0, deleting `TFTP110`. `TFTP120` is free on the
+maintainer's word (only this project assigns `TFTP` ids); no `LIST` was run on
+any stand. `TFTP111` was assigned to a 1.1.1 that was never cut (the
+libc370 2.0 port made the next release 1.2.0) and is unspent and unassigned.
+Burned: `TFTP100` (1.0.0–1.0.2) and `TFTP110` (1.1.0, released 2026-09-14).
 
 Never re-spend an id, and never install a test package under the real one: a
 test needs a throwaway id **and** throwaway module names, because SMP keys

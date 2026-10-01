@@ -42,8 +42,8 @@
 #include <string.h>
 #include <errno.h>
 
-#include <clibio.h>
-#include <clibwto.h>
+#include <mvs/dynalloc.h>
+#include <mvs/wto.h>
 #include <mbtcheck.h>
 
 #include "ftpd#cfg.h"

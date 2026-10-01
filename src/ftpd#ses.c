@@ -11,9 +11,12 @@
 #include "ftpd#cmd.h"
 #include "ftpd#dat.h"
 #include "ftpd#ufs.h"
-#include "mvssupa.h"                /* idcams()                        */
 #include "libufs.h"                 /* UFSFILE, ufs_fclose()          */
-#include "cliblock.h"               /* unlock() — identity window ENQ */
+#include <mvs/lock.h>               /* unlock() — identity window ENQ */
+#include <mvs/file.h>               /* __fabandon()                   */
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <mvs/socket.h>
 
 /* --------------------------------------------------------------------
 ** Allocate and initialize a new session
@@ -336,7 +339,7 @@ ftpd_session_scratch(ftpd_session_t *sess)
 /* --------------------------------------------------------------------
 ** Per-command ABEND recovery.
 **
-** Runs after try() catches an ABEND in ftpd_run_command().  crent370's
+** Runs after try() catches an ABEND in ftpd_run_command().  libc370's
 ** try() is SDWA-retry that unwinds the stack back to the try() frame and
 ** resumes in normal task mode, so this handler runs on a valid stack and
 ** may use ordinary services (racf_set_acee, fclose, send, WTO).  The
