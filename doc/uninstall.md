@@ -19,11 +19,14 @@ its FMID for a re-install.
 | Distribution library | `FTPD.AFTPDLOD` |
 | Sample library | `FTPD.SAMPLIB` |
 
-**Substitute the FMID of the release you are removing** in every job below.
 Since 1.1.0 there is one FMID per *release*: `TFTP110` is 1.1.0 and nothing
 else, `TFTP120` is 1.2.0. `TFTP100` is the exception, from the policy that
 came before it -- it covered 1.0.0, 1.0.1 and 1.0.2 alike. `LIST CDS
-SYSMOD(...)` tells you which one a system carries.
+SYSMOD(...)` tells you which one a system carries. In the job below only the
+`MOD(FTPD)` lines name the release you are removing: **substitute its FMID
+there**. The `DEL SYSMOD` lines name every id FTPD has ever spent, and stay as
+they are -- see
+[Why the job names ids you never installed](#why-the-job-names-ids-you-never-installed).
 
 The data set names are the same in every release. Before 1.1.0 they carried the
 patch level (`FTPD.V1R0M2.LINKLIB`) while the FMID moved only per minor, so two
@@ -54,15 +57,17 @@ Submit this. It edits the CDS and the ACDS and touches no library:
 //UCLIN   EXEC SMPAPP
 //SMPCNTL  DD  *
  UCLIN CDS .
-  DEL SYSMOD(TFTP110) MOD(FTPD) .
+  DEL SYSMOD(TFTP120) MOD(FTPD) .
   DEL MOD(FTPD) .
   DEL LMOD(FTPD) .
+  DEL SYSMOD(TFTP120) .
   DEL SYSMOD(TFTP110) .
   DEL SYSMOD(TFTP100) .
  ENDUCL .
  UCLIN ACDS .
-  DEL SYSMOD(TFTP110) MOD(FTPD) .
+  DEL SYSMOD(TFTP120) MOD(FTPD) .
   DEL MOD(FTPD) .
+  DEL SYSMOD(TFTP120) .
   DEL SYSMOD(TFTP110) .
   DEL SYSMOD(TFTP100) .
  ENDUCL .
@@ -70,6 +75,8 @@ Submit this. It edits the CDS and the ACDS and touches no library:
 //LIST    EXEC SMPAPP
 //SMPCNTL  DD  *
  RESETRC .
+ LIST CDS  SYSMOD(TFTP120) .
+ LIST ACDS SYSMOD(TFTP120) .
  LIST CDS  SYSMOD(TFTP110) .
  LIST ACDS SYSMOD(TFTP110) .
  LIST CDS  SYSMOD(TFTP100) .
@@ -81,26 +88,36 @@ Submit this. It edits the CDS and the ACDS and touches no library:
 Every `DEL` reports `HMA2550 UPDATE COMPLETE`, and each `UCLIN` block ends
 `RC 00`.
 
-### Why `TFTP100` is in a job that removes `TFTP110`
+### Why the job names ids you never installed
 
-Because installing 1.1.0 left an entry for it. The 1.1.0 SYSMOD carries
-`++VER(Z038) DELETE(TFTP100)`, and SMP records that deletion in both zones as
-a tombstone -- even on a system that never ran 1.0.x:
+Because every upgrade leaves one behind. A release's SYSMOD deletes the one
+before it -- 1.1.0 carries `++VER(Z038) DELETE(TFTP100)`, 1.2.0
+`DELETE(TFTP110)` -- and SMP records each deletion in both zones as a
+tombstone, even on a system that never ran the deleted release:
 
 ```
 TFTP100   TYPE  = FUNCTION
           DELBY = TFTP110
 ```
 
-Removing `TFTP110` without removing that leaves the tombstone pointing at a
-SYSMOD which is no longer there. It is harmless in itself, but it is also the
-thing that makes `LIST` ambiguous afterwards -- see the next section. A plain
-`DEL SYSMOD(TFTP100)` clears it; measured on mvsdev 2026-09-14 with throwaway
-ids (`TTMPCLN JOB00311`), where it took the tombstone back to `NOT FOUND`
-alongside the SYSMOD that created it.
+**Tombstones accumulate, one per upgrade.** A system that went 1.0.x → 1.1.0 →
+1.2.0 holds two: `TFTP100` marked `DELBY = TFTP110`, and `TFTP110` marked
+`DELBY = TFTP120`. Deleting the release and its immediate predecessor clears
+the newer one and leaves the older standing for good -- and because the `LIST`
+below only asks about the ids it names, the job would report success while a
+tombstone survives. A tombstone is harmless in itself, but it is what makes
+`LIST` ambiguous afterwards -- see the next section.
 
-Substitute the predecessor of whatever you are removing: for `TFTP120` that
-is `TFTP110`.
+A plain `DEL SYSMOD` clears one; measured on mvsdev 2026-09-14 with throwaway
+ids (`TTMPCLN JOB00311`), where it took the tombstone back to `NOT FOUND`
+alongside the SYSMOD that created it. An id that was never on this system
+simply reports nothing to do, so every line is safe whether it hits or not.
+**That is the whole reason the list is unconditional**: it needs no judgement
+from you about which releases this system has seen, and getting that judgement
+wrong is exactly the failure it prevents.
+
+Each release adds its id here -- the list grows one line per release, on the
+same cadence as the `fmid` bump in `project.toml`.
 
 ## 3. Read the LIST — this is the actual result
 
@@ -130,8 +147,8 @@ TFTP100   TYPE  = FUNCTION
 That is a tombstone, not an installation: no `STATUS`, no `FMID`, no elements.
 Read the stanza rather than the return code — `RC 00` here does not mean
 something is installed, and it is what you will see for `TFTP100` on any system
-that installed 1.1.0, including one that never ran 1.0.x. The `DEL
-SYSMOD(TFTP100)` above is what clears it.
+that installed 1.1.0 or later, including one that never ran 1.0.x. The `DEL
+SYSMOD` lines above are what clear it.
 
 ## 4. Scratch the libraries
 
