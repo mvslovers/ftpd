@@ -95,8 +95,9 @@ delete = ["TFTP110"]
 a second digit. At patch 9 cut the next minor, at minor 9 the next major;
 ftpd 1.2.10 cannot be expressed and must not be released.
 
-Current: **`TFTP120`** for 1.2.0, deleting `TFTP110`. `TFTP120` is not yet
-checked on any stand. `TFTP111` was assigned to a 1.1.1 that was never cut (the
+Current: **`TFTP120`** for 1.2.0, deleting `TFTP110`. `TFTP120` is free on the
+maintainer's word (only this project assigns `TFTP` ids); no `LIST` was run on
+any stand. `TFTP111` was assigned to a 1.1.1 that was never cut (the
 libc370 2.0 port made the next release 1.2.0) and is unspent and unassigned.
 Burned: `TFTP100` (1.0.0–1.0.2) and `TFTP110` (1.1.0, released 2026-09-14).
 
