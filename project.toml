@@ -1,6 +1,6 @@
 [project]
 name = "ftpd"
-version = "1.1.1-dev"
+version = "1.2.0-dev"
 type = "application"
 
 [toolchain]
@@ -138,10 +138,12 @@ readme = "doc/installation.md"
 [distribution.smp]
 # One FMID per release, spent exactly once: the id *is* the release, not the
 # minor level. 1.0.0 through 1.0.2 were TFTP100 (the policy before this one);
-# 1.1.0 was TFTP110; this is 1.1.1, so TFTP111. CLAUDE.md carries the rule, including the one that
-# constrains versioning itself: a 7-character id has room for three version
-# digits, so no component may ever exceed 9 -- ftpd 1.1.10 cannot be expressed
-# and must not be released.
+# 1.1.0 was TFTP110; this is 1.2.0, so TFTP120. TFTP111 was assigned to a
+# 1.1.1 that was never cut -- the libc370 2.0 port made the next release 1.2.0
+# -- and is unspent and unassigned. CLAUDE.md carries the rule, including the
+# one that constrains versioning itself: a 7-character id has room for three
+# version digits, so no component may ever exceed 9 -- ftpd 1.2.10 cannot be
+# expressed and must not be released.
 #
 # `delete` is what makes a successor installable at all. SMP keys element
 # ownership on MOD(name) in the CDS, not on the library the element lives in,
@@ -155,7 +157,7 @@ readme = "doc/installation.md"
 #
 # Neither key moves on its own: `make release` bumps VERSION and the [project]
 # version and nothing else. Set `fmid` to the new id and `delete` to the one it
-# replaces *before* every release, or 1.1.1 re-spends TFTP110.
+# replaces *before* every release, or the next one re-spends TFTP120.
 #
 # A DELETE of an id the system never had is harmless -- which matters, because
 # every 1.1.0 install carries DELETE(TFTP100), including the fresh ones. SMP4
@@ -182,7 +184,11 @@ readme = "doc/installation.md"
 # a plain DEL SYSMOD(<old>) in both zones, which works (TTMPCLN JOB00311 took
 # TTMP900 back to NOT FOUND alongside TTMP112).
 #
-# TFTP111 was verified free before it was claimed here, the same way TFTP110
+# TFTP120 HAS NOT BEEN CHECKED ON ANY STAND YET. Before 1.2.0 is released, run
+# LIST CDS and LIST ACDS SYSMOD(TFTP120) on both stands and record the job
+# numbers here, the way it was done for TFTP111 below.
+#
+# TFTP111 was verified free before it was claimed, the same way TFTP110
 # and TFTP100 were. LIST CDS and LIST ACDS SYSMOD(TFTP111) both answered "THE
 # FOLLOWING SELECTED ENTRIES WERE NOT FOUND" with RC 04 on BOTH stands we can
 # reach: mvsdev (MVS/CE, FMIDCHK JOB00332) and drnmig3a (TK5, FTPDCHK JOB00045),
@@ -211,7 +217,7 @@ readme = "doc/installation.md"
 # (FTPDINS JOB00281). TTMP112 and TTMP900 are spent from the fresh-install run
 # above (2026-09-14, JOB00307-JOB00311). TFTP110 was verified still NOT FOUND
 # in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
-fmid = "TFTP111"
+fmid = "TFTP120"
 delete = ["TFTP110"]            # the level this one replaces -- see above
 system = "Z038"
 
