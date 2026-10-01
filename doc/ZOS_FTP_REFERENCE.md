@@ -923,9 +923,9 @@ SITE FILETYPE=SEQ
 
 - **JES mode:** Implement as a session state flag. When FILETYPE=JES, LIST/RETR/STOR/DELE
   operate on JES spool instead of datasets.
-- **Job submission:** Use crent370 `jes` module to write JCL to internal reader.
+- **Job submission:** Use libc370 `jes` module to write JCL to internal reader.
   Return the assigned JOB ID in the 250 response.
-- **Job listing:** Use crent370 `jes` module to enumerate jobs. Match the z/OS
+- **Job listing:** Use libc370 `jes` module to enumerate jobs. Match the z/OS
   column format for client parsing compatibility.
 - **Job ID format:** MVS 3.8j JES2 uses `JOBnnnnn` (5 digits) format, not the
   z/OS `J0nnnnnn` (7 digits) format. Our LIST output should use the native

@@ -1,7 +1,7 @@
 /*
 ** FTPD MVS Dataset Operations
 **
-** Catalog-based dataset access using crent370:
+** Catalog-based dataset access using libc370:
 ** - CWD: navigate dataset prefixes (quoted=absolute, unquoted=relative)
 ** - LIST/NLST: __listds() for datasets, __listpd() for PDS members
 ** - SIZE: __locate() + __dscbdv() for DSCB attributes
@@ -1307,7 +1307,7 @@ ftpd_mvs_retr(ftpd_session_t *sess, const char *arg)
     ** fopen's dynalloc DD) if the transfer below ABENDs. */
     sess->cur_file = fp;
 
-    /* Read LRECL/RECFM from file handle — crent370 populates from DCB.
+    /* Read LRECL/RECFM from file handle — libc370 populates from DCB.
     ** For RECFM=U, lrecl is 0; use blksize instead (mvsmf pattern). */
     is_fixed = (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_F;
     {
@@ -1551,7 +1551,7 @@ alloc_new_dataset(ftpd_session_t *sess, const char *dsn,
                   int is_pds, char *ddout)
 {
     /*
-    ** Use the __fildef pattern from crent370 but with custom params.
+    ** Use the __fildef pattern from libc370 but with custom params.
     ** Build SVC99 text units directly (same as @@fildef.c).
     */
     struct rb99_local {
@@ -2002,7 +2002,7 @@ ftpd_mvs_stor(ftpd_session_t *sess, const char *arg)
     }
 
     /* Step 2: Build fopen filename — single-quoted for fully qualified DSN.
-    ** Always open with just "wb" — crent370 reads DCB from DSCB. */
+    ** Always open with just "wb" — libc370 reads DCB from DSCB. */
     if (member[0])
         snprintf(fname, sizeof(fname), "'%s(%s)'", dsn, member);
     else

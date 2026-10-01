@@ -9,7 +9,7 @@
 
 ## Environment Notes for Claude Code
 
-- Same as Phase 1. Additionally: check `../crent370/jes/` for JES2 interaction APIs (internal reader, job status, spool access).
+- Same as Phase 1. Additionally: check `../libc370/jes/` for JES2 interaction APIs (internal reader, job status, spool access).
 - The `SITE FILETYPE=JES` mode switch was already stubbed in Phase 1 Step 1.5. This phase implements the actual JES logic behind it.
 - Reference: check how HTTPD's JES2 integration works at `../httpd/src/` (HTTPJES2 module).
 
@@ -31,7 +31,7 @@ When `SITE FILETYPE=JES` is active, `STOR` submits JCL to JES via the internal r
 
 **ftpdjes.c — Job Submission:**
 - `ftpd_jes_submit(sess)` — Called when STOR is issued in JES mode:
-  1. Open internal reader programmatically via crent370's `jes/` module
+  1. Open internal reader programmatically via libc370's `jes/` module
   2. Read JCL records from data connection
   3. Translate ASCII → EBCDIC (TYPE A) or pass through (TYPE E)
   4. Write each 80-byte record to internal reader
@@ -45,7 +45,7 @@ When `SITE FILETYPE=JES` is active, `STOR` submits JCL to JES via the internal r
 
 ### Dependencies
 - Phase 1 (data connections, command dispatcher, SITE FILETYPE switch)
-- crent370: `jes/` module (internal reader open/write/close)
+- libc370: `jes/` module (internal reader open/write/close)
 
 ### Acceptance Criteria
 - [ ] `SITE FILETYPE=JES` → `200 SITE command was accepted`
@@ -66,7 +66,7 @@ When `SITE FILETYPE=JES` is active, `STOR` submits JCL to JES via the internal r
 
 **ftpdjes.c — Job Listing:**
 - `ftpd_jes_list(sess)` — Called when LIST is issued in JES mode:
-  1. Query JES2 via crent370's `jes/` module
+  1. Query JES2 via libc370's `jes/` module
   2. Apply filters: `sess->jes_owner`, `sess->jes_jobname`, `sess->jes_status`
   3. Format output in z/OS-compatible format
   4. Send on data connection
@@ -105,7 +105,7 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 
 ### Dependencies
 - Step 2.1 (ftpdjes.c base)
-- crent370: `jes/` module (job status query)
+- libc370: `jes/` module (job status query)
 
 ### Acceptance Criteria
 - [ ] `LIST` in JES mode returns job listing in z/OS-compatible format
@@ -130,7 +130,7 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 **ftpdjes.c — Spool Retrieval:**
 - `ftpd_jes_retrieve(sess, jobspec)` — Called when RETR is issued in JES mode:
   - Parse jobspec: `JOBnnnnn` (all spool) or `JOBnnnnn.n` (specific spool file, numbering starts at **1**)
-  - Access spool data via crent370's `jes/` module
+  - Access spool data via libc370's `jes/` module
   - For all-spool retrieval: concatenate spool files, separated by ` !! END OF JES SPOOL FILE !!` (space-prefixed, exact z/OS string)
   - Translate EBCDIC → ASCII for TYPE A
   - Send on data connection
@@ -142,7 +142,7 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 **ftpdjes.c — Job Purge:**
 - `ftpd_jes_delete(sess, jobspec)` — Called when DELE is issued in JES mode:
   - Parse job ID from `JOBnnnnn`
-  - Purge job via crent370's `jes/` module
+  - Purge job via libc370's `jes/` module
   - Reply: `250 Cancel successful` (matches z/OS response text)
 - Security: only allow purge of own jobs (or jobs matching JESINTERFACELEVEL rules)
 
@@ -156,7 +156,7 @@ IBMUSERJ JOB00042 STEP1             A SYSPRINT      8901
 
 ### Dependencies
 - Steps 2.1 + 2.2
-- crent370: `jes/` module (spool read, job purge)
+- libc370: `jes/` module (spool read, job purge)
 
 ### Acceptance Criteria
 - [ ] `RETR JOBnnnnn` retrieves all spool output for the job

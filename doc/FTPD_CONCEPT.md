@@ -42,9 +42,9 @@ Build a **new, standalone FTP server** for MVS 3.8j that:
 2. Implements **z/OS-compatible FTP features** (SITE FILETYPE=JES, job submission, spool retrieval)
 3. Is a **standalone daemon** — not tied to HTTPD
 4. Uses **mbt** (MVS Build Tool) with `project.toml` for the build pipeline
-5. Uses **crent370** as C runtime (including its `thdmgr`, `jes`, `racf`, `os` modules)
+5. Uses **libc370** as C runtime (including its `thdmgr`, `jes`, `racf`, `os` modules)
 6. Has a **clean, modular architecture** designed for maintainability
-7. Provides **RAKF/credentials-based authentication** via crent370's `racf` module
+7. Provides **RAKF/credentials-based authentication** via libc370's `racf` module
 
 ### 1.3 Non-Goals (v1.0)
 
@@ -299,7 +299,7 @@ When `SITE FILETYPE=JES` is active, FTP commands change meaning:
 - Level 1: Job name must match userid (or userid + 1 char). Simple, secure.
 - Level 2: Any job name. `SITE JESOWNER=*` required to list all own jobs. More flexible.
 
-Implementation uses crent370's `jes/` module for JES2 interaction (internal reader opened programmatically).
+Implementation uses libc370's `jes/` module for JES2 interaction (internal reader opened programmatically).
 
 ### 2.6 Transfer Mode Details
 
@@ -366,7 +366,7 @@ Per z/OS behavior, the following commands are allowed before USER/PASS: SYST, FE
                    │     │  │(STC)│  │       space server   │
                    │     │  └─────┘  │                      │
                    │   ┌─┴───────────┴──┐                   │
-                   │   │   crent370      │  ◄── C Runtime   │
+                   │   │   libc370      │  ◄── C Runtime   │
                    │   │ (os, jes, racf, │      (sockets,   │
                    │   │  thdmgr, ipc)   │       threads,   │
                    │   └─────────────────┘       I/O)       │
@@ -390,7 +390,7 @@ ftpd/
 │   ├── ftpdjes.c           # JES interface (submit, list, retrieve spool)
 │   ├── ftpddata.c          # Data connection management (PORT/PASV)
 │   ├── ftpdxlat.c          # EBCDIC ↔ ASCII translation tables
-│   ├── ftpdauth.c          # Authentication (RAKF via crent370 racf module)
+│   ├── ftpdauth.c          # Authentication (RAKF via libc370 racf module)
 │   ├── ftpdsite.c          # SITE command processing
 │   ├── ftpdlist.c          # LIST/NLST formatting (MVS + UFS + JES formats)
 │   ├── ftpdlog.c           # Logging (WTO messages, STDOUT)
@@ -450,7 +450,6 @@ blksize = 32760
 space   = ["TRK", 10, 5, 5]
 
 [dependencies]
-"mvslovers/crent370" = ">=1.0.0"
 "mvslovers/ufsd"     = ">=0.1.0"
 
 [link.module]
@@ -463,7 +462,7 @@ mvs = true
 
 ### 3.4 Session State Machine
 
-Each FTP connection is managed by a dedicated thread (via crent370's `thdmgr`):
+Each FTP connection is managed by a dedicated thread (via libc370's `thdmgr`):
 
 ```
   CONNECT
@@ -582,12 +581,12 @@ typedef struct ftpd_config {
 
 ### 3.6 Threading Model
 
-The server uses crent370's **thdmgr** (Thread Manager) for concurrency:
+The server uses libc370's **thdmgr** (Thread Manager) for concurrency:
 
 1. **Main thread:** Listener on control port, accepts connections, manages shutdown, processes MVS console commands
 2. **Session threads:** One thread per client connection, managed by thdmgr. Each thread owns its session state and runs the command-response loop independently.
 
-This is the same proven model used by HTTPD. The thdmgr handles thread creation, pooling, and cleanup. Socket I/O uses crent370's socket API.
+This is the same proven model used by HTTPD. The thdmgr handles thread creation, pooling, and cleanup. Socket I/O uses libc370's socket API.
 
 ### 3.7 Data Connection Handling
 
@@ -625,13 +624,13 @@ All internal processing is in **EBCDIC** (native MVS). Translation at the networ
 
 ### 4.1 Dataset Access
 
-**Dataset I/O via crent370 standard C stdio (fopen/fread/fwrite/fclose):**
+**Dataset I/O via libc370 standard C stdio (fopen/fread/fwrite/fclose):**
 
-The server uses crent370's standard C stream I/O for all dataset access. The crent370 stdio layer handles RECFM-specific record blocking, DASD I/O, and DCB attribute management internally. Key I/O patterns (validated via mvsMF DSAPI, `../mvsmf/src/dsapi.c`):
+The server uses libc370's standard C stream I/O for all dataset access. The libc370 stdio layer handles RECFM-specific record blocking, DASD I/O, and DCB attribute management internally. Key I/O patterns (validated via mvsMF DSAPI, `../mvsmf/src/dsapi.c`):
 
 **Reading datasets (RETR):**
 ```c
-FILE *fp = fopen("'IBMUSER.DATASET'", "rb");    /* crent370 reads DCB from DSCB */
+FILE *fp = fopen("'IBMUSER.DATASET'", "rb");    /* libc370 reads DCB from DSCB */
 int lrecl = fp->lrecl;                           /* get LRECL from file handle */
 char *buf = calloc(1, lrecl);
 while (fread(buf, 1, lrecl, fp) > 0) {
@@ -658,7 +657,7 @@ fclose(fp);                                       /* releases dataset + ENQ */
 ```
 
 **Key learnings from Phase 1 implementation:**
-- crent370 `fwrite()` for FB datasets needs exact LRECL-sized writes + `fflush()` after each record
+- libc370 `fwrite()` for FB datasets needs exact LRECL-sized writes + `fflush()` after each record
 - Raw TCP chunk passthrough to `fwrite()` does NOT work (data corruption)
 - `recv()` must be limited to `lrecl - recpos` (space remaining in current record)
 - `fopen()` with DCB params in mode string (`"wb,recfm=FB,lrecl=80"`) is unreliable for binary writes
@@ -673,23 +672,23 @@ snprintf(opts, sizeof(opts),
     "DSN=%s;DISP=(NEW,CATLG,DELETE);DSORG=PS;RECFM=%s;"
     "LRECL=%d;BLKSIZE=%d;SPACE=%s(%d,%d)",
     dsname, recfm, lrecl, blksize, alcunit, primary, secondary);
-__dsalcf(ddname, "%s", opts);     /* crent370 SVC 99 wrapper */
+__dsalcf(ddname, "%s", opts);     /* libc370 SVC 99 wrapper */
 __dsfree(ddname);                  /* free DD, dataset stays cataloged */
 /* Then fopen("'DSN'", "wb") to write */
 ```
 Pattern from mvsMF `datasetCreateHandler()` (dsapi.c lines 1794-1813).
 
-**Deleting datasets:** `remove("'DSN'")` — uncatalogs and scratches (crent370 wrapper for SCRATCH SVC 29).
+**Deleting datasets:** `remove("'DSN'")` — uncatalogs and scratches (libc370 wrapper for SCRATCH SVC 29).
 
 **Dataset catalog operations:**
 - `__locate(dsn, &locwork)` — SVC 26 catalog lookup, returns volser
 - `__dscbdv(dsn, vol, &dscb)` — SVC 27 OBTAIN, returns DSCB (RECFM, LRECL, BLKSIZE, DSORG, etc.)
 
-### 4.2 Dataset Catalog — crent370 Catalog Functions (Option D)
+### 4.2 Dataset Catalog — libc370 Catalog Functions (Option D)
 
 **Design principle:** Use the MVS catalog (CVOL) as the primary data source, not VTOC scanning. This eliminates the need for DASD volume configuration, startup scans, and per-session caches. Only cataloged datasets are listed; uncataloged datasets are accessible via `SITE VOLUME=xxx`.
 
-**crent370 functions used:**
+**libc370 functions used:**
 
 | Function | Purpose | Used by |
 |----------|---------|---------|
@@ -707,7 +706,7 @@ Pattern from mvsMF `datasetCreateHandler()` (dsapi.c lines 1794-1813).
 - `CWD` only sets the dataset name prefix — no I/O, no scan. Wildcards rejected with `501`.
 - `LIST` calls `__listds()` with the current prefix as level and optional filter pattern. Returns `DSLIST` array with DSN, Volser, DSORG, RECFM, LRECL, BLKSIZE, dates, space usage. Dsname shown **relative** to current prefix.
 - `LIST` on PDS calls `__listpd()` with optional member filter. `__fmtisp()` formats ISPF stats for RECFM=F/V, `__fmtloa()` formats load module stats for RECFM=U.
-- `RETR` / `STOR` / `DELE` use standard C `fopen()`/`fread()`/`fwrite()`/`fclose()`. crent370 handles catalog lookup and DCB internally.
+- `RETR` / `STOR` / `DELE` use standard C `fopen()`/`fread()`/`fwrite()`/`fclose()`. libc370 handles catalog lookup and DCB internally.
 - `CWD` into a PDS (without trailing dot): `__dscbdv()` checks DSORG=PO to enter PDS context.
 - No global startup scan — the server starts immediately.
 - No cache — each `LIST` queries the catalog directly (IDCAMS LISTC is fast for filtered queries).
@@ -732,27 +731,27 @@ LIST                → VTOC scan on WORK01 only
 
 ### 4.3 JES2 Interface
 
-JES2 integration leverages crent370's `jes/` module and the internal reader DD:
+JES2 integration leverages libc370's `jes/` module and the internal reader DD:
 
 **Job Submission:**
-1. Open internal reader programmatically via crent370's `jes/` module
+1. Open internal reader programmatically via libc370's `jes/` module
 2. Write JCL records to internal reader
 3. Parse JES2 response messages for job number
 4. Return: `250-It is known to JES as JOBnnnnn`
 
 **Job Status Query:**
-- Use crent370's `jes/` module for job status queries
+- Use libc370's `jes/` module for job status queries
 - Return job list in z/OS-compatible format
 
 **Spool File Retrieval:**
-- Use crent370's `jes/` module for spool dataset access
+- Use libc370's `jes/` module for spool dataset access
 - Read and return spool content
 
 ### 4.4 UFS Integration via UFSD
 
 **UFSD** (mvslovers/ufsd) is a Cross-Address-Space Filesystem Server. It runs as its own started task and provides filesystem services to client programs in other address spaces.
 
-Our FTPD links against the **UFSD client library** and communicates with the UFSD server via cross-memory services (PC routines or similar IPC mechanism from crent370's `ipc/` module).
+Our FTPD links against the **UFSD client library** and communicates with the UFSD server via cross-memory services (PC routines or similar IPC mechanism from libc370's `ipc/` module).
 
 Operations via UFSD client:
 - `ufs_open()`, `ufs_read()`, `ufs_write()`, `ufs_close()`
@@ -764,7 +763,7 @@ If UFSD is not running, UFS commands return `550 UFS service not available`.
 
 ### 4.5 Authentication and Access Control
 
-Authentication uses crent370's `racf/` module (which integrates with RAKF on MVS/CE).
+Authentication uses libc370's `racf/` module (which integrates with RAKF on MVS/CE).
 RAKF is required — there is no insecure bypass mode.
 
 **Login flow:**
@@ -916,7 +915,7 @@ include $(MBT_ROOT)/mk/core.mk
 **Build commands:**
 ```bash
 make doctor         # Verify environment (Python, c2asm370, MVS connectivity)
-make bootstrap      # Resolve deps (crent370, ufsd), upload to MVS, allocate datasets
+make bootstrap      # Resolve deps (ufsd), upload to MVS, allocate datasets
 make build          # Cross-compile + assemble (incremental)
 make link           # Final linkedit → FTPD load module
 make package        # Create release artifacts in dist/
@@ -926,8 +925,10 @@ make package        # Create release artifacts in dist/
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `mvslovers/crent370` | `>=1.0.0` | C runtime: sockets, threads (thdmgr), JES, RACF, IPC, OS, memory |
 | `mvslovers/ufsd` | `>=0.1.0` | UFSD client library for UFS filesystem access |
+
+The C runtime (sockets, threads, JES, RACF, OS, memory) is libc370, the cc370
+sysroot: pinned in `[toolchain]`, not declared as a dependency.
 
 These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs.lock`) ensures reproducible builds.
 
@@ -952,14 +953,14 @@ These are resolved automatically by mbt via GitHub Releases. Lockfile (`.mbt/mvs
 - Implement `ftpdlog.c` (WTO messages + STDOUT logging)
 
 **Step 1.2 — Network layer**
-- `ftpd.c` — Main listener: socket, bind, listen, accept loop via crent370 socket API
+- `ftpd.c` — Main listener: socket, bind, listen, accept loop via libc370 socket API
 - `ftpdses.c` — Session state machine + thread lifecycle (thdmgr)
 - `ftpddata.c` — PORT/PASV data connection setup and teardown
 - `ftpdxlat.c` — EBCDIC ↔ ASCII translation tables (IBM-1047)
 
 **Step 1.3 — Command processing**
 - `ftpdcmd.c` — Command parser: read line from control socket, tokenize, dispatch
-- `ftpdauth.c` — USER/PASS via crent370 racf module
+- `ftpdauth.c` — USER/PASS via libc370 racf module
 - Basic commands: SYST, TYPE, MODE, STRU, NOOP, QUIT, HELP, FEAT, STAT
 
 **Step 1.4 — MVS dataset access**
@@ -1102,11 +1103,11 @@ Some z/OS FTP features cannot exist on MVS 3.8j:
 
 All major design questions have been resolved:
 
-1. ~~**VTOC caching strategy**~~ → **Revised:** Catalog-based approach (Option D). Use crent370 `__listds()` (IDCAMS LISTC + OBTAIN) for LIST, `__listpd()` for PDS members, `__locate()` + `__dscbdv()` for single datasets, `__dsalcf()` for new dataset creation. No VTOC scanning except for `SITE VOLUME=xxx` fallback. No cache, no DASD config, no startup scan. Dataset I/O via `fopen()`/`fread()`/`fwrite()`/`fclose()` with per-record `fflush()` (mvsMF pattern). See §4.1 + §4.2.
+1. ~~**VTOC caching strategy**~~ → **Revised:** Catalog-based approach (Option D). Use libc370 `__listds()` (IDCAMS LISTC + OBTAIN) for LIST, `__listpd()` for PDS members, `__locate()` + `__dscbdv()` for single datasets, `__dsalcf()` for new dataset creation. No VTOC scanning except for `SITE VOLUME=xxx` fallback. No cache, no DASD config, no startup scan. Dataset I/O via `fopen()`/`fread()`/`fwrite()`/`fclose()` with per-record `fflush()` (mvsMF pattern). See §4.1 + §4.2.
 
-2. ~~**JES2 spool access**~~ → **Decided:** Use crent370's `jes/` module directly for job status queries and spool retrieval.
+2. ~~**JES2 spool access**~~ → **Decided:** Use libc370's `jes/` module directly for job status queries and spool retrieval.
 
-3. ~~**Internal reader DD**~~ → **Decided:** Use crent370's `jes/` module programmatically. No AAINTRDR DD in JCL.
+3. ~~**Internal reader DD**~~ → **Decided:** Use libc370's `jes/` module programmatically. No AAINTRDR DD in JCL.
 
 4. ~~**UFSD dependency model**~~ → **Decided:** Soft dependency. FTPD works standalone for MVS datasets, returns `550 UFS service not available` if UFSD is not running.
 
@@ -1135,7 +1136,7 @@ The following behaviors were confirmed from z/OS 3.1 FTP server protocol capture
 20. **DELE JOB response:** `250 Cancel successful` (matches z/OS). See §2.5.
 21. **Dual codepage strategy:** IBM-1047 for FTP protocol I/O and UFS files, CP037 for MVS dataset content. Translation tables derived from HTTPD's corrected tables (NEL/NL fix: EBCDIC 0x15 ↔ ASCII 0x0A). See §3.8.
 22. **CWD relative/absolute semantics:** Unquoted CWD is relative (appends to prefix), quoted CWD is absolute (resets prefix). Wildcards (`*`, `%`, `?`) rejected in CWD with `501`. Trailing dot controls PDS detection: without dot → OBTAIN + DSORG check; with dot → prefix only, no I/O. Validated from z/OS 3.1 protocol captures. See §2.3.
-23. **Catalog-based dataset access (Option D):** Use crent370 `__listds()`, `__listpd()`, `__locate()`, `__dscbdv()`, `__dsalcf()` instead of VTOC scanning. Dataset I/O via `fopen()`/`fwrite()`+`fflush()`/`fclose()` (mvsMF DSAPI pattern). VTOC only for `SITE VOLUME=xxx` fallback. No DASD config, no cache, no startup scan. See §4.1 + §4.2.
+23. **Catalog-based dataset access (Option D):** Use libc370 `__listds()`, `__listpd()`, `__locate()`, `__dscbdv()`, `__dsalcf()` instead of VTOC scanning. Dataset I/O via `fopen()`/`fwrite()`+`fflush()`/`fclose()` (mvsMF DSAPI pattern). VTOC only for `SITE VOLUME=xxx` fallback. No DASD config, no cache, no startup scan. See §4.1 + §4.2.
 24. **LIST output always ASCII:** LIST/NLST data must be translated EBCDIC→ASCII regardless of current TYPE setting. TYPE only affects data content transfers (RETR/STOR). FileZilla sends TYPE I before LIST — without forced ASCII, listing shows as garbage.
 
 ---

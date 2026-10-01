@@ -71,10 +71,9 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
            "src/ftpd#adr.c"]
 
 # ── Dependencies ─────────────────────────────────────────
-# Only ufsd remains a real dependency: libufs.h / libufs.a are ufsd-specific.
-# crent370 was dropped -- every crent370 header ftpd uses (clib*.h, racf.h,
-# mvssupa.h, haspjqe.h, socket.h, ...) and its runtime routines are now in
-# the cc370 sysroot (libc370), same as the ufsd v2 migration.
+# Only ufsd is a declared dependency: libufs.h / libufs.a are ufsd-specific.
+# The C runtime -- sockets, threads, JES2, RACF, dynalloc -- is libc370, the
+# cc370 sysroot, pinned in [toolchain] above rather than declared here.
 [dependencies]
 "mvslovers/ufsd" = ">=1.4.0-dev"
 

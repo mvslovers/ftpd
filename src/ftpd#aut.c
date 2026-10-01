@@ -1,7 +1,7 @@
 /*
 ** FTPD Authentication
 **
-** RAKF-based authentication via crent370 racf module.
+** RAKF-based authentication via libc370 racf module.
 ** Verifies userid/password and checks FACILITY class FTPAUTH.
 */
 #include "ftpd.h"

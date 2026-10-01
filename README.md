@@ -1,6 +1,6 @@
 # FTPD — Standalone FTP Server for MVS 3.8j
 
-A full-featured FTP server for MVS 3.8j, built from the ground up with [crent370](https://github.com/mvslovers/crent370). Supports native MVS datasets, JES2 job management, and UFS files via [UFSD](https://github.com/mvslovers/ufsd) — with seamless switching between all three in a single session.
+A full-featured FTP server for MVS 3.8j, built from the ground up on [libc370](https://github.com/mvslovers/libc370). Supports native MVS datasets, JES2 job management, and UFS files via [UFSD](https://github.com/mvslovers/ufsd) — with seamless switching between all three in a single session.
 
 ## Features
 
@@ -41,17 +41,14 @@ A full-featured FTP server for MVS 3.8j, built from the ground up with [crent370
 ## Quick Start
 
 ### Prerequisites
-- MVS 3.8j with [crent370](https://github.com/mvslovers/crent370) runtime
+- MVS 3.8j
 - [RAKF](https://github.com/MVS-sysgen/RAKF) configured
 - [mbt](https://github.com/mvslovers/mbt) build tool
 - Optional: [UFSD](https://github.com/mvslovers/ufsd) for UFS file access
 
-**libc370 sysroot: `d44cfea` (2026-08-06) or later.** That commit removed the
-ASXB ENQ from `racf_login()`/`racf_logout()`; FTPD's ABEND recovery dropped the
-defensive DEQ that used to release it after an ABEND, so building against an
-older sysroot leaves an orphaned address-space-wide ENQ stalling every session's
-login until that worker's next command. libc370 has no tags — the requirement is
-a commit, not a version.
+**Build host: the cc370 toolchain with libc370 2.0.0 or later as its sysroot**
+(`[toolchain] libc370` in `project.toml`; mbt refuses an older sysroot). The
+runtime is linked statically, so nothing of libc370 has to be installed on MVS.
 
 ### Build
 ```bash
@@ -155,7 +152,7 @@ Client ──► Control Connection (port 2121)
 
 | Dependency | Required | Purpose |
 |------------|----------|---------|
-| [crent370](https://github.com/mvslovers/crent370) | Yes | C runtime, RAKF, JES2, socket layer |
+| [libc370](https://github.com/mvslovers/libc370) | Build | C runtime, RAKF, JES2, socket layer (statically linked, from the cc370 sysroot) |
 | [RAKF](https://github.com/MVS-sysgen/RAKF) | Yes | Authentication and authorization |
 | [UFSD](https://github.com/mvslovers/ufsd) | No | UFS filesystem access (soft dependency) |
 | [mbt](https://github.com/mvslovers/mbt) | Build | Build tool |

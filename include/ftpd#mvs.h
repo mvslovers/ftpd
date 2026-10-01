@@ -3,7 +3,7 @@
 /*
 ** FTPD MVS Dataset Operations
 **
-** Catalog-based dataset access using crent370 functions:
+** Catalog-based dataset access using libc370 functions:
 ** __listds(), __listpd(), __locate(), __dscbdv()
 */
 #include <mvs/dslist.h>

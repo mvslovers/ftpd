@@ -26,7 +26,7 @@ The XMIT format requires a TRANSMIT/RECEIVE library. Two approaches:
 **Option A — NJE38 dependency (initial):**
 - Use NJE38's TRANSMIT/RECEIVE programs on MVS
 - Soft dependency (like UFSD): if NJE38 not installed, SITE XMIT returns `502`
-- Invoke TRANSMIT/RECEIVE via crent370 program call or temp dataset exchange
+- Invoke TRANSMIT/RECEIVE via libc370 program call or temp dataset exchange
 
 **Option B — Standalone C library (future):**
 - A separate `mvslovers/xmitlib` project implementing XMIT format in C

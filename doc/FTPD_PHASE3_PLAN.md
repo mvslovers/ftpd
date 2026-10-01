@@ -10,7 +10,7 @@
 ## Environment Notes for Claude Code
 
 - UFSD client library: check `../ufsd/client/` for the client API and `../ufsd/include/` for shared headers.
-- UFSD communicates via cross-memory services (crent370 `ipc/` module). The client library abstracts this — FTPD calls the client API, not IPC directly.
+- UFSD communicates via cross-memory services (libc370 `ipc/` module). The client library abstracts this — FTPD calls the client API, not IPC directly.
 - UFSD is a **soft dependency**. FTPD must start and work without UFSD. UFS commands return `550 UFS service not available` if UFSD is not running.
 - Reference: check `../httpd/src/` for how HTTPD uses UFS (though HTTPD uses the old UFS370 library, the concepts are similar).
 
@@ -66,7 +66,7 @@ Integrate UFSD client library, detect availability, and provide a clean wrapper 
 ### Dependencies
 - Phase 1 (session state, data connections)
 - mvslovers/ufsd client library (resolved via mbt dependency)
-- crent370: `ipc/` module (used internally by UFSD client)
+- libc370: `ipc/` module (used internally by UFSD client)
 
 ### Acceptance Criteria
 - [ ] `ftpd_ufs_available()` returns true when UFSD is running, false when not

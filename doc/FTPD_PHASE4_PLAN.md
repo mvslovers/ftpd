@@ -182,7 +182,7 @@ README, admin guide, and inline code documentation.
 - Quick start (clone, build, configure, start)
 - Supported FTP commands
 - Supported SITE subcommands
-- Dependencies (crent370, ufsd)
+- Dependencies (libc370, ufsd)
 - License
 
 **ADMIN.md:**
@@ -252,12 +252,12 @@ Address known limitations and enhancements discovered during Phase 1 testing.
 |------|-------------|----------|--------|
 | TSK-77 | Prevent duplicate STC instances + stale socket scanner | Medium | S |
 | TSK-82 | 5-second startup delay | Low | S |
-| TSK-83 | crent370 FD_ZERO/select() buffer overflow | High | M |
+| TSK-83 | libc370 FD_ZERO/select() buffer overflow | High | M |
 | TSK-84 | EPSV support RFC 2428 (Reflection Desktop) | High | M |
 | TSK-85 | RAKF config + STC identity switch (RACINIT inline) | Medium | L |
 | TSK-86 | TVFS + MLSD support RFC 3659 | Low | L |
 | TSK-87 | AUTH TLS/SSL returns 530 instead of 502 | Medium | XS |
-| TSK-88 | crent370 ropen/rwrite ignores RECFM (upstream bug) | High | M |
+| TSK-88 | libc370 ropen/rwrite ignores RECFM (upstream bug) | High | M |
 | TSK-89 | APPE: echtes Append statt Replace (DISP=MOD) | Low | S |
 | TSK-90 | PDS Member Delete: IDCAMS vs STOW DELETE | Low | S |
 | TSK-91 | CWD multi-level navigation (cd ..., cd ../..) | Low | S |
@@ -265,7 +265,7 @@ Address known limitations and enhancements discovered during Phase 1 testing.
 ### Notes
 - TSK-84 (EPSV) is High priority — Reflection Desktop fails without it
 - TSK-86 (TVFS + MLSD) maps MVS qualifiers to Unix-style paths (`/HLQ/QUAL/DSN`) and adds machine-readable LIST format — significant improvement for client compatibility
-- TSK-88 is a crent370 upstream bug — workaround (fopen/fwrite) is already in place
+- TSK-88 is a libc370 upstream bug — workaround (fopen/fwrite) is already in place
 
 ---
 

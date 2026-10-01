@@ -3,7 +3,7 @@
 /*
 ** FTPD - Standalone FTP Server for MVS 3.8j
 **
-** Main header: system includes, crent370 includes, shared constants,
+** Main header: system includes, libc370 includes, shared constants,
 ** core types, and server state.  Per-module headers in ftpd#xxx.h.
 */
 #include <stddef.h>
