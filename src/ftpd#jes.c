@@ -19,8 +19,8 @@
 #include "ftpd#dat.h"
 #include "ftpd#jes.h"
 #include "ftpd#xlt.h"
-#include "clibjes2.h"
-#include "haspjqe.h"
+#include <mvs/jes2.h>
+#include <ibm/jes2/jqe.h>
 
 /* ASCII constants (wire format before translation) */
 #define ASCII_LF    0x0A

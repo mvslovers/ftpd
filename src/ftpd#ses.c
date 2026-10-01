@@ -11,9 +11,12 @@
 #include "ftpd#cmd.h"
 #include "ftpd#dat.h"
 #include "ftpd#ufs.h"
-#include "mvssupa.h"                /* idcams()                        */
 #include "libufs.h"                 /* UFSFILE, ufs_fclose()          */
-#include "cliblock.h"               /* unlock() — identity window ENQ */
+#include <mvs/lock.h>               /* unlock() — identity window ENQ */
+#include <mvs/file.h>               /* __fabandon()                   */
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <mvs/socket.h>
 
 /* --------------------------------------------------------------------
 ** Allocate and initialize a new session

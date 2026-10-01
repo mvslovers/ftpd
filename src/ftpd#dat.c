@@ -6,6 +6,10 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#dat.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <mvs/socket.h>
 
 /* --------------------------------------------------------------------
 ** Parse PORT command arguments: h1,h2,h3,h4,p1,p2

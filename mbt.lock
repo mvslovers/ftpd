@@ -1,6 +1,6 @@
 {
   "mvslovers/ufsd": {
-    "sha256": "5959c9b81fea674717546d7fafa2007769957cd96bc7f3c003639eb4eb5c6972",
-    "version": "1.3.0"
+    "sha256": "09860edcafb7215838b9086420c051686b6c0f4519609f4a9b8b2119074a1a6b",
+    "version": "1.4.0-dev"
   }
 }

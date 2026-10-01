@@ -14,13 +14,9 @@
 #include "ftpd#dsn.h"
 #include "ftpd#mvs.h"
 #include "ftpd#xlt.h"
-#include "mvssupa.h"
-
-/* __svc99 is OS linkage — declared under #ifdef MUSIC in mvssupa.h,
-** but we need it unconditionally for dynamic allocation.
-*/
-#pragma linkage(__svc99, OS)
-extern int __svc99(void *rb);
+#include <mvs/dynalloc.h>
+#include <mvs/idcams.h>
+#include <mvs/pds.h>
 
 /* --------------------------------------------------------------------
 ** z/OS-compatible dataset name wildcard matcher.

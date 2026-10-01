@@ -24,7 +24,7 @@
 #include <buildstamp.h>
 
 #include "ftpd.h"
-#include "clibver.h"
+#include <ext/version.h>
 
 /* Forward declarations for command handlers */
 static void cmd_stats(ftpd_server_t *server);

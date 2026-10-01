@@ -9,7 +9,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "cliblist.h"               /* __listvl(), __freevl() */
+#include <mvs/dslist.h>             /* __listvl(), __freevl() */
 
 #include "ftpd#cfg.h"
 #include "ftpd#log.h"

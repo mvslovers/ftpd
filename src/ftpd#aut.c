@@ -7,7 +7,7 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
-#include "cliblock.h"               /* lock()/unlock() — identity window */
+#include <mvs/lock.h>               /* lock()/unlock() — identity window */
 
 #define FTPD_MAX_AUTH_ATTEMPTS  3
 #define FTPD_FACILITY_RESOURCE  "FTPAUTH"
