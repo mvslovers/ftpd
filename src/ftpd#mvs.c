@@ -911,6 +911,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         char recfm[5];
         int i;
         int count;
+        int list_errno;
 
         /* Uppercase member filter */
         char filter_buf[9];
@@ -932,10 +933,26 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         }
 
         /* Open the PDS directory under the user's security environment,
-        ** so the RAKF authorization check evaluates against the user. */
+        ** so the RAKF authorization check evaluates against the user.
+        **
+        ** __listpd() answers NULL for an empty directory and for one it
+        ** could not read, and since libc370 2.0 also when storage ran out
+        ** part way -- with errno ENOMEM, where 1.x returned a short list
+        ** (#158).  errno is cleared first so a stale ENOMEM cannot turn an
+        ** empty PDS into a storage error, and read before the window
+        ** closes, since racf_set_acee() and the DEQ come after it. */
         ftpd_acee_enter(sess);
+        errno = 0;
         pds = __listpd(prefix, filter);
+        list_errno = errno;
         ftpd_acee_leave(sess);
+        if (!pds && list_errno == ENOMEM) {
+            ftpd_log(LOG_ERROR, "LIST: out of storage reading the "
+                     "directory of %s", prefix);
+            ftpd_session_reply(sess, FTP_451,
+                               "Insufficient storage to list %s.", prefix);
+            return 0;
+        }
         if (!pds || !pds[0]) {
             if (pds) __freepd(&pds);
             ftpd_session_reply(sess, FTP_550,
@@ -1187,42 +1204,53 @@ idcams_reason(int rc)
 **
 ** __locate() answers for the base data set only — it resolves DSN(MEMBER) by
 ** ignoring the member entirely — so member existence needs the directory.
-** Reads it with __listpd() under the session identity, exactly as LIST does;
-** the caller has already established that the base data set exists.
+** Walks it with __walkpd() under the session identity, exactly as LIST reads
+** it; the caller has already established that the base data set exists.
+** __walkpd() allocates nothing and stops at the first match, so the answer
+** costs the same whatever the size of the directory (#158).
 **
 ** Returns 1 if the member is there, 0 if it is not (or the directory could
 ** not be read, which for the callers here means the same thing: do not
 ** proceed).
 ** ----------------------------------------------------------------- */
+struct member_find {
+    char    want[8];            /* blank padded, as the directory holds it */
+    int     found;
+};
+
+static int
+member_match(void *arg, const PDSLIST *entry)
+{
+    struct member_find *mf = arg;
+
+    if (memcmp(entry->name, mf->want, sizeof(mf->want)) != 0)
+        return 0;               /* go on */
+
+    mf->found = 1;
+    return 1;                   /* stop */
+}
+
 static int
 member_exists(ftpd_session_t *sess, const char *dsn, const char *member)
 {
-    PDSLIST **pds;
-    char want[8];
-    int found = 0;
+    struct member_find mf;
+    int rc;
     int i;
 
     /* Directory entries are 8 bytes, blank padded and not terminated. */
-    memset(want, ' ', sizeof(want));
-    for (i = 0; i < (int)sizeof(want) && member[i]; i++)
-        want[i] = member[i];
+    memset(&mf, 0, sizeof(mf));
+    memset(mf.want, ' ', sizeof(mf.want));
+    for (i = 0; i < (int)sizeof(mf.want) && member[i]; i++)
+        mf.want[i] = member[i];
 
     ftpd_acee_enter(sess);
-    pds = __listpd(dsn, member);
+    rc = __walkpd(dsn, member, member_match, &mf);
     ftpd_acee_leave(sess);
 
-    if (!pds)
+    if (rc < 0)
         return 0;
 
-    for (i = 0; pds[i]; i++) {
-        if (memcmp(pds[i]->name, want, sizeof(want)) == 0) {
-            found = 1;
-            break;
-        }
-    }
-
-    __freepd(&pds);
-    return found;
+    return mf.found;
 }
 
 /* --------------------------------------------------------------------
