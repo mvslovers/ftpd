@@ -13,7 +13,7 @@ its FMID for a re-install.
 
 | | |
 |---|---|
-| FMID | `TFTP110` (1.1.x) or `TFTP100` (1.0.x) |
+| FMID | `TFTP120` (1.2.0), `TFTP110` (1.1.0) or `TFTP100` (1.0.x) |
 | Load module | `FTPD` |
 | Target library | `FTPD.LINKLIB` |
 | Distribution library | `FTPD.AFTPDLOD` |
@@ -21,7 +21,7 @@ its FMID for a re-install.
 
 **Substitute the FMID of the release you are removing** in every job below.
 Since 1.1.0 there is one FMID per *release*: `TFTP110` is 1.1.0 and nothing
-else, `TFTP111` will be 1.1.1. `TFTP100` is the exception, from the policy that
+else, `TFTP120` is 1.2.0. `TFTP100` is the exception, from the policy that
 came before it -- it covered 1.0.0, 1.0.1 and 1.0.2 alike. `LIST CDS
 SYSMOD(...)` tells you which one a system carries.
 
@@ -99,8 +99,8 @@ thing that makes `LIST` ambiguous afterwards -- see the next section. A plain
 ids (`TTMPCLN JOB00311`), where it took the tombstone back to `NOT FOUND`
 alongside the SYSMOD that created it.
 
-Substitute the predecessor of whatever you are removing: for a future
-`TFTP111` that is `TFTP110`.
+Substitute the predecessor of whatever you are removing: for `TFTP120` that
+is `TFTP110`.
 
 ## 3. Read the LIST — this is the actual result
 
