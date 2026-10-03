@@ -57,6 +57,9 @@ build_card(ftpd_session_t *sess, const char *line, int linelen, char *card)
 static int
 submit_card(VSFILE *intrdr, char *card, int cardnum)
 {
+    /* cardnum fed a debug trace that was removed (4c9569e) -- it would
+    ** have echoed the PASSWORD= card to the console. Kept for callers. */
+    (void)cardnum;
     return jesirput(intrdr, card);
 }
 
