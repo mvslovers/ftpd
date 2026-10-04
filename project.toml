@@ -26,6 +26,8 @@ cflags = ["-I", "include", '-DVERSION=\"$(PROJECT_VERSION)\"']
 # FTPD — FTP server STC (threading runtime → crt1, APF-authorized AC(1)).
 [[module]]
 name = "FTPD"
+rent = true
+reus = true
 startup = "crt1"
 entry = "@@CRT0"
 sources = ["src/ftpd*.c"]
@@ -41,12 +43,16 @@ ac = 1                    # APF authorization (SETCODE AC(1)); mbt puts it on
 # explicitly for the host link (no autocall there).
 [[test]]
 name = "TSTADR"
+rent = false          # mbtcheck.h keeps file-static counters
+reus = false
 sources = ["test/tstadr.c", "src/ftpd#adr.c"]
 
 # ftpd_dsn_valid() -- the data set name character check (#95).  Same shape as
 # TSTADR: ftpd#dsn.c is free of ftpd.h and of MVS services, so this is DUAL.
 [[test]]
 name = "TSTDSN"
+rent = false          # mbtcheck.h keeps file-static counters
+reus = false
 sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 
 # ftpdcfg_load() -- a read error on DD:FTPDPRM must abandon the start (#119).
@@ -65,6 +71,8 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # with IEF629I INCORRECT USE OF APOSTROPHE instead of running the test.
 [[test]]
 name = "TSTPRM"
+rent = true
+reus = true
 host = false
 parm = "IBMUSER.FTPD.TPRM"
 sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
