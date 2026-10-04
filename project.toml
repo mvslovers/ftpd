@@ -71,8 +71,8 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # with IEF629I INCORRECT USE OF APOSTROPHE instead of running the test.
 [[test]]
 name = "TSTPRM"
-rent = true
-reus = true
+rent = false          # mbtcheck.h keeps file-static counters
+reus = false
 host = false
 parm = "IBMUSER.FTPD.TPRM"
 sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
