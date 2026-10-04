@@ -172,8 +172,8 @@ README, admin guide, and inline code documentation.
 | File | Purpose |
 |------|---------|
 | `README.md` | Project overview, features, quick start |
-| `doc/ADMIN.md` | Administration guide: installation, configuration, console commands |
-| `doc/COMPAT.md` | Client compatibility notes (FileZilla, Zowe, etc.) |
+| `docs/ADMIN.md` | Administration guide: installation, configuration, console commands |
+| `docs/COMPAT.md` | Client compatibility notes (FileZilla, Zowe, etc.) |
 
 ### Content
 

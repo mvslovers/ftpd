@@ -35,7 +35,7 @@ int ftpd_auth_pass(ftpd_session_t *sess, const char *password)
 ** With the flag corrected (libc370 #63) the 4 becomes visible, so both call
 ** sites must accept it or every unprotected resource turns into a denial —
 ** for FACILITY/FTPAUTH that means refusing every login on a system without
-** that profile, which doc/FTPD_RAKF_SETUP.md §3.4 documents as allowed.
+** that profile, which docs/FTPD_RAKF_SETUP.md §3.4 documents as allowed.
 */
 int ftpd_racf_allowed(int rc)                       asm("FTPRACOK");
 

@@ -105,7 +105,7 @@ nobody can log in**, and no configuration option turns that off.
 
 The setup — the `FTPD` user, the `USER` group and the `FTPAUTH` FACILITY
 profile — is step 8, and the full reference is
-[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_RAKF_SETUP.md).
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.2.0/docs/FTPD_RAKF_SETUP.md).
 
 ### Authorisation
 
@@ -620,7 +620,7 @@ broad authority and the same switch becomes fail-open.
 
 The complete reference — dataset access levels per FTP command, per-user HLQ
 patterns, RAKFCL equivalents and the reasoning behind the invariant — is
-[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_RAKF_SETUP.md).
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.2.0/docs/FTPD_RAKF_SETUP.md).
 
 ---
 
@@ -691,9 +691,9 @@ Three namespaces, selected per session:
   answer `550 UFS service not available`.
 
 The command set and the `SITE` keywords are documented in
-[ZOS_FTP_REFERENCE.md](https://github.com/mvslovers/ftpd/blob/main/doc/ZOS_FTP_REFERENCE.md);
+[ZOS_FTP_REFERENCE.md](https://github.com/mvslovers/ftpd/blob/v1.2.0/internals/ZOS_FTP_REFERENCE.md);
 the architecture is in
-[FTPD_CONCEPT.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_CONCEPT.md).
+[FTPD_CONCEPT.md](https://github.com/mvslovers/ftpd/blob/v1.2.0/internals/FTPD_CONCEPT.md).
 
 ---
 
@@ -707,7 +707,7 @@ an accepted function SYSMOD refuses both: `RESTORE` because it was accepted,
 route that does work is a `UCLIN` job.
 
 The full procedure, with the job to submit and the messages to check, is in
-[uninstall.md](https://github.com/mvslovers/ftpd/blob/main/doc/uninstall.md).
+[uninstall.md](https://github.com/mvslovers/ftpd/blob/v1.2.0/docs/uninstall.md).
 
 **This is for removing FTPD, not for upgrading it.** An upgrade installs over
 the release before it — see section 2a — and needs none of this.
@@ -742,4 +742,4 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 | `S0C4` at start, JESMSGLG holds only the `IEF450I` — no `FTPD000I`, no banner | FTPD 1.0.0 started from an **APF-authorised** LINKLIB. The module is then key 0 and the first store into its own storage abends before the first WTO. Upgrade to 1.0.1, or take the APF entry back out and let SVC 244 authorise instead — step 2 |
 
 For the RAKF message reference, see
-[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_RAKF_SETUP.md).
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.2.0/docs/FTPD_RAKF_SETUP.md).

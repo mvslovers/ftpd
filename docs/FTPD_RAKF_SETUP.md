@@ -320,7 +320,7 @@ gating anything.
 
 ## Related
 
-- [installation.md](https://github.com/mvslovers/ftpd/blob/main/doc/installation.md)
+- [installation.md](installation.md)
   — installing FTPD itself
-- [FTPD_CONCEPT.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_CONCEPT.md)
+- [FTPD_CONCEPT.md](../internals/FTPD_CONCEPT.md)
   — architecture, including the session/identity model

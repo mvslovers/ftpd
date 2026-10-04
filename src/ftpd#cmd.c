@@ -3,7 +3,7 @@
 **
 ** FTP protocol command handling (client-facing).
 ** Response strings match z/OS FTP Server behavior
-** (see doc/ZOS_FTP_REFERENCE.md).
+** (see internals/ZOS_FTP_REFERENCE.md).
 */
 /* Build stamp for the STAT reply -- see the note in ftpd.c on why this is
 ** included per translation unit and not from ftpd.h. */

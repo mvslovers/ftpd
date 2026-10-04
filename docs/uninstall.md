@@ -198,7 +198,7 @@ and WORK01 -- the cataloged one and an empty twin nothing points at. Read the
 - The procedure and the configuration member you copied into your PROCLIB and
   PARMLIB.
 - Your RAKF definitions — the `FTPD` user and the `FTPAUTH` profile. See
-  [FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/main/doc/FTPD_RAKF_SETUP.md).
+  [FTPD_RAKF_SETUP.md](FTPD_RAKF_SETUP.md).
 
 Those are yours to delete.
 

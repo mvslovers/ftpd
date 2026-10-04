@@ -139,7 +139,11 @@ target = "FTPD.DEV.LINKLIB"
 # Stop the started task before replacing the load library. It is the one FTPD
 # loads from.
 [distribution]
-readme = "doc/installation.md"
+# Shipped verbatim as the archive's README.md, so its links to other files in
+# this repository are absolute and pinned to the release tag (blob/vX.Y.Z/...):
+# a blob/main/ link breaks as soon as main moves the file. Bump the tag in
+# those links when preparing each release.
+readme = "docs/installation.md"
 
 [distribution.smp]
 # One FMID per release, spent exactly once: the id *is* the release, not the
@@ -159,7 +163,7 @@ readme = "doc/installation.md"
 # FTPD.LINKLIB after a RECEIVE/APPLY/ACCEPT that was RC 00 from top to bottom.
 # With DELETE, SMP deletes the predecessor's LMODs from the target and copies
 # the new ones in, and MOD(FTPD) comes back carrying the new FMID. It replaces
-# the hand-written UCLIN job that used to be required first (doc/uninstall.md).
+# the hand-written UCLIN job that used to be required first (docs/uninstall.md).
 #
 # Neither key moves on its own: `make release` bumps VERSION and the [project]
 # version and nothing else. Set `fmid` to the new id and `delete` to the one it

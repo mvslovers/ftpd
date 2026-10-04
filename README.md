@@ -31,12 +31,12 @@ A full-featured FTP server for MVS 3.8j, built from the ground up on [libc370](h
 - Per-operation DATASET class authorization (READ/UPDATE/ALTER)
 - ACEE switching: dataset I/O runs under logged-in user's identity
 - STC runs as `FTPD/USER` via RACINIT (Principle of Least Privilege)
-- See [doc/FTPD_RAKF_SETUP.md](doc/FTPD_RAKF_SETUP.md) for setup instructions
+- See [docs/FTPD_RAKF_SETUP.md](docs/FTPD_RAKF_SETUP.md) for setup instructions
 
 ### Client Compatibility
 - Verified identical behavior to z/OS 3.1 FTP server
 - Tested with: FileZilla, ncftp, tnftp, curl, IBM PCOMM, Zowe CLI
-- See [doc/COMPAT.md](doc/COMPAT.md) for details
+- See [internals/ZOS_FTP_REFERENCE.md](internals/ZOS_FTP_REFERENCE.md) for the reference behaviour
 
 ## Quick Start
 
@@ -70,7 +70,7 @@ copy samplib/ftpdpm00 to SYS2.PARMLIB
 1. Add user `FTPD` in group `USER` to `SYS1.SECURE.CNTL(USERS)`
 2. Add `FTPAUTH` profile to `SYS1.SECURE.CNTL(PROFILES)`
 3. Recycle RAKF: `/S RAKF`
-4. See [doc/FTPD_RAKF_SETUP.md](doc/FTPD_RAKF_SETUP.md) for details
+4. See [docs/FTPD_RAKF_SETUP.md](docs/FTPD_RAKF_SETUP.md) for details
 
 ### Start
 ```

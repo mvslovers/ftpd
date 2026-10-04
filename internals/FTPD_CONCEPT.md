@@ -786,7 +786,7 @@ At startup, FTPD switches from the default STC identity to `FTPD/USER`
 via an inline RACINIT (PASSCHK=NO).  This requires the FTPD user
 to be defined in RAKF.
 
-See `doc/FTPD_RAKF_SETUP.md` for the complete RAKF configuration guide.
+See `docs/FTPD_RAKF_SETUP.md` for the complete RAKF configuration guide.
 
 ---
 
