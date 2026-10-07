@@ -7,7 +7,9 @@ on:
 
 jobs:
   build:
-    uses: mvslovers/mbt/.github/workflows/build.yml@main
+    uses: mvslovers/mbt/.github/workflows/build3.yml@main
+    with:
+      host_tests: true          # also run mbt test
 
   # FTPD is AC(1).  Fetched from an APF-authorized library it is loaded into
   # key-0 storage, so a key-8 store into its own statics abends S0C4 before
