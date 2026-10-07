@@ -6,8 +6,8 @@ type = "application"
 [toolchain]
 # Pins the refs release.yml builds the published artifacts against; build.yml
 # deliberately keeps floating on main so a cc370/libc370 regression surfaces
-# in a PR build (mbt#68). cc370 is omitted -- it defaults to main and has no
-# releases to pin to yet.
+# in a PR build (mbt#68). The two pins move together: libc370 2.x needs a
+# matching cc370, and every libc370 header #errors on one outside its range.
 #
 # Without this the release CI builds against libc370 main, which is how the
 # first 1.0.0 attempt shipped reporting "FTPD005I LIBC370 1.0.3-DEV (F14AD04)"
@@ -19,14 +19,16 @@ type = "application"
 # so no module names a startup object (mvslovers/mbt#158). An older libc.a
 # would quietly link crt0 where these modules used to have crt1. 2.3.1
 # rather than 2.3.0 for the subtask cleanup fix (mvslovers/libc370#431).
-# 2.4.0: current runtime; needs cc370 >= 1.4.0 and ships no crt0.o/crt1.o,
+# 2.4.0: needs cc370 >= 1.4.0 and ships no crt0.o/crt1.o,
 # which mbt 2.2.0 no longer asks for.
-libc370 = "2.4.0"
+# 2.6.1 with cc370 1.4.0: the current toolchain pair.
+cc370 = "1.4.0"
+libc370 = "2.6.1"
 
 [build]
-# -DVERSION from the project version (v1's mbt injected it automatically;
-# v2 does not). Kept consistent across the ecosystem's projects.
-cflags = ["-I", "include", '-DVERSION=\"$(PROJECT_VERSION)\"']
+# No -DVERSION: every version string FTPD prints comes from MBT_VERSION in
+# the generated <buildstamp.h>, and nothing reads a VERSION macro.
+cflags = ["-I", "include"]
 
 # ── Load module ──────────────────────────────────────────
 # FTPD — FTP server STC (APF-authorized AC(1)).
@@ -68,8 +70,8 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # the callers fall back), so no main() is required.
 #
 # parm names the scratch data set the test creates and deletes.  mbt passes
-# it to the program verbatim -- there is no $(MBT_MVS_HLQ) expansion here the
-# way [build] cflags gets $(PROJECT_VERSION) -- so the HLQ is written out.
+# it to the program verbatim -- there is no $(MBT_MVS_HLQ) expansion here --
+# so the HLQ is written out.
 # Change it when running against a system where IBMUSER is not the runner --
 # and keep it short: mbt puts parm on the EXEC card without wrapping, and a
 # name long enough to push that card past column 71 produces JCL that fails
