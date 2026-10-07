@@ -117,7 +117,7 @@ from you about which releases this system has seen, and getting that judgement
 wrong is exactly the failure it prevents.
 
 Each release adds its id here -- the list grows one line per release, on the
-same cadence as the `fmid` bump in `project.toml`.
+same cadence as the FMID the release ships under (`[smp]` in `mbt.toml`).
 
 ## 3. Read the LIST — this is the actual result
 

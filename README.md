@@ -43,21 +43,27 @@ A full-featured FTP server for MVS 3.8j, built from the ground up on [libc370](h
 ### Prerequisites
 - MVS 3.8j
 - [RAKF](https://github.com/MVS-sysgen/RAKF) configured
-- [mbt](https://github.com/mvslovers/mbt) build tool
+- [mbt](https://github.com/mvslovers/mbt) 3 build tool, on your `PATH`
 - Optional: [UFSD](https://github.com/mvslovers/ufsd) for UFS file access
 
 **Build host: the cc370 toolchain with libc370 2.0.0 or later as its sysroot**
-(`[toolchain] libc370` in `project.toml`; mbt refuses an older sysroot). The
+(`[toolchain] libc370` in `mbt.toml`; mbt refuses an older sysroot). The
 runtime is linked statically, so nothing of libc370 has to be installed on MVS.
 
 ### Build
 ```bash
 git clone https://github.com/mvslovers/ftpd.git
 cd ftpd
-# configure .env file with your MVS host settings
-vi .env
-make bootstrap build link
+mbt deps            # fetch ufsd's libufs, pinned in mbt.lock
+mbt build           # the FTPD load module, under build/
+mbt test            # the host tests
+mbt package         # the SMP install package, under dist/
 ```
+
+`mbt deploy` and `mbt test --mvs` talk to an MVS system through mvsMF. mbt
+keeps those systems in `~/.mbt/targets.toml`, once per machine; set one up
+with `mbt target import .env --name <name>` from an mbt 2 `.env`, or see the
+[mbt migration guide](https://github.com/mvslovers/mbt/blob/main/docs/MIGRATION.md#5-mvs-systems-from-env-to-targets).
 
 ### Install
 ```

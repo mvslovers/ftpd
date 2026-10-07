@@ -1,7 +1,9 @@
+schema = 3
+
 [project]
 name = "ftpd"
 version = "1.2.0-dev"
-type = "application"
+kind = "application"
 
 [toolchain]
 # Pins the refs release.yml builds the published artifacts against; build.yml
@@ -24,16 +26,11 @@ type = "application"
 # 2.6.1 with cc370 1.4.0: the current toolchain pair.
 cc370 = "1.4.0"
 libc370 = "2.6.1"
-
-[build]
-# No -DVERSION: every version string FTPD prints comes from MBT_VERSION in
-# the generated <buildstamp.h>, and nothing reads a VERSION macro.
-cflags = ["-I", "include"]
+mbt = "3.0"
 
 # ── Load module ──────────────────────────────────────────
 # FTPD — FTP server STC (APF-authorized AC(1)).
-[[module]]
-name = "FTPD"
+[module.FTPD]
 rent = true
 reus = true
 entry = "@@CRT0"
@@ -44,22 +41,21 @@ ac = 1                    # APF authorization (SETCODE AC(1)); mbt puts it on
 # module instead of re-binding it, and AC(1) arrives exactly as ld370 set it.
 
 # ── Tests ────────────────────────────────────────────────
-# ftpd_adr_parse() -- the shared SRVBIND/PASVBIND/PASVADR parser (#76).
-# ftpd#adr.c is free of ftpd.h and of MVS services, so this is DUAL: it runs
-# natively via test-host and on MVS via test-mvs.  The helper source is listed
-# explicitly for the host link (no autocall there).
-[[test]]
-name = "TSTADR"
+# Defaults for every test; test/**/*.c and *.asm are tests unless excluded.
+[tests]
 rent = false          # mbtcheck.h keeps file-static counters
 reus = false
+
+# ftpd_adr_parse() -- the shared SRVBIND/PASVBIND/PASVADR parser (#76).
+# ftpd#adr.c is free of ftpd.h and of MVS services, so this is DUAL: it runs
+# natively via `mbt test` and on MVS via `mbt test --mvs`.  The helper source is listed
+# explicitly for the host link (no autocall there).
+[test.TSTADR]
 sources = ["test/tstadr.c", "src/ftpd#adr.c"]
 
 # ftpd_dsn_valid() -- the data set name character check (#95).  Same shape as
 # TSTADR: ftpd#dsn.c is free of ftpd.h and of MVS services, so this is DUAL.
-[[test]]
-name = "TSTDSN"
-rent = false          # mbtcheck.h keeps file-static counters
-reus = false
+[test.TSTDSN]
 sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 
 # ftpdcfg_load() -- a read error on DD:FTPDPRM must abandon the start (#119).
@@ -76,10 +72,7 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 # and keep it short: mbt puts parm on the EXEC card without wrapping, and a
 # name long enough to push that card past column 71 produces JCL that fails
 # with IEF629I INCORRECT USE OF APOSTROPHE instead of running the test.
-[[test]]
-name = "TSTPRM"
-rent = false          # mbtcheck.h keeps file-static counters
-reus = false
+[test.TSTPRM]
 host = false
 parm = "IBMUSER.FTPD.TPRM"
 sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
@@ -92,12 +85,10 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
 [dependencies]
 "mvslovers/ufsd" = ">=1.4.0-dev"
 
-# ── Deploy (make deploy, the inner loop) ─────────────────
-# Where `make deploy` RECEIVEs the LINKLIB XMIT. Without this it would derive
-# a versioned name from the HLQ and the version -- IBMUSER.FTPD.V1R1M1D.LINKLIB
-# today -- which moves with every bump and leaves the previous one catalogued,
-# the same churn #121 took out of the release data sets. One stable name means
-# the STC procedure's STEPLIB can point at it once.
+# ── Deploy (mbt deploy, the inner loop) ──────────────────
+# `mbt deploy` RECEIVEs the LINKLIB XMIT into FTPD.DEV.LINKLIB, mbt's default
+# <NAME>.DEV.LINKLIB, so there is no [deploy] table. One stable name means the
+# STC procedure's STEPLIB can point at it once.
 #
 # NOT the installed library. FTPD.LINKLIB is what SMP installs into and what
 # IEAAPF00 authorises; this one is the development target and deliberately
@@ -106,11 +97,8 @@ sources = ["test/tstprm.c", "src/ftpd#cfg.c", "src/ftpd#log.c",
 # itself through SVC 244 instead -- which means the AC(1) module-data trap
 # (#101) does not fire on it. Test that from FTPD.LINKLIB, not from here.
 
-[deploy]
-target = "FTPD.DEV.LINKLIB"
-
 # ── Distribution (SMP4 install package) ──────────────────
-# Turns `make package` into an installable product, the same two transports
+# Turns `mbt package` into an installable product, the same two transports
 # ufsd ships with:
 #
 #   FTPD load module -> XMIT -> staging LKLIB -> SMP ++MOD -> FTPD.LINKLIB
@@ -152,7 +140,7 @@ target = "FTPD.DEV.LINKLIB"
 # those links when preparing each release.
 readme = "docs/installation.md"
 
-[distribution.smp]
+[smp]
 # One FMID per release, spent exactly once: the id *is* the release, not the
 # minor level. 1.0.0 through 1.0.2 were TFTP100 (the policy before this one);
 # 1.1.0 was TFTP110; this is 1.2.0, so TFTP120. TFTP111 was assigned to a
@@ -172,9 +160,13 @@ readme = "docs/installation.md"
 # the new ones in, and MOD(FTPD) comes back carrying the new FMID. It replaces
 # the hand-written UCLIN job that used to be required first (docs/uninstall.md).
 #
-# Neither key moves on its own: `make release` bumps VERSION and the [project]
-# version and nothing else. Set `fmid` to the new id and `delete` to the one it
-# replaces *before* every release, or the next one re-spends TFTP120.
+# mbt derives both from `prefix` and [project] version: fmid = TFTP + major +
+# minor + 0, delete = TFTP + major + (minor - 1) + 0 -- TFTP120 deleting
+# TFTP110 for 1.2.0. Two cases need them written out. A patch release (1.2.1)
+# needs an explicit `fmid` -- mbt refuses to spend the minor's id again -- and
+# the release after it needs an explicit `delete`, because the derivation
+# would name TFTP120 instead of the patch id it replaces. An x.0.0 needs an
+# explicit `delete` too.
 #
 # A DELETE of an id the system never had is harmless -- which matters, because
 # every 1.1.0 install carries DELETE(TFTP100), including the fresh ones. SMP4
@@ -236,9 +228,7 @@ readme = "docs/installation.md"
 # (FTPDINS JOB00281). TTMP112 and TTMP900 are spent from the fresh-install run
 # above (2026-09-14, JOB00307-JOB00311). TFTP110 was verified still NOT FOUND
 # in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
-fmid = "TFTP120"
-delete = ["TFTP110"]            # the level this one replaces -- see above
-system = "Z038"
+prefix = "TFTP"  # FMID and delete follow from the version
 
 # Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
 # libufs is linked statically, so nothing of ufsd has to be installed for FTPD
@@ -260,12 +250,6 @@ prereq = []
 accept_fmid = true
 lklib = "FTPD.FTPDLOAD"         # staging: what the load XMIT is received into
 target = "FTPD.LINKLIB"         # where the load module ends up
-distlib = "FTPD.AFTPDLOD"
 
-[[distribution.library]]
-dir = "samplib"
+[distribution.library.samplib]
 target = "FTPD.SAMPLIB"
-
-# ── Release ──────────────────────────────────────────────
-[release]
-version_files = ["VERSION"]
