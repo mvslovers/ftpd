@@ -44,12 +44,25 @@ SITE [keyword[=value] ...]
     [#cmd("200-text") and #cmd("200 SITE command was accepted")], [A value was
       out of range or refused. The text names the first problem
       (@ref-site-keys).],
+    [#cmd("501 RETPD=n exceeds the server limit of N days; keeping the current value")],
+      [#cmd("RETPD") asks for more days than #cmd("MAXRETPD") allows
+      (@ref-site-retpd-limit), and it is the only word of the command.],
+    [#cmd("501-RETPD=n exceeds the server limit of N days; keeping the current value") and
+      #cmd("501 Other parameters on this command were applied.")], [The same,
+      with more than one word on the line.],
     [#cmd("202 SITE not necessary; you may proceed")], [No word.],
   )
 ]
 
-The code is #cmd("200") in all cases but the last. A script must read the first
+The code is #cmd("200") in the first three cases, #cmd("501") when #cmd("RETPD")
+is above the limit, and #cmd("202") for no word. A script must read the first
 line.
+
+The #cmd("501") takes the place of the other replies. If the same line has a
+refused #cmd("RETPD") and also a wrong value or a word that is not a keyword,
+the reply is the #cmd("501"), and the text about the other word is not sent.
+The other words are applied in every case. The #cmd("501") names the first
+#cmd("RETPD") that was refused.
 
 == Abbreviations <ref-site-abbr>
 
@@ -133,8 +146,11 @@ of the full names, and still work.
       #cmd("552") (@ref-reply-552).],
     [#cmd("RETPD=n")], [The retention period of a new data set in days, 0 to
       9999. The value must be a whole decimal number. 0 is no retention. It
-      applies as @ref-site-retpd says. Another value: the setting stays and
-      the text is #cmd("RETPD must be 0-9999; keeping the current value"). No
+      applies as @ref-site-retpd says. A value that is not a number from 0 to
+      9999: the setting stays and the text is
+      #cmd("RETPD must be 0-9999; keeping the current value"). A number above
+      #cmd("MAXRETPD"): the setting stays and the reply is a #cmd("501")
+      (@ref-site-retpd-limit). No
       value: no retention. A session starts without one, and there is no
       #cmd("DEF") parameter for it.],
     [#cmd("TRACKS")], [The unit of the quantities is the track.],
@@ -193,6 +209,44 @@ with no value both switch it off.
 If the system refuses the allocation with the retention period, the reply to
 #cmd("STOR") is #cmd("550 Cannot allocate dataset NAME") and FTPD removes the
 data set that it had created for the transfer.
+
+=== The Limit of the Server <ref-site-retpd-limit>
+
+#idx("MAXRETPD")#idx("retention period", "limit")#idx("501", "RETPD")
+The parameter #cmd("MAXRETPD") in #cmd("FTPDPRM") (@ref-prm-ses) is the most
+days that #cmd("SITE RETPD") takes. Without the parameter it is 365. FTPD
+checks the number after it has checked the range 0 to 9999.
+
+A number up to the limit, the limit itself too, is taken, and the reply is
+#cmd("200"). A number above the limit is refused. The retention period of the
+session stays as it was, and the reply is a #cmd("501"). With one word on the
+line:
+
+```
+501 RETPD=400 exceeds the server limit of 365 days; keeping the current value
+```
+
+With more than one word on the line, FTPD applies the other words, and the
+reply has two lines:
+
+```
+501-RETPD=400 exceeds the server limit of 365 days; keeping the current value
+501 Other parameters on this command were applied.
+```
+
+The first number in the text is the number as FTPD read it. The second is
+#cmd("MAXRETPD").
+
+- *0 and the bare keyword* are never refused, also with #cmd("MAXRETPD=0").
+  With that value a session cannot ask for any retention.
+- *A number above 9999* keeps the #cmd("200") with the text of @ref-site-keys.
+  It is not a case of the limit.
+
+The limit applies to the number of #cmd("SITE RETPD") only. A session starts
+without a retention period, so the limit has nothing to correct at the start.
+FTPD reads #cmd("MAXRETPD") once, at start, like every other
+parameter. #cmd("/F FTPD,CONFIG") shows the value that FTPD uses
+(@ref-con-config).
 
 === STOR and APPE over a Retained Data Set <ref-site-retained>
 

@@ -73,6 +73,8 @@ with the replacement.
       For #cmd("PASVADR=ANY") the message says #cmd("ANY (CONTROL CONNECTION)").],
     [#cmd("FTPD057I")], [#cmd("BINDTRIES") and #cmd("BINDWAIT").],
     [#cmd("FTPD043I")], [#cmd("MAXSESSIONS") and #cmd("IDLETIMEOUT").],
+    [#cmd("FTPD061I")], [#cmd("MAXRETPD"), the most days that
+      #cmd("SITE RETPD") takes. The message is new in FTPD 1.3.0.],
     [#cmd("FTPD044I")], [#cmd("BANNER").],
     [#cmd("FTPD049I")], [#cmd("SSLPROXY") as #cmd("YES") or #cmd("NO").],
     [#cmd("FTPD045I")], [#cmd("DEFRECFM"), #cmd("DEFLRECL") and

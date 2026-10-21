@@ -165,8 +165,9 @@ with its default and its range.
       The address and the port range that FTPD offers for passive transfers.
       The range must be open in every firewall between the client and the
       host.],
-    [Sessions], [#cmd("MAXSESSIONS"), #cmd("IDLETIMEOUT"), #cmd("BANNER"),
-      #cmd("SSLPROXY").],
+    [Sessions], [#cmd("MAXSESSIONS"), #cmd("IDLETIMEOUT"), #cmd("MAXRETPD"),
+      #cmd("BANNER"), #cmd("SSLPROXY"). #cmd("MAXRETPD") is the most days of
+      retention that a client may ask for with #cmd("SITE RETPD") (@ug-site).],
     [New data sets], [#cmd("DEFRECFM"), #cmd("DEFLRECL"), #cmd("DEFBLKSIZE"),
       #cmd("DEFPRIMARY"), #cmd("DEFSECONDARY"), #cmd("DEFSPACETYPE"),
       #cmd("DEFDIRECTORY"), #cmd("DEFUNIT"), #cmd("DEFVOLUME"). The attributes and the space that a
@@ -240,8 +241,8 @@ answer comes as messages on the console.
     [#cmd("SESSIONS")], [#cmd("FTPD015I ACTIVE SESSIONS: 2 / 10"): the active
       sessions and #cmd("MAXSESSIONS").],
     [#cmd("CONFIG")], [The configuration that FTPD uses: the messages
-      #cmd("FTPD040I") to #cmd("FTPD049I"), #cmd("FTPD057I") and
-      #cmd("FTPD058I").],
+      #cmd("FTPD040I") to #cmd("FTPD049I"), #cmd("FTPD057I"),
+      #cmd("FTPD058I") and #cmd("FTPD061I").],
     [#cmd("VERSION")], [Two lines #cmd("FTPD016I"): the version and commit of
       FTPD, and the version of the C library. #cmd("FTPD006W") follows if the
       program was built from a modified tree.],

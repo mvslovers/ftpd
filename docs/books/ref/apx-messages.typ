@@ -76,7 +76,8 @@ sees are the reply codes in @ref-reply.
     [#cmd("FTPD021E TRACE: SYNTAX: TRACE ON|OFF|DUMP")], [#cmd("TRACE") with a
       word that is not #cmd("ON"), #cmd("OFF") or #cmd("DUMP"), or with none.],
     [#cmd("FTPD040I") to #cmd("FTPD049I")], [The answer to #cmd("CONFIG"). The
-      messages #cmd("FTPD057I") and #cmd("FTPD058I") belong to it. See
+      messages #cmd("FTPD057I"), #cmd("FTPD058I") and #cmd("FTPD061I") belong
+      to it. See
       @ref-con-config.],
   )
 ]
@@ -122,6 +123,9 @@ sees are the reply codes in @ref-reply.
       volume (@ref-prm-def).],
     [#cmd("FTPD060W DEFUNIT=unit DOES NOT MATCH DEFVOLUME=volume (A type) -- UNIT IGNORED")], [The unit has four digits and they differ from the device type
       of the volume. FTPD drops #cmd("DEFUNIT").],
+    [#cmd("FTPD061I   MAXRETPD=n")], [Part of #cmd("CONFIG"). The most days that
+      #cmd("SITE RETPD") takes (@ref-site-retpd-limit). The message is new in
+      FTPD 1.3.0.],
   )
 ]
 

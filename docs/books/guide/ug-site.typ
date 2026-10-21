@@ -27,6 +27,12 @@ command:
   line #cmd("200") that names the problem on the first line and ends with
   #cmd("SITE command was accepted"). The other words of the command still
   apply. If several words are wrong, the reply names the first.
+- *#cmd("RETPD") is above the limit of the server:* the reply is
+  #cmd("501 RETPD=n exceeds the server limit of N days; keeping the current value"),
+  and the retention period of the session stays as it was. If the command has
+  more words, FTPD applies them, and the reply has two lines: the text above
+  with #cmd("501-"), and #cmd("501 Other parameters on this command were applied.")
+  A script must not read this #cmd("501") as "nothing changed".
 - *A word is not known:* the reply is the same kind of #cmd("200"), and the
   first line is #cmd("Unrecognized parameter 'WORD' on SITE command."). It is
   not an error code. Read the first line of the reply, not only the code.
@@ -70,6 +76,8 @@ _FTPD Reference_ lists the shortest forms in "The SITE Command".
       cannot be extended (@ug-data-dirfull).],
     [#cmd("RETPD=n")], [the retention period in days of a data set that
       #cmd("MKD") or #cmd("STOR") creates, 0 to 9999. 0 is no retention.
+      The administrator sets a limit with #cmd("MAXRETPD"), 365 days unless
+      changed. More is answered with a #cmd("501"), and the setting stays.
       A member of a partitioned data set and a data set that exists keep what
       they have. See the note below.],
     [#cmd("UNIT=u")], [the unit for a new data set. Without it the system

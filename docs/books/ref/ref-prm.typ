@@ -82,6 +82,14 @@ within 30 seconds loses the port.
     [#cmd("IDLETIMEOUT")], [300], [The seconds without a command after which FTPD
       sends #cmd("421") and closes the session. A value of 0 or below, or a
       text that is not a number, gives the warning #cmd("IDLETIMEOUT must be > 0") and 300.],
+    [#cmd("MAXRETPD")], [365], [The most days that a client may ask for with
+      #cmd("SITE RETPD"), 0 to 9999 (@ref-site-retpd-limit). The value must be
+      a whole decimal number. 0 allows no retention: then only
+      #cmd("SITE RETPD=0") is accepted. Another value (a negative number, a
+      text, an empty value, a number with other characters after the digits,
+      a number above 9999) keeps the value before and gives the warning
+      #cmd("MAXRETPD must be 0..9999, keeping N"). The parameter is new in
+      FTPD 1.3.0.],
     [#cmd("BANNER")], [MVS 3.8j FTPD Server], [The text of the #cmd("220") reply.
       FTPD keeps the first 79 characters.],
     [#cmd("AUTHUSER")], [empty], [FTPD stores the first eight characters. No

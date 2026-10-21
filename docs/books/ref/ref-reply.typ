@@ -136,6 +136,11 @@ causes are:
 - #cmd("501-missing type parameter"), #cmd("501-unknown type ..."): see
   @ref-cmd-type.
 - #cmd("501 PROT requires a protection level") with #cmd("SSLPROXY=YES").
+- #cmd("501 RETPD=n exceeds the server limit of N days; keeping the current value"):
+  #cmd("SITE RETPD") asks for more days than #cmd("MAXRETPD"). With more than
+  one word on the line the reply is #cmd("501-") with this text and the last
+  line #cmd("501 Other parameters on this command were applied."). See
+  @ref-site-retpd-limit.
 
 == The 530 Reply <ref-reply-530>
 
