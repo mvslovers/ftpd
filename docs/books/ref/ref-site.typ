@@ -128,7 +128,9 @@ of the full names, and still work.
     [#cmd("DIRECTORY=n")], [The directory blocks for #cmd("MKD"), 1 to 16777215.
       The value must be a whole decimal number. Another value: the setting stays
       and the text is #cmd("DIRECTORY must be 1-16777215; keeping the current value"). No value: #cmd("DEFDIRECTORY") (10 unless the
-      parameters say otherwise).],
+      parameters say otherwise). The number is fixed when the data set is
+      created. A member #cmd("STOR") into a full directory answers
+      #cmd("552") (@ref-reply-552).],
     [#cmd("RETPD=n")], [The retention period of a new data set in days, 0 to
       9999. The value must be a whole decimal number. 0 is no retention. It
       applies as @ref-site-retpd says. Another value: the setting stays and

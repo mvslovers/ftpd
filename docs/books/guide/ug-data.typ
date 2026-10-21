@@ -246,6 +246,40 @@ Raise the space for the session with #cmd("SITE PRIMARY"),
 #cmd("SITE SECONDARY") and #cmd("SITE CYLINDERS") (@ug-site), or ask the
 administrator to raise #cmd("DEFPRIMARY") for everyone.
 
+=== When the Directory Is Full <ug-data-dirfull>
+
+#idx("directory", "full")#idx("partitioned data set", "directory full")#idx("552")
+A partitioned data set has a fixed number of directory blocks. The number is
+set when #cmd("MKD") creates it (@ug-data-manage), and nothing can raise it
+later. When a member #cmd("STOR") or #cmd("APPE") finds no room in the
+directory for the entry of the member, the system ends the close of the
+data set with the ABEND SB14, and FTPD answers:
+
+```
+552 Requested file action aborted: the directory of the PDS is most likely full (ABEND SB14). It cannot be extended; create the PDS with more directory blocks (SITE DIRECTORY=n, then MKD) and copy the members.
+```
+
+The text says "most likely" because FTPD gets the ABEND code SB14 but not the
+reason code that goes with it. Every SB14 during a #cmd("STOR") or
+#cmd("APPE") gets this reply. The reason code is in the message #cmd("IEC217I")
+on the console, which shows #cmd("B14-0C") for a full directory. The console
+shows #cmd("FTPD070E ABEND SB14 RECOVERED CMD=STOR") as well
+(@ug-ops-abend).
+
+The code is #cmd("552") for the reason given in @ug-data-space: a retry meets
+the same full directory. The partitioned data set is as it was before. The
+member that failed is not in it, the members stored before keep their records,
+and the started task goes on serving.
+
+The directory of the partitioned data set cannot be extended. To get more
+room:
+
++ Set the number of directory blocks with #cmd("SITE DIRECTORY=n"), higher
+  than the number the full data set has.
++ Create a new partitioned data set with #cmd("MKD").
++ Copy the members into it, and delete the old data set when it is no longer
+  needed.
+
 == Appending <ug-data-appe>
 
 #idx("APPE")
@@ -320,7 +354,8 @@ These commands work on data sets and members:
   [#cmd("MKD")], [creates a partitioned data set with the attributes of the
     session. #cmd("SITE DIRECTORY") sets the number of directory blocks
     (the value of #cmd("DEFDIRECTORY"), 10 if the administrator did not
-    change it), and #cmd("SITE RETPD") the retention period. A name that exists is answered with
+    change it), and #cmd("SITE RETPD") the retention period. The number of
+    directory blocks cannot be changed afterwards (@ug-data-dirfull). A name that exists is answered with
     #cmd("550 NAME already exists.").],
   [#cmd("DELE")], [deletes a data set, or a member when the name has one.],
   [#cmd("RMD")], [deletes a data set.],

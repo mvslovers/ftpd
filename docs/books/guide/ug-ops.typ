@@ -321,11 +321,13 @@ of recoveries since the start. A user ABEND shows as #cmd("U") and four digits.
 If FTPD could not even set up the recovery, the message says so in brackets, and
 the command did not run.
 
-The client gets one of two replies:
+The client gets one of three replies:
 
 - *The data set is full:* the ABEND is #cmd("SB37"), #cmd("SD37") or
   #cmd("SE37"). The reply is #cmd("552 Requested file action aborted: out of space on the data set (ABEND SB37). Allocate more space with SITE PRIMARY/SECONDARY and CYLINDERS, or ask the administrator to raise DEFPRIMARY."). The reply is a permanent one, because a client that tries again
   would run into the same limit (@ug-data-space).
+- *The directory of a partitioned data set is full:* the ABEND is #cmd("SB14")
+  during a #cmd("STOR") or #cmd("APPE"). The reply is #cmd("552 Requested file action aborted: the directory of the PDS is most likely full (ABEND SB14). It cannot be extended; create the PDS with more directory blocks (SITE DIRECTORY=n, then MKD) and copy the members."). It is permanent as well (@ug-data-dirfull).
 - *Any other ABEND:* #cmd("451 Requested action aborted: local error in processing.").
 
 When a #cmd("STOR") had just created the data set, FTPD scratches it, because

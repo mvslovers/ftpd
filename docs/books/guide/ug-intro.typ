@@ -100,5 +100,8 @@ the book explains the subject:
     [#cmd("STOR") and #cmd("APPE") of a data set under retention answer
       #cmd("550") with the expiration date. Before, the session waited for an
       operator reply to #cmd("IEC507D").], [@ug-data-retained],
+    [A member #cmd("STOR") or #cmd("APPE") into a partitioned data set with a
+      full directory answers #cmd("552") with the remedy. Before, the answer
+      was #cmd("451"), and a retry failed the same way.], [@ug-data-dirfull],
   )
 ] <ug-intro-new-tab>

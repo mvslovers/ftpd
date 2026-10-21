@@ -66,7 +66,8 @@ _FTPD Reference_ lists the shortest forms in "The SITE Command".
     [#cmd("DIRECTORY=n")], [the number of directory blocks of a partitioned
       data set that #cmd("MKD") creates, 1 to 16777215. Without it #cmd("MKD")
       uses #cmd("DEFDIRECTORY"), which is 10 unless the administrator changed
-      it.],
+      it. The number is fixed when the data set is created. A full directory
+      cannot be extended (@ug-data-dirfull).],
     [#cmd("RETPD=n")], [the retention period in days of a data set that
       #cmd("MKD") or #cmd("STOR") creates, 0 to 9999. 0 is no retention.
       A member of a partitioned data set and a data set that exists keep what

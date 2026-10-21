@@ -191,7 +191,9 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       replaces it. A new data set gets the retention period of
       #cmd("SITE RETPD") (@ref-site-retpd). A data set whose retention period
       has not expired gets a #cmd("550") with the date
-      (@ref-site-retained). UFS: #cmd("150 Opening data connection for PATH") and
+      (@ref-site-retained). A member that finds no room in the directory of its
+      partitioned data set gets a #cmd("552") (@ref-reply-552).
+      UFS: #cmd("150 Opening data connection for PATH") and
       #cmd("226 Transfer complete"). A file that exists is replaced. JES:
       submits the data as a job.],
     [#cmd("APPE")], [MVS: appends to a sequential data set

@@ -134,7 +134,8 @@ sees are the reply codes in @ref-reply.
       ended in a system ABEND, and FTPD recovered. The ABEND code, the FTP
       command, the socket of the session and the number of recoveries since
       the start follow. For #cmd("SB37"), #cmd("SD37") and #cmd("SE37") the
-      client gets #cmd("552"), for all others #cmd("451") (see "When a Command Abends" in the _FTPD User's Guide_).],
+      client gets #cmd("552"), and for #cmd("SB14") during a #cmd("STOR") or
+      #cmd("APPE") as well (a full directory). For all others the client gets #cmd("451") (see "When a Command Abends" in the _FTPD User's Guide_).],
     [#cmd("FTPD070E ABEND Unnnn RECOVERED CMD=verb SOCKET=n TOTAL=n")], [The same
       for a user ABEND.],
     [#cmd("FTPD070E ABEND RECOVERY (ESTAE CREATE FAILED) CMD=verb SOCKET=n TOTAL=n")], [FTPD could not set up the recovery for the command.],

@@ -70,7 +70,7 @@ texts that this book quotes are the ones of FTPD 1.3.0.
     [#cmd("550")], [The action did not happen: the name does not exist, access
       is denied, the name exists already, the data set is under retention
       (@ref-site-retained), or the view does not fit.],
-    [#cmd("552")], [The storage is used up and a retry gives the same answer:
+    [#cmd("552")], [The storage or the directory is used up and a retry gives the same answer:
       @ref-reply-552.],
     [#cmd("553")], [UFS only: the path name is too long.],
   )
@@ -102,7 +102,7 @@ causes are:
   #table(columns: (2.3in, 1fr),
     [Text (beginning)], [Cause],
     [#cmd("Requested action aborted: local error in processing.")],
-      [The command ended with an ABEND that is not about space. FTPD caught it
+      [The command ended with an ABEND that is not about space or about a full directory. FTPD caught it
       (message #cmd("FTPD070E")); the session goes on.],
     [#cmd("Insufficient storage to list NAME.")],
       [The started task ran out of storage while it built a list of data sets.],
@@ -169,6 +169,15 @@ again unless something changes. FTPD sends it in these cases:
       [A write to a data set ended with no space left. With an abend code
       (#cmd("(ABEND SB37)")) when the system ended the write with B37, D37 or
       E37.],
+    [#cmd("Requested file action aborted: the directory of the PDS is most likely full (ABEND SB14). It cannot be extended; create the PDS with more directory blocks (SITE DIRECTORY=n, then MKD) and copy the members.")],
+      [A member #cmd("STOR") or #cmd("APPE") ended with the ABEND SB14. FTPD
+      takes it for a full directory of the partitioned data set, as the system
+      found no room for the entry of the member. "Most likely" because FTPD does
+      not get the reason code, which is in message #cmd("IEC217I")
+      (#cmd("B14-0C")). The directory cannot be extended: create the data set
+      again with #cmd("SITE DIRECTORY=n") and #cmd("MKD"), and copy the
+      members. The partitioned data set is unchanged. See "When the Directory
+      Is Full" in the _FTPD User's Guide_.],
     [#cmd("Requested file action aborted: no space for the file. ...")],
       [A write to a UFS file found the file system full, or the file at its
       largest size.],
