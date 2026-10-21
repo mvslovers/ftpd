@@ -676,6 +676,13 @@ DEFSPACETYPE=TRACK
   `DEFPRIMARY` buys more than a larger `DEFSECONDARY`. A client can override all
   three per session with `SITE PRIMARY=`, `SECONDARY=`, `TRACKS`, `CYLINDERS`
   or `BLOCKS`.
+- `DEFDIRECTORY` is the number of directory blocks of a partitioned data set
+  that a client creates with `MKD`: 10 unless you set it, 1 to 16777215. It
+  replaces the fixed 10 of earlier releases; the PDS directory cannot grow
+  afterwards, so raise it where clients create PDSs that will hold many
+  members. A client overrides it per session with `SITE DIRECTORY=`. `/F
+  FTPD,CONFIG` shows it at the end of the `FTPD058I` line, as
+  `DEFDIRECTORY=n`.
 - `SSLPROXY=YES` is only for a TLS-terminating proxy in front of FTPD. Run bare
   it promises clients a confidentiality it does not deliver; the member's own
   comments spell this out.
