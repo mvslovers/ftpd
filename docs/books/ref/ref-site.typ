@@ -192,8 +192,52 @@ If the system refuses the allocation with the retention period, the reply to
 #cmd("STOR") is #cmd("550 Cannot allocate dataset NAME") and FTPD removes the
 data set that it had created for the transfer.
 
-#note[*A defect* (ftpd#198): a #cmd("STOR") to a data set that exists and
-whose retention period has not expired makes the system ask the operator
-(message #cmd("IEC507D")) before it opens the data set. The session waits for
-the answer. A client that stores into the same name twice after
-#cmd("SITE RETPD") reaches this on the second #cmd("STOR").]
+=== STOR and APPE over a Retained Data Set <ref-site-retained>
+
+#idx("retention period", "STOR and APPE")#idx("IEC507D")#idx("550", "retained data set")
+A data set that was allocated with a retention period carries an expiration
+date in its label. Before #cmd("STOR") or #cmd("APPE") opens an existing data
+set of the MVS view for output, FTPD reads that date. When the date is later
+than today, FTPD does not open the data set. The reply is a #cmd("550"), and
+the session goes on with the next command:
+
+#tab(caption: [Replies for a retained data set])[
+  #table(columns: (3.2in, 1fr),
+    [Reply], [When],
+    [#cmd("550 NAME is retained until YYYY-MM-DD (YYYY.DDD) and is not opened for writing before then.")],
+      [#cmd("STOR"). The date is given as year, month and day, and as year
+      and day of the year.],
+    [#cmd("550 NAME is retained until YYYY-MM-DD (YYYY.DDD) and is not opened for appending before then.")],
+      [#cmd("APPE"), the same.],
+    [#cmd("550 NAME has a permanent retention period and is not opened for writing.")],
+      [#cmd("STOR") over a data set with the expiration date 99365 or 99366,
+      which never expires. For #cmd("APPE") the last word is
+      #cmd("appending").],
+  )
+]
+
+- *The date.* A data set expires on its expiration date. On that day
+  #cmd("STOR") and #cmd("APPE") open it, and from the next day on they get
+  the #cmd("550"). FTPD compares with the date of the local clock of the
+  system.
+- *The label decides, not the session.* A session without
+  #cmd("SITE RETPD") gets the same reply for a data set that another session
+  or a job allocated with a retention period.
+- *A member.* The label of the partitioned data set decides, and the reply
+  names the partitioned data set, not the member. A partitioned data set that
+  #cmd("MKD") created under #cmd("SITE RETPD") takes no member until it
+  expires.
+- *The order of the checks.* The name and the security check come first. Then
+  come the #cmd("APPE") refusals for a member that exists and for a
+  partitioned data set without a member (_FTPD User's Guide_, "Appending").
+  The retention check follows them and runs before FTPD allocates or opens
+  anything.
+- *Not checked.* #cmd("DELE") and #cmd("RMD") do not look at the expiration
+  date. On the system where this was measured, both removed a retained data
+  set (#cmd("250 NAME deleted.")).
+- *No label, no check.* When FTPD cannot read the label, it goes on as it
+  does for a data set without retention.
+
+A server of FTPD 1.2.0 or earlier makes no such check. The system asks the
+operator with message #cmd("IEC507D") before it opens the data set, and the
+session waits for the answer.

@@ -68,7 +68,8 @@ texts that this book quotes are the ones of FTPD 1.3.0.
     [#cmd("522")], [#cmd("EPRT") is not supported.],
     [#cmd("530")], [Not logged in, or the login failed (@ref-reply-530).],
     [#cmd("550")], [The action did not happen: the name does not exist, access
-      is denied, the name exists already, or the view does not fit.],
+      is denied, the name exists already, the data set is under retention
+      (@ref-site-retained), or the view does not fit.],
     [#cmd("552")], [The storage is used up and a retry gives the same answer:
       @ref-reply-552.],
     [#cmd("553")], [UFS only: the path name is too long.],

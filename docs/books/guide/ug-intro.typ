@@ -97,5 +97,8 @@ the book explains the subject:
       #cmd("421") and closed. Before, the control connection stayed open and
       the session was never freed.], [@ug-ops-ses],
     [A listing that runs out of storage answers #cmd("451 Insufficient storage to list ...") instead of an empty list.], [@ug-data-list],
+    [#cmd("STOR") and #cmd("APPE") of a data set under retention answer
+      #cmd("550") with the expiration date. Before, the session waited for an
+      operator reply to #cmd("IEC507D").], [@ug-data-retained],
   )
 ] <ug-intro-new-tab>

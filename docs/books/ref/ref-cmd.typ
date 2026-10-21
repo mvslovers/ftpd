@@ -189,13 +189,16 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
     [#cmd("STOR")], [MVS: #cmd("125 Storing data set NAME"), the data, and
       #cmd("250 Transfer completed successfully."). Creates the data set or
       replaces it. A new data set gets the retention period of
-      #cmd("SITE RETPD") (@ref-site-retpd). UFS: #cmd("150 Opening data connection for PATH") and
+      #cmd("SITE RETPD") (@ref-site-retpd). A data set whose retention period
+      has not expired gets a #cmd("550") with the date
+      (@ref-site-retained). UFS: #cmd("150 Opening data connection for PATH") and
       #cmd("226 Transfer complete"). A file that exists is replaced. JES:
       submits the data as a job.],
     [#cmd("APPE")], [MVS: appends to a sequential data set
       (#cmd("125 Appending to data set NAME")). Creates a data set or a member
       that does not exist. A member that exists, or a partitioned data set
-      without a member, gets #cmd("550"). UFS:
+      without a member, gets #cmd("550"), and so does a data set whose
+      retention period has not expired (@ref-site-retained). UFS:
       #cmd("502 APPE not supported for UFS").],
   )
 ]

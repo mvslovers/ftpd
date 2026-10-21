@@ -275,6 +275,42 @@ FTPD makes these checks before it allocates or opens anything. A client that
 wants to extend a member has to fetch it, join the parts and store the
 whole.
 
+== A Data Set Under Retention <ug-data-retained>
+
+#idx("retention period")#idx("IEC507D")#idx("550", "retained data set")
+A data set that was allocated with a retention period (@ug-site) must not be
+overwritten before the period is over. #cmd("STOR") and #cmd("APPE") of an
+existing data set check this before they open it. When the expiration date
+has not come, FTPD refuses and names the date:
+
+```
+550 IBMUSER.IBMUSER.DOCS.RET is retained until 2026-10-22 (2026.295) and is not opened for writing before then.
+550 IBMUSER.IBMUSER.DOCS.RET is retained until 2026-10-22 (2026.295) and is not opened for appending before then.
+```
+
+The first reply is for #cmd("STOR"), the second for #cmd("APPE"). The data set
+is not touched, and the session works on. A data set with the expiration date
+99365 or 99366 never expires. The reply for it is
+#cmd("550 NAME has a permanent retention period and is not opened for writing.")
+
+- A data set expires on its expiration date. On that day #cmd("STOR") and
+  #cmd("APPE") work again.
+- The expiration date is in the data set, so every session is refused, not
+  only the one that used #cmd("SITE RETPD").
+- A member is stored into a partitioned data set that exists, and its label
+  decides. A partitioned data set that #cmd("MKD") created under
+  #cmd("SITE RETPD") takes no member, new or existing, until it expires. The
+  reply names the partitioned data set.
+- #cmd("DELE") and #cmd("RMD") do not check the date. To replace a retained
+  data set, delete it, or store under a new name.
+- A data set without retention, and one whose period is over, is stored as
+  usual.
+
+FTPD 1.2.0 and earlier do not check. There the system asks the operator
+with message #cmd("IEC507D") when it opens a retained data set for output,
+and the session waits for the reply. The _FTPD Reference_ has the texts and
+the order of the checks, in "RETPD".
+
 == Creating, Deleting and Renaming <ug-data-manage>
 
 #idx("MKD")#idx("DELE")#idx("RMD")#idx("RNFR")
