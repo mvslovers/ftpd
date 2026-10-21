@@ -24,8 +24,10 @@ symbolic parameters: #cmd("M") (the member of the configuration, default
       #cmd("[LEVEL] function: text"), with the levels ERROR, WARN and INFO, and
       the output of #cmd("TRACE DUMP").],
     [#cmd("SYSUDUMP")], [The dump of an abnormal end of the address space.],
-    [#cmd("HASPCKPT"), #cmd("HASPACE1")], [The JES2 checkpoint and the spool.
-      The JES view needs both.],
+    [#cmd("HASPCKPT"), #cmd("HASPACE1")], [Optional. The JES2 checkpoint and the
+      spool. The JES view finds both itself, and a DD overrides the search for
+      its data set. The _FTPD User's Guide_, "The Procedure and JES", says when to add
+      them.],
   )
 ]
 

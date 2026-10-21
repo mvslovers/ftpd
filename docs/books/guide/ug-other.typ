@@ -13,9 +13,12 @@ to the other two and what each command does there.
 
 #idx("JES")#idx("job", "submit")#idx("FILETYPE")
 In the JES view a client submits jobs, lists them, reads their output and
-cancels them. The view needs the JES2 checkpoint and spool data sets in the
-procedure of the started task (@ug-ops-start). Without them every command of
-the view ends with #cmd("451 Unable to open JES checkpoint").
+cancels them. FTPD finds the JES2 checkpoint and the spool itself, so the
+procedure of the started task (@ug-ops-start) needs no DD statement for them.
+Only a site whose JES2 uses another #cmd("DSNPRFX") than #cmd("SYS1"), or whose
+checkpoint is neither cataloged nor on an online volume, adds the DD
+statements (@ug-install-jes). When FTPD cannot read JES2, every command of the
+view ends with #cmd("451 Unable to open JES checkpoint").
 
 A client switches to the view with a #cmd("SITE") command (@ug-site) and back
 again with another one:
