@@ -347,9 +347,10 @@ are:
 ```)
 
 - *#cmd("SITE JESOWNER refused"):* a #cmd("SITE JESOWNER") that the client got a
-  #cmd("501") for. #cmd("value") is what the client sent, with each character
-  other than a letter, a digit, #cmd("$"), #cmd("#") or #cmd("@") shown as
-  #cmd("?") and cut after eight characters, so #cmd("*") reads #cmd("?").
+  #cmd("501") for. #cmd("value") is what the client sent in upper case, with
+  each character other than a letter, a digit, #cmd("$"), #cmd("#") or
+  #cmd("@") shown as #cmd("?") and cut after eight characters, so #cmd("*")
+  reads #cmd("?").
   #cmd("rc") is the return code of RAKF: 4 when no profile covers the user ID
   and 8 when a profile gives no READ. It is #cmd("-") when FTPD did not ask
   RAKF, as for #cmd("ABC*"), and the log has #cmd("value=ABC?").
@@ -374,8 +375,8 @@ are:
 FTPD writes at most 16 lines of the form #cmd("denied") for a session, so that
 a client cannot fill the log. When it left more out, it writes
 #cmd("JES denied: user=USERID and n more denied") when the session ends. The
-other refusals at the level WARN, such as #cmd("SITE JESOWNER refused"), count
-in the same 16.
+line #cmd("SITE JESOWNER refused") counts in the same 16. The line with
+#cmd("reason=NOACEE") does not: FTPD writes it once for each command.
 
 == When a Command Abends <ug-ops-abend>
 

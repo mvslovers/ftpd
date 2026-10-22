@@ -383,8 +383,8 @@ the value:
 
 *What is refused with the 501:* a user ID or #cmd("*") without the right to
 read, a pattern such as #cmd("ABC*"), a value of more than eight characters and
-a value with a character other than #cmd("A") to #cmd("Z"), #cmd("0") to
-#cmd("9"), #cmd("$"), #cmd("#") and #cmd("@"). FTPD does not cut a long value to
+a value with a character other than a letter, a digit, #cmd("$"),
+#cmd("#") and #cmd("@"). FTPD does not cut a long value to
 eight characters. The text is the same for every cause and does not repeat the
 value, so that the reply does not tell a client which user IDs exist. The
 filter stays as it was. The other words on the line are applied, and the reply
