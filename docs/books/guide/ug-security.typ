@@ -238,8 +238,8 @@ way, with one more command and the reload:
 
 #screen(raw(read("../ex/ug-security/js-admin.txt"), block: true))
 
-The two jobs wrote these lines to #cmd("SYS1.SECURE.CNTL(PROFILES)"). The lines
-are column-positioned: the class in columns 1 to 8, the entity from column 9,
+After the two jobs #cmd("SYS1.SECURE.CNTL(PROFILES)") has these lines for the
+class #cmd("JESSPOOL"). The lines are column-positioned: the class in columns 1 to 8, the entity from column 9,
 the group in columns 53 to 60 and the access from column 61
 (@ug-install-rakfsetup):
 
@@ -249,24 +249,6 @@ Everybody sees the own jobs, #cmd("AUDIT") reads all jobs, #cmd("ADMIN") reads
 and cancels all jobs, and the jobs of the started tasks, which have the owner
 #cmd("SYSTEM"), are closed to all of them. The sessions in @ug-jes-others ran
 against these profiles.
-
-#note[*#cmd("RDEFINE * CLASS(JESSPOOL)") is refused on MVS/CE.* The first
-command of the job answers that the profile exists, and the next #cmd("PE") for
-#cmd("*") answers that it finds no universal access record:
-
-#screen(raw(read("../ex/ug-security/js-refused.txt"), block: true))
-
-#cmd("RDEFINE") compares only the name of the profile, not the class, and the
-profile #cmd("*") exists in the classes #cmd("DATASET"), #cmd("DASDVOL") and
-#cmd("TAPEVOL"). The workaround is one line that you write into
-#cmd("PROFILES") by hand, once, before the first #cmd("PE") for #cmd("*"): the
-universal line of #cmd("*") in the class #cmd("JESSPOOL"), between the lines
-of #cmd("FACILITY") and #cmd("TAPEVOL"). It is the first of the four lines
-shown earlier: #cmd("JESSPOOL") in columns 1 to 8, the #cmd("*") in column 9 and
-#cmd("NONE") from column 61. Leave #cmd("RDEF *") out of the job. Take a copy
-of #cmd("PROFILES") first, because a broken table can stop JES2 at the next IPL
-on RAKF 2.0.0. The commands #cmd("PE") and #cmd("RDEF SYSTEM.*") then work as
-shown.]
 
 === Rules for the Profiles
 
