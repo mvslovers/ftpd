@@ -135,6 +135,11 @@ causes are:
   in a command that does not take one.
 - #cmd("501 Missing job ID"): in the JES view, #cmd("RETR") or #cmd("DELE")
   without an argument.
+- #cmd("501 JESOWNER is not permitted"): #cmd("SITE JESOWNER") with a user ID
+  or #cmd("*") that the session may not read, or with a value that is not
+  allowed. With more words on the line the reply is #cmd("501-JESOWNER is not permitted")
+  and #cmd("501 Other parameters on this command were applied.")
+  (@ref-site-jesowner).
 - #cmd("501 PORT not allowed after EPSV ALL"), #cmd("501 PASV not allowed after EPSV ALL"), #cmd("501 Syntax error in PORT parameters"): see @ref-cmd.
 - #cmd("501-missing type parameter"), #cmd("501-unknown type ..."): see
   @ref-cmd-type.

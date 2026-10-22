@@ -119,9 +119,19 @@ last column is the section with the session.
   #table(columns: (1.8in, 1fr, 1.5in),
     [Reply], [Cause and remedy], [Section],
     [#cmd("550 Jobid JOBnnnnn not found for JESJOBNAME=..., JESSTATUS=..., JESOWNER=...")],
-      [JES2 does not know the job, or the filter #cmd("JESSTATUS") excludes
-      it. Check the ID with #cmd("dir") and set the status back to #cmd("all").],
-      [@ug-jes-output],
+      [JES2 does not know the job, the filter #cmd("JESSTATUS") excludes it,
+      the ID has a #cmd("*") or a pattern, or the job belongs to another user
+      and no profile of the class #cmd("JESSPOOL") lets you see it. The reply
+      does not say which. Check the ID with #cmd("dir") and set the status back
+      to #cmd("all").], [@ug-jes-output, @ug-jes-others],
+    [#cmd("550 Access denied - cannot cancel JOBnnnnn")],
+      [#cmd("delete") of a job of another user that you may read but not
+      update. Ask the administrator for the right.], [@ug-jes-others],
+    [#cmd("501 JESOWNER is not permitted")],
+      [#cmd("site jesowner") named another user or #cmd("*") without the right to
+      read their jobs, or the value is a pattern, longer than eight characters
+      or has a character that is not allowed. The value is not repeated, and
+      the filter stays as it was.], [@ug-jes-list, @ug-jes-others],
     [#cmd("550 Spool file n not found for Jobid ...")],
       [The number after the point is past the output files of the job. The reply
       says how many there are.], [@ug-jes-output],
@@ -150,8 +160,10 @@ last column is the section with the session.
       applied.], [@ug-site-form],
     [#cmd("501 ...")],
       [The server refuses the value of #cmd("site"), for example a retention
-      period above #cmd("MAXRETPD"), #cmd("rdw") or a #cmd("DCBDSN") that is not
-      cataloged. The first line says which value and why.],
+      period above #cmd("MAXRETPD"), #cmd("rdw"), a #cmd("DCBDSN") that is not
+      cataloged or a #cmd("jesowner") that you may not use. The first line says
+      which value and why, except for #cmd("jesowner"): its text is always
+      #cmd("JESOWNER is not permitted").],
       [@ug-site-form],
     [#cmd("?Invalid command.")],
       [Not a reply of FTPD. In #cmd("tnftp") the command is #cmd("site") in lower

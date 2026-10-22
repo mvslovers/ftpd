@@ -1,0 +1,51 @@
+ftp> site filetype=jes
+200 SITE command was accepted
+ftp> dir
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=AUDIT1
+JOBNAME  JOBID    OWNER    STATUS CLASS
+250 List completed successfully.
+ftp> site jesowner=*
+200 SITE command was accepted
+ftp> dir
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=*
+JOBNAME  JOBID    OWNER    STATUS CLASS
+PAYROLL  JOB00038 ALICE    OUTPUT  A   RC=0000
+FTPHELLO JOB00039 BOB      OUTPUT  A   RC=0000
+250 List completed successfully.
+ftp> site jesowner=ALICE
+200 SITE command was accepted
+ftp> dir
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=ALICE
+JOBNAME  JOBID    OWNER    STATUS CLASS
+PAYROLL  JOB00038 ALICE    OUTPUT  A   RC=0000
+250 List completed successfully.
+ftp> dir JOB00038
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JOB00038
+JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
+PAYROLL  JOB00038                   H JESJCLIN        720
+PAYROLL  JOB00038                   H JESMSGLG        931
+PAYROLL  JOB00038                   H JESJCL          810
+PAYROLL  JOB00038                   H JESYSMSG       3192
+PAYROLL  JOB00038                   A JESINTXT          0
+PAYROLL  JOB00038 STEP1             H SYSUT1           80
+PAYROLL  JOB00038 STEP1             H SYSPRINT        484
+PAYROLL  JOB00038 STEP1             H SYSUT2           80
+250 List completed successfully.
+ftp> get JOB00038 out.txt
+local: out.txt remote: JOB00038
+229 Entering Extended Passive Mode (|||22000|)
+125 Sending all spool files for requested Jobid
+250 Transfer completed successfully.
+3303 bytes received in 00:00 (80.15 KiB/s)
+ftp> !head -3 out.txt
+                                                J E S 2   J O B   L O G
+ 6.58.46 JOB   38  $HASP373 PAYROLL  STARTED - INIT  1 - CLASS A - SYS MVSC
+ 6.58.46 JOB   38  IEF403I PAYROLL - STARTED - TIME=06.58.46
+ftp> delete JOB00038
+550 Access denied - cannot cancel JOB00038
+ftp> quit
+221 Quit command received. Goodbye.

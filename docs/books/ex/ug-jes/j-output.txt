@@ -1,35 +1,35 @@
 ftp> site filetype=jes
 200 SITE command was accepted
-ftp> dir JOB00024
+ftp> dir JOB00036
 229 Entering Extended Passive Mode (|||22000|)
-125 List started OK for JOB00024
+125 List started OK for JOB00036
 JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
-FTPHELLO JOB00024                   H JESJCLIN        720
-FTPHELLO JOB00024                   H JESMSGLG        931
-FTPHELLO JOB00024                   H JESJCL          810
-FTPHELLO JOB00024                   H JESYSMSG       3192
-FTPHELLO JOB00024                   A JESINTXT          0
-FTPHELLO JOB00024 STEP1             H SYSUT1           80
-FTPHELLO JOB00024 STEP1             H SYSPRINT        484
-FTPHELLO JOB00024 STEP1             H SYSUT2           80
+FTPHELLO JOB00036                   H JESJCLIN        720
+FTPHELLO JOB00036                   H JESMSGLG        931
+FTPHELLO JOB00036                   H JESJCL          810
+FTPHELLO JOB00036                   H JESYSMSG       3192
+FTPHELLO JOB00036                   A JESINTXT          0
+FTPHELLO JOB00036 STEP1             H SYSUT1           80
+FTPHELLO JOB00036 STEP1             H SYSPRINT        484
+FTPHELLO JOB00036 STEP1             H SYSUT2           80
 250 List completed successfully.
-ftp> get JOB00024 out.txt
-local: out.txt remote: JOB00024
+ftp> get JOB00036 out.txt
+local: out.txt remote: JOB00036
 229 Entering Extended Passive Mode (|||22000|)
 125 Sending all spool files for requested Jobid
 250 Transfer completed successfully.
-3325 bytes received in 00:00 (77.22 KiB/s)
+3325 bytes received in 00:00 (68.16 KiB/s)
 ftp> !head -4 out.txt
                                                 J E S 2   J O B   L O G
-11.15.57 JOB   24  $HASP373 FTPHELLO STARTED - INIT  1 - CLASS A - SYS MVSC
-11.15.57 JOB   24  IEF403I FTPHELLO - STARTED - TIME=11.15.57
-11.15.57 JOB   24  IEFACTRT STEP1   /IEBGENER/00:00:00.01/00:00:00.02/00000/FTPHELLO
-ftp> get JOB00024.3 spool3.txt
-local: spool3.txt remote: JOB00024.3
+ 6.58.13 JOB   36  $HASP373 FTPHELLO STARTED - INIT  1 - CLASS A - SYS MVSC
+ 6.58.13 JOB   36  IEF403I FTPHELLO - STARTED - TIME=06.58.13
+ 6.58.13 JOB   36  IEFACTRT STEP1   /IEBGENER/00:00:00.01/00:00:00.02/00000/FTPHELLO
+ftp> get JOB00036.3 spool3.txt
+local: spool3.txt remote: JOB00036.3
 229 Entering Extended Passive Mode (|||22000|)
-125 Sending data set IBMUSER.FTPHELLO.JOB00024.D0000004.JESYSMSG
+125 Sending data set IBMUSER.FTPHELLO.JOB00036.D0000004.JESYSMSG
 250 Transfer completed successfully.
-2170 bytes received in 00:00 (51.28 KiB/s)
+2170 bytes received in 00:00 (48.71 KiB/s)
 ftp> !head -6 spool3.txt
 IEF236I ALLOC. FOR FTPHELLO STEP1
 IEF237I JES2 ALLOCATED TO SYSPRINT
@@ -37,10 +37,10 @@ IEF237I JES2 ALLOCATED TO SYSUT1
 IEF237I JES2 ALLOCATED TO SYSUT2
 IEF237I DMY  ALLOCATED TO SYSIN
 IEF142I FTPHELLO STEP1 - STEP WAS EXECUTED - COND CODE 0000
-ftp> get JOB00024.9 x.txt
-local: x.txt remote: JOB00024.9
+ftp> get JOB00036.9 x.txt
+local: x.txt remote: JOB00036.9
 229 Entering Extended Passive Mode (|||22000|)
-550 Spool file 9 not found for Jobid JOB00024, 5 spool file(s) available
+550 Spool file 9 not found for Jobid JOB00036, 5 spool file(s) available
 ftp> get JOB00099 x.txt
 local: x.txt remote: JOB00099
 229 Entering Extended Passive Mode (|||22000|)

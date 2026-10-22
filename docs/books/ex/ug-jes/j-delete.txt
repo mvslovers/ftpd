@@ -4,17 +4,17 @@ ftp> site filetype=jes
 200 SITE command was accepted
 ftp> pwd
 Remote directory: 'IBMUSER.'
-ftp> delete JOB00026
+ftp> delete JOB00037
 250 Cancel successful
-ftp> delete JOB00026
-550 Jobid JOB00026 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=IBMUSER
+ftp> delete JOB00037
+550 Jobid JOB00037 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=IBMUSER
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=IBMUSER
 JOBNAME  JOBID    OWNER    STATUS CLASS
-FTPHELLO JOB00024 IBMUSER  OUTPUT  A   RC=0000
+FTPHELLO JOB00036 IBMUSER  OUTPUT  A   RC=0000
 250 List completed successfully.
-ftp> delete JOB00024
+ftp> delete JOB00036
 250 Cancel successful
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)

@@ -4,14 +4,14 @@ ftp> put hello.jcl
 local: hello.jcl remote: hello.jcl
 229 Entering Extended Passive Mode (|||22000|)
 125 Sending Job to JES internal reader FIXrecfm 80
-250-It is known to JES as JOB00024
+250-It is known to JES as JOB00036
 250 Transfer completed successfully.
-211 bytes sent in 00:00 (4.83 KiB/s)
+211 bytes sent in 00:00 (5.14 KiB/s)
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=IBMUSER
 JOBNAME  JOBID    OWNER    STATUS CLASS
-FTPHELLO JOB00024 IBMUSER  OUTPUT  A   RC=0000
+FTPHELLO JOB00036 IBMUSER  OUTPUT  A   RC=0000
 250 List completed successfully.
 ftp> quit
 221 Quit command received. Goodbye.

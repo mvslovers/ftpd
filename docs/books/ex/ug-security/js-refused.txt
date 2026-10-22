@@ -1,0 +1,4 @@
+RDEF * CL(JESSPOOL) UACC(NONE)
+RDEFINE: Profile already defined
+PE * CL(JESSPOOL) ID(AUDIT) ACCESS(READ)
+PERMIT: No universal access record found

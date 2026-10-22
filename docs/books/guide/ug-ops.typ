@@ -334,6 +334,49 @@ session sent and received. The warnings about the configuration (@ug-ops-config)
 and the refusal of a connection at the session limit (@ug-ops-ses) are only in
 this log. Look at it when the console is quiet and a client has a problem.
 
+*The JES spool.* FTPD 1.3.0 checks every job that a user touches in the JES
+view against the profiles of the class #cmd("JESSPOOL")
+(@ug-security-jesspool), and it writes what it refused to this log. The lines
+are:
+
+#screen(```
+[WARN ] SITE JESOWNER refused: user=BOB value=ALICE rc=4
+[WARN ] JES LISTJOB denied: user=BOB job=JOB00038 reason=NOPROFILE rc=4
+[WARN ] JES DELE denied: user=AUDIT1 job=JOB00038 reason=NOCANCEL rc=8
+[INFO ] JES LIST: 4 jobs, 0 own, 21 hidden, 0 ERR, 11 RACF calls
+```)
+
+- *#cmd("SITE JESOWNER refused"):* a #cmd("SITE JESOWNER") that the client got a
+  #cmd("501") for. #cmd("value") is what the client sent, with each character
+  other than a letter, a digit, #cmd("$"), #cmd("#") or #cmd("@") shown as
+  #cmd("?") and cut after eight characters, so #cmd("*") reads #cmd("?").
+  #cmd("rc") is the return code of RAKF: 4 when no profile covers the user ID
+  and 8 when a profile gives no READ. It is #cmd("-") when FTPD did not ask
+  RAKF, as for #cmd("ABC*"), and the log has #cmd("value=ABC?").
+- *#cmd("JES op denied"):* a job that FTPD hid from the user or refused to
+  cancel. #cmd("op") is #cmd("LISTJOB") for #cmd("dir JOBnnnnn"), #cmd("RETR")
+  or #cmd("DELE"). #cmd("reason=NOPROFILE") means that no profile covers the
+  job, #cmd("reason=NONE") that a profile gives no access, and
+  #cmd("reason=NOCANCEL") that the user has READ and tried to cancel. The
+  #cmd("rc") is the RAKF return code again. #cmd("reason=NOACEE") means that
+  the session has no security environment, with #cmd("rc=-"), and FTPD
+  writes it once for each command.
+- *#cmd("JES LIST"):* one line for each #cmd("dir") or #cmd("ls"), at the level
+  INFO: the jobs listed, how many of them are the own jobs, how many FTPD hid,
+  how many it could not decide (#cmd("ERR")), and the number of questions that
+  it put to RAKF. A plain list hides a job without a line of its own. The
+  count is in this line.
+- *#cmd("JES op error ... reason=ERR"):* RAKF gave an answer that FTPD cannot
+  use, or the job has a name that cannot be an entity. FTPD hides the job.
+  This line is at the level ERROR, with at most eight lines for one command and
+  then #cmd("JES LIST error: user=USERID and n more ERR jobs").
+
+FTPD writes at most 16 lines of the form #cmd("denied") for a session, so that
+a client cannot fill the log. When it left more out, it writes
+#cmd("JES denied: user=USERID and n more denied") when the session ends. The
+other refusals at the level WARN, such as #cmd("SITE JESOWNER refused"), count
+in the same 16.
+
 == When a Command Abends <ug-ops-abend>
 
 #idx("ABEND")#idx("recovery")

@@ -11,6 +11,11 @@ data set view. This chapter goes through the tasks of the JES view, one session
 for each. The sessions run on one system in sequence, so the job IDs follow one
 another.
 
+A user works on the own jobs. The jobs of other users stay hidden, unless the
+administrator allows them with a profile in the RAKF class #cmd("JESSPOOL")
+(@ug-jes-others). Before FTPD 1.3.0 every user could list, read and cancel
+the jobs of everybody.
+
 The view reads the JES2 checkpoint and the spool, which FTPD finds itself; the
 procedure of the started task needs no statements for them
 (@ug-install-jes). When FTPD cannot open the checkpoint, #cmd("dir") and #cmd("ls") end
@@ -64,7 +69,7 @@ HELLO FROM A JOB THAT FTPD SUBMITTED
 ignores the file name of the command, and the client prints the name of the
 local file for both sides. The reply to the command shows the transfer: the
 start is #cmd("125 Sending Job to JES internal reader FIXrecfm 80"), and the end
-is a reply of two lines, #cmd("250-It is known to JES as JOB00024") and
+is a reply of two lines, #cmd("250-It is known to JES as JOB00036") and
 #cmd("250 Transfer completed successfully."). The job ID is the one that the
 following commands use. The job in the example ends with the return code 0000
 by the time #cmd("dir") lists it.
@@ -144,10 +149,18 @@ the file #cmd("bad.jcl") has a misspelled keyword on its #cmd("EXEC")
 statement). The filters are:
 
 - *The owner:* #cmd("site jesowner=name") sets it. Without it the owner is the
-  user ID of the session, so a user sees the own jobs. FTPD compares the
-  beginning of the owner of each job with the value. #cmd("site jesowner=*")
-  lists the jobs of all users. The session set it to a name that has no jobs, and the
-  list was empty. The header #cmd("125") names the filter that applies.
+  user ID of the session, so a user sees the own jobs. FTPD compares the whole
+  owner of each job with the value: #cmd("ABC") does not match a job of
+  #cmd("ABCD"). #cmd("site jesowner=*") lists the jobs of all users. The
+  filter only narrows the view. A user ID other than the own one and #cmd("*")
+  need the right to read those jobs (@ug-jes-others). Without it the reply is
+  #cmd("501 JESOWNER is not permitted") and the filter stays as it was, as
+  the two attempts of the session show. The reply does not say why and does
+  not repeat the value. A pattern such as #cmd("ABC*"), a value of more than
+  eight characters and a character other than a letter, a digit, #cmd("$"),
+  #cmd("#") or #cmd("@") are refused in the same way, and FTPD never cuts a
+  value to eight characters. The own user ID is always accepted. The header
+  #cmd("125") names the filter that applies.
 - *The job name:* #cmd("site jesjobname=name") limits the list to the jobs
   with this name. The session used #cmd("FTPH*"), and the list had only the job
   of the first session.
@@ -160,13 +173,16 @@ statement). The filters are:
   reply that says so in its first line, as the last #cmd("site") of the session
   shows, and the filter that was set stays.
 
-The values are not case sensitive. A client can set them back to everything
-with #cmd("site jesowner=*"), #cmd("site jesjobname=*") and
-#cmd("site jesstatus=all"), as the session does.
+The values are not case sensitive. A client sets the job name and the status
+back to everything with #cmd("site jesjobname=*") and
+#cmd("site jesstatus=all"), as the session does. #cmd("site jesowner=") with no
+value, or with the own user ID, sets the owner back to the user of the session.
+#cmd("site jesowner=*") does not set it back: it asks for the jobs of all users.
 
-The list has at most 200 jobs. When it reaches 200 jobs, the list ends with
-these two lines, and jobs after the 200th are not shown. The lines also appear
-for a list of exactly 200 jobs, when nothing was left out:
+The list has at most 200 jobs. A job that the user may not see (@ug-jes-others)
+is left out of the list and does not count. When the list reaches 200 jobs, it
+ends with these two lines, and jobs after the 200th are not shown. The lines
+also appear for a list of exactly 200 jobs, when nothing was left out:
 
 #screen(```
 250-JESENTRYLIMIT of 200 reached.  Additional entries not displayed
@@ -178,12 +194,14 @@ Narrow the filters to see the others.
 #note[*A job ID as the argument.* An argument that starts with #cmd("JOB"), in
 any case, is read as a job ID and gives the list of the spool files of that job
 (the next section). It is not a filter. To list jobs with a name that starts
-with #cmd("JOB"), use #cmd("site jesjobname").]
+with #cmd("JOB"), use #cmd("site jesjobname"). A job that does not exist, one
+that the user may not see (@ug-jes-others) and an ID with #cmd("*") or a
+pattern all get the reply of #cmd("get"): #cmd("550 Jobid ... not found ...").]
 
 == Reading the Output of a Job <ug-jes-output>
 
 #idx("job", "output")#idx("spool")
-The command #cmd("dir JOB00024") lists the spool files of the job, one line for
+The command #cmd("dir JOB00036") lists the spool files of the job, one line for
 each, with the step, the procedure step, the output class and the DD name. The
 command #cmd("get") (#cmd("RETR")) fetches them. The session lists the spool
 files, fetches all of them in one file, fetches the third one alone, and asks
@@ -191,11 +209,11 @@ for two that do not exist:
 
 #screen(raw(read("../ex/ug-jes/j-output.txt"), block: true))
 
-- *#cmd("get JOB00024 out.txt"):* all output files of the job, one after the
+- *#cmd("get JOB00036 out.txt"):* all output files of the job, one after the
   other, in one local file. FTPD writes the line #cmd(" !! END OF JES SPOOL FILE !!")
   after every file. The start is #cmd("125 Sending all spool files for requested Jobid").
   The local file starts with the job log.
-- *#cmd("get JOB00024.3 spool3.txt"):* only the third output file. The number
+- *#cmd("get JOB00036.3 spool3.txt"):* only the third output file. The number
   counts the output files of the job from 1. The start is #cmd("125 Sending data
   set") and the name of the file: the owner, the job name, the job ID, the ID of
   the data set in JES2 (#cmd("D0000004") in the example, not the number that
@@ -204,9 +222,9 @@ for two that do not exist:
 The list of the spool files has eight lines, and only five of them can be
 fetched. The number after the point does not count the input files of the job:
 the JCL that was read (#cmd("JESJCLIN")), the input text (#cmd("JESINTXT")) and the data of #cmd("SYSIN") that is part of the job (#cmd("SYSUT1") of
-the example). In the example #cmd("JOB00024.3") is therefore the third of
+the example). In the example #cmd("JOB00036.3") is therefore the third of
 #cmd("JESMSGLG"), #cmd("JESJCL"), #cmd("JESYSMSG"), #cmd("SYSPRINT") and
-#cmd("SYSUT2"), and #cmd("JOB00024.9") is past the five. The first of the two
+#cmd("SYSUT2"), and #cmd("JOB00036.9") is past the five. The first of the two
 error lines at the end of the session shows this reply, and the second one is
 for a job that JES2 does not know. The byte count of the list is the number of
 records times the record length of the file, so it is not exact.
@@ -224,8 +242,11 @@ The error replies are:
     [Reply], [Cause],
     [#cmd("501 Missing job ID")], [No argument.],
     [#cmd("550 Jobid JOB00042 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=USERID")],
-      [JES2 does not know the job, or the job is not in the status that
-      #cmd("JESSTATUS") names. The text shows the filters of the session.],
+      [JES2 does not know the job, the job is not in the status that
+      #cmd("JESSTATUS") names, or the job belongs to another user and the user
+      may not see it (@ug-jes-others). One text answers all three cases, and it
+      shows the filters of the session. A job ID with #cmd("*") or a pattern
+      such as #cmd("JOB000*") is answered like a job that does not exist.],
     [#cmd("550 Spool file 5 not found for Jobid JOB00042, 3 spool file(s) available")],
       [The number after the point is 0 or larger than the number of output
       files. The text says how many files the job has.],
@@ -238,13 +259,92 @@ The error replies are:
   )
 ]
 
-#note[*The job ID and the status.* #cmd("get") and #cmd("delete") find the job
-by its ID. The filters #cmd("JESOWNER") and #cmd("JESJOBNAME") do not apply,
-and FTPD does not compare the owner of the job with the user ID of the
-session. The 550 text names them, but they do not take part in the search.
-#cmd("JESSTATUS") does take part: with #cmd("site jesstatus=active") the output
-of a job that has ended cannot be fetched, and a job that is not active cannot
-be cancelled. Set #cmd("JESSTATUS") back to #cmd("ALL") first.]
+#note[*The job ID and the status.* #cmd("get"), #cmd("delete") and
+#cmd("dir JOBnnnnn") find the job by its exact ID. The filters #cmd("JESOWNER")
+and #cmd("JESJOBNAME") do not apply: a user who may see the job of another user
+(@ug-jes-others) needs no #cmd("site jesowner") to fetch it. The 550 text names
+the filters, but they do not take part in the search. #cmd("JESSTATUS") does
+take part: with #cmd("site jesstatus=active") the output of a job that has
+ended cannot be fetched, and a job that is not active cannot be cancelled. Set
+#cmd("JESSTATUS") back to #cmd("ALL") first.]
+
+== Jobs of Other Users <ug-jes-others>
+
+#idx("job", "other users")#idx("JESSPOOL")
+A session always lists, reads and cancels its own jobs. For a job of another
+user FTPD asks RAKF, in the class #cmd("JESSPOOL"), whether the user may read
+it, and for a #cmd("delete") whether the user may update it. The administrator
+answers with profiles (@ug-security-jesspool). Without a profile a user sees
+nothing of the jobs of others. That is the state of FTPD 1.3.0 until the
+administrator acts. FTPD 1.2.0 let every user list, read and cancel the jobs of
+everybody, so an administrator who relied on that defines the profiles before
+the upgrade.
+
+The first session is the one of BOB, a user without any right to the jobs of
+others. BOB has the job #cmd("JOB00039"), and ALICE the job #cmd("JOB00038"):
+
+#screen(raw(read("../ex/ug-jes/j-other-none.txt"), block: true))
+
+- #cmd("dir") lists the job of BOB and no other. The header names
+  #cmd("JESOWNER=BOB").
+- #cmd("site jesowner=ALICE") and #cmd("site jesowner=*") are refused with
+  #cmd("501 JESOWNER is not permitted"). The filter stays as it was.
+- #cmd("dir JOB00038"), #cmd("get JOB00038") and #cmd("delete JOB00038") get
+  #cmd("550 Jobid JOB00038 not found ..."), the reply for a job that does not
+  exist. The reply does not tell BOB whether the job exists, and the owner
+  that it names is the filter of BOB, not the owner of the job.
+
+What the user may do with a job of another user depends on the access that
+the profile gives:
+
+#tab(caption: [Access to the jobs of another user])[
+  #table(columns: (1.5in, 1fr, 1fr),
+    [Access], [#cmd("dir"), #cmd("dir JOBnnnnn"), #cmd("get")], [#cmd("delete")],
+    [none, or no profile], [The job is hidden: the 550 of the session above.],
+      [The same 550.],
+    [#cmd("READ")], [The job is listed and its output is read.],
+      [#cmd("550 Access denied - cannot cancel JOBnnnnn")],
+    [#cmd("UPDATE"), #cmd("CONTROL"), #cmd("ALTER")], [As for READ.],
+      [#cmd("250 Cancel successful")],
+  )
+]
+
+The next session is the one of AUDIT1, a member of the group AUDIT, which has
+READ on the jobs of all users (@ug-security-jesspool). The session lists
+the own jobs, widens the list to all users, narrows it to ALICE, reads the
+output of her job (the client shows the first lines of the file), and tries to
+cancel it:
+
+#screen(raw(read("../ex/ug-jes/j-other-read.txt"), block: true))
+
+- The first #cmd("dir") is empty: AUDIT1 has no job of its own.
+- #cmd("site jesowner=*") and #cmd("site jesowner=ALICE") are accepted,
+  because AUDIT1 may read the jobs of all users. The list of all users has the
+  jobs of ALICE and BOB. It has no started task: the owner of a started task is
+  #cmd("SYSTEM"), and the profiles of the example give #cmd("SYSTEM") no
+  access.
+- #cmd("dir JOB00038") and #cmd("get JOB00038") work. They need no
+  #cmd("site jesowner"), because the job ID alone names the job.
+- #cmd("delete JOB00038") is refused with
+  #cmd("550 Access denied - cannot cancel JOB00038"). This is the reply of a
+  user who sees the job but has no right to cancel it. It differs from "not
+  found" on purpose.
+
+The third session is the one of IBMUSER, a member of the group ADMIN, which
+has UPDATE on the jobs of all users. IBMUSER cancels the job of BOB:
+
+#screen(raw(read("../ex/ug-jes/j-other-update.txt"), block: true))
+
+#note[*Your own jobs do not depend on a profile.* A profile in the class
+#cmd("JESSPOOL") decides only what a user may do with the jobs of other users.
+It cannot hide the own jobs from their owner. A user ID that must not use the
+spool at all is kept out at the login (#cmd("FTPAUTH"), @ug-security-ftpauth).]
+
+#note[*The profiles apply to FTP only.* They say nothing about who can read the
+spool through TSO, SDSF or another interface.]
+
+FTPD writes a line to the log for most refusals, so that the operator can see
+who asked for what (@ug-ops-log).
 
 == Cancelling a Job and Leaving the View <ug-jes-cancel>
 
@@ -259,9 +359,13 @@ The reply is #cmd("250 Cancel successful"). The second #cmd("delete") of the
 same job gets the #cmd("550"): the job is gone. The other errors are:
 
 - #cmd("501 Missing job ID") without an argument.
-- #cmd("550 Access denied - cannot cancel JOB00042") when JES2 refuses.
-- #cmd("550 Failed to cancel JOB00042 (rc=n)") for any other code of JES2, and
-  the #cmd("550 Jobid ... not found") reply for a job that JES2 does not know.
+- #cmd("550 Access denied - cannot cancel JOB00042") when JES2 refuses, and
+  when the job belongs to another user and the profile gives only #cmd("READ")
+  (@ug-jes-others).
+- #cmd("550 Failed to cancel JOB00042 (rc=n)") for any other code of JES2.
+- #cmd("550 Jobid ... not found ...") for a job that JES2 does not know, for a
+  job of another user that the profile hides, and for an ID with #cmd("*") or a
+  pattern.
 
 #cmd("site filetype=seq") ends the JES view, and #cmd("pwd") shows the working
 directory of the view that was active before. Any other value of #cmd("FILETYPE") ends the view too.

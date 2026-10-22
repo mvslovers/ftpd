@@ -1,0 +1,23 @@
+ftp> site filetype=jes
+200 SITE command was accepted
+ftp> dir
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=BOB
+JOBNAME  JOBID    OWNER    STATUS CLASS
+FTPHELLO JOB00039 BOB      OUTPUT  A   RC=0000
+250 List completed successfully.
+ftp> site jesowner=ALICE
+501 JESOWNER is not permitted
+ftp> site jesowner=*
+501 JESOWNER is not permitted
+ftp> dir JOB00038
+229 Entering Extended Passive Mode (|||22000|)
+550 Jobid JOB00038 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=BOB
+ftp> get JOB00038 out.txt
+local: out.txt remote: JOB00038
+229 Entering Extended Passive Mode (|||22000|)
+550 Jobid JOB00038 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=BOB
+ftp> delete JOB00038
+550 Jobid JOB00038 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=BOB
+ftp> quit
+221 Quit command received. Goodbye.

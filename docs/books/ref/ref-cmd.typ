@@ -344,20 +344,31 @@ as before:
       #cmd("USER") and #cmd("PASSWORD") to the JOB statement.],
     [#cmd("LIST"), #cmd("NLST")], [The list of jobs, filtered by the owner,
       the job name and the status of #cmd("SITE"). At most 200 entries.],
-    [#cmd("LIST JOBnnnnn")], [The spool files of one job. #cmd("550 No job found with ID JOBnnnnn for JESSTATUS=ALL") if there is none, or if the
-      job is not in the status of #cmd("SITE JESSTATUS").],
+    [#cmd("LIST JOBnnnnn")], [The spool files of one job.
+      #cmd("550 Jobid JOBnnnnn not found for JESJOBNAME=n, JESSTATUS=s, JESOWNER=o")
+      if there is none, if the job is not in the status of
+      #cmd("SITE JESSTATUS"), if the session may not see it, or if the ID has a
+      #cmd("*") or a pattern. It is the reply of #cmd("RETR") and #cmd("DELE").],
     [#cmd("RETR JOBnnnnn")], [All output files of the job, each followed by
       the line #cmd(" !! END OF JES SPOOL FILE !!").],
     [#cmd("RETR JOBnnnnn.n")], [The output file number n, counted from 1. The
       input files of the job are not counted.],
     [#cmd("DELE JOBnnnnn")], [Cancels the job and removes its output:
-      #cmd("250 Cancel successful").],
+      #cmd("250 Cancel successful"). #cmd("550 Access denied - cannot cancel JOBnnnnn")
+      when JES2 refuses, and for a job of another user that the session may
+      read but not update.],
   )
 ]
 
 #cmd("SITE JESSTATUS") (@ref-site-jesstatus) limits #cmd("LIST"),
 #cmd("NLST"), #cmd("RETR") and #cmd("DELE") to the jobs in one status. A job
 outside the filter is answered like an unknown job.
+
+The commands act on the own jobs of the session. A job of another user is
+listed, read and cancelled only when the RAKF class #cmd("JESSPOOL") gives the
+session READ, and UPDATE for #cmd("DELE") (@ref-site-jesowner). A job that the
+session may not see is answered like an unknown job, so the reply does not tell
+whether it exists.
 
 The replies to errors, the format of the lists and the rules for JCL are in
 the _FTPD User's Guide_, "Submitting Jobs and Reading Their Output" and "Working with Files in UFS".

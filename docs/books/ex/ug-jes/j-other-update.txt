@@ -1,0 +1,21 @@
+ftp> site filetype=jes
+200 SITE command was accepted
+ftp> site jesowner=*
+200 SITE command was accepted
+ftp> dir
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=*
+JOBNAME  JOBID    OWNER    STATUS CLASS
+PAYROLL  JOB00038 ALICE    OUTPUT  A   RC=0000
+FTPHELLO JOB00039 BOB      OUTPUT  A   RC=0000
+250 List completed successfully.
+ftp> delete JOB00039
+250 Cancel successful
+ftp> dir
+229 Entering Extended Passive Mode (|||22000|)
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=*
+JOBNAME  JOBID    OWNER    STATUS CLASS
+PAYROLL  JOB00038 ALICE    OUTPUT  A   RC=0000
+250 List completed successfully.
+ftp> quit
+221 Quit command received. Goodbye.

@@ -1,0 +1,4 @@
+PE * CL(JESSPOOL) ID(ADMIN) ACCESS(UPDATE)
+PERMIT:  access UPDATE  granted to JESSPOOL/*
+PERMIT: ID = ADMIN
+PERMIT: Run RAKFPROF to activate the changes

@@ -4,15 +4,15 @@ ftp> put bad.jcl
 local: bad.jcl remote: bad.jcl
 229 Entering Extended Passive Mode (|||22000|)
 125 Sending Job to JES internal reader FIXrecfm 80
-250-It is known to JES as JOB00026
+250-It is known to JES as JOB00037
 250 Transfer completed successfully.
-83 bytes sent in 00:00 (2.01 KiB/s)
+83 bytes sent in 00:00 (1.81 KiB/s)
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=IBMUSER
 JOBNAME  JOBID    OWNER    STATUS CLASS
-FTPHELLO JOB00024 IBMUSER  OUTPUT  A   RC=0000
-FTPBAD   JOB00026 IBMUSER  OUTPUT  A   JCL ERROR
+FTPHELLO JOB00036 IBMUSER  OUTPUT  A   RC=0000
+FTPBAD   JOB00037 IBMUSER  OUTPUT  A   JCL ERROR
 250 List completed successfully.
 ftp> site jesstatus=active
 200 SITE command was accepted
@@ -24,21 +24,25 @@ JOBNAME  JOBID    OWNER    STATUS CLASS
 ftp> site jesstatus=all
 200 SITE command was accepted
 ftp> site jesowner=nobody
+501 JESOWNER is not permitted
+ftp> site jesowner=*
+501 JESOWNER is not permitted
+ftp> site jesowner=IBMUSER
 200 SITE command was accepted
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
-125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=NOBODY
+125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=IBMUSER
 JOBNAME  JOBID    OWNER    STATUS CLASS
+FTPHELLO JOB00036 IBMUSER  OUTPUT  A   RC=0000
+FTPBAD   JOB00037 IBMUSER  OUTPUT  A   JCL ERROR
 250 List completed successfully.
-ftp> site jesowner=*
-200 SITE command was accepted
 ftp> site jesjobname=FTPH*
 200 SITE command was accepted
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
-125 List started OK for JESJOBNAME=FTPH*, JESSTATUS=ALL and JESOWNER=*
+125 List started OK for JESJOBNAME=FTPH*, JESSTATUS=ALL and JESOWNER=IBMUSER
 JOBNAME  JOBID    OWNER    STATUS CLASS
-FTPHELLO JOB00024 IBMUSER  OUTPUT  A   RC=0000
+FTPHELLO JOB00036 IBMUSER  OUTPUT  A   RC=0000
 250 List completed successfully.
 ftp> site jesjobname=*
 200 SITE command was accepted

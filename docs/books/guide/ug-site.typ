@@ -32,11 +32,12 @@ command:
   unknown word, and an unknown word before a wrong value.
 - *#cmd("RETPD") is above the limit of the server, the word is #cmd("RDW"),
   a #cmd("SBSENDEOL") that FTPD does not handle, or a #cmd("DCBDSN") whose model
-  FTPD refuses:* the reply is a #cmd("501") with the reason, such as
+  FTPD refuses, or a #cmd("JESOWNER") that the user may not use:* the reply is
+  a #cmd("501") with the reason, such as
   #cmd("501 RETPD=n exceeds the server limit of N days; keeping the current value")
   or
   #cmd("501 DCBDSN: NAME is not cataloged; keeping the current values"),
-  and the setting stays as it was. For #cmd("DCBDSN") see the _FTPD Reference_,
+  or #cmd("501 JESOWNER is not permitted"), and the setting stays as it was. For #cmd("DCBDSN") see the _FTPD Reference_,
   "DCBDSN". If the command has
   more words, FTPD applies them, and the reply has two lines: the text above
   with #cmd("501-"), and #cmd("501 Other parameters on this command were applied.")
@@ -133,7 +134,9 @@ the allocation, and a combination that the system rejects shows when
       transfers between kept and dropped. Each use of the keyword switches
       again. A session starts with the blanks dropped.],
     [#cmd("JESJOBNAME=n"), #cmd("JESOWNER=n")], [the filters of the JES job
-      list (@ug-jes).],
+      list (@ug-jes). #cmd("JESOWNER") with another user ID or #cmd("*") needs
+      the right to read those jobs, and answers #cmd("501 JESOWNER is not
+      permitted") without it (@ug-jes-others).],
     [#cmd("JESSTATUS=s")], [the status filter of the JES view: #cmd("ALL"),
       #cmd("INPUT"), #cmd("ACTIVE") or #cmd("OUTPUT"), in any case. It applies
       to #cmd("LIST"), #cmd("NLST"), #cmd("RETR") and #cmd("DELE")

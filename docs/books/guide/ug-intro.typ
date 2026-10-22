@@ -114,6 +114,16 @@ the book explains the subject:
     [The started task no longer logs on as #cmd("FTPD") at startup. It keeps
       the identity RAKF gives it, and says which in #cmd("FTPD004I") or
       #cmd("FTPD004W").], [@ug-security-stc],
+    [A user sees, reads and cancels only the own jobs in the JES view. The jobs
+      of other users need a profile in the RAKF class #cmd("JESSPOOL"). Before,
+      every user could list, read and cancel the jobs of everybody. Define the
+      profiles before you upgrade.],
+      [@ug-jes-others, @ug-security-jesspool],
+    [#cmd("SITE JESOWNER") with another user ID or #cmd("*") needs the same
+      right, and answers #cmd("501 JESOWNER is not permitted") without it.
+      Before, it answered #cmd("200") for any value, and the owner was compared
+      as a prefix. Now the whole owner is compared, and a value that is longer
+      than eight characters is refused, not cut.], [@ug-jes-list],
     [The values of #cmd("SITE JESJOBNAME"), #cmd("JESOWNER") and
       #cmd("JESSTATUS") are upper case whatever the client typed.],
       [@ug-site-case],

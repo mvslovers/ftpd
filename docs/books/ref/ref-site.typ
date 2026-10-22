@@ -59,17 +59,21 @@ SITE [keyword[=value] ...]
     [#cmd("501 DCBDSN: ... keeping the current values")], [#cmd("DCBDSN") names
       a data set that FTPD cannot use as a model, and it is the only word
       (@ref-site-dcbdsn).],
+    [#cmd("501 JESOWNER is not permitted")], [#cmd("JESOWNER") names a user
+      or #cmd("*") that the session has no right to read, or the value is not
+      allowed (@ref-site-jesowner), and it is the only word. The text does not
+      name the value.],
     [#cmd("501-text") and
       #cmd("501 Other parameters on this command were applied.")], [One of the
-      four #cmd("501") cases above, with more than one word on the line.],
+      five #cmd("501") cases above, with more than one word on the line.],
     [#cmd("202 SITE not necessary; you may proceed")], [No word.],
   )
 ]
 
 The code is #cmd("200") in the first three cases, #cmd("501") when #cmd("RETPD")
 is above the limit, when the line has #cmd("RDW") or a #cmd("SBSENDEOL") that
-FTPD does not handle or a #cmd("DCBDSN") that FTPD refuses, and #cmd("202") for
-no word. A script must read the first
+FTPD does not handle, a #cmd("DCBDSN") that FTPD refuses or a #cmd("JESOWNER")
+that is not permitted, and #cmd("202") for no word. A script must read the first
 line.
 
 The #cmd("501") takes the place of the other replies. If the same line has a
@@ -77,7 +81,8 @@ refused word and also a wrong value or a word that is not a keyword,
 the reply is the #cmd("501"), and the text about the other word is not sent.
 The other words are applied in every case. If more than one word is refused,
 the #cmd("501") names the first of them, counted from the left, whichever of
-#cmd("RETPD"), #cmd("RDW"), #cmd("SBSENDEOL") and #cmd("DCBDSN") it is.
+#cmd("RETPD"), #cmd("RDW"), #cmd("SBSENDEOL"), #cmd("DCBDSN") and
+#cmd("JESOWNER") it is.
 
 == Abbreviations <ref-site-abbr>
 
@@ -193,8 +198,11 @@ of the full names, and still work.
     [#cmd("JESJOBNAME=n")], [The job name for the job list. Upper case.
       #cmd("JESJOBNAME=") with no value ends the filter and
       lists all job names.],
-    [#cmd("JESOWNER=n")], [The owner for the job list. Upper case. #cmd("*")
-      means all owners. Without it the owner is the user of the session.],
+    [#cmd("JESOWNER=n")], [The owner for the job list. Upper case. Without it,
+      and with no value, the owner is the user of the session. #cmd("*") means
+      all owners. Another user ID and #cmd("*") need the right to read those
+      jobs, and the reply is #cmd("501 JESOWNER is not permitted") without it
+      (@ref-site-jesowner).],
     [#cmd("JESSTATUS=s")], [The status filter of the JES view: #cmd("ALL"),
       #cmd("INPUT"), #cmd("ACTIVE") or #cmd("OUTPUT"), in any case, stored in
       upper case. No value: #cmd("ALL"), which is also the value at the start.
@@ -352,6 +360,45 @@ effect on #cmd("TYPE I") and #cmd("TYPE E"), which cut the data into records by
 length, and none in the UFS and JES views. Before FTPD 1.3.0 the keyword
 did nothing, and FTPD cut every long line, with a plain #cmd("250").
 
+== JESOWNER <ref-site-jesowner>
+
+#idx("JESOWNER")#idx("JESSPOOL")
+#cmd("SITE JESOWNER=n") sets the owner for the job list of the JES view. It
+narrows the list and never widens what the session may see. FTPD decides by
+the value:
+
+#tab(caption: [The values of JESOWNER])[
+  #table(columns: (1.6in, 1fr),
+    [Value], [Result],
+    [no value, or the user ID of the session], [Accepted. The list shows the
+      own jobs. FTPD does not ask RAKF.],
+    [another user ID], [Accepted when RAKF gives READ in the class
+      #cmd("JESSPOOL") on the entity #cmd("ID.."). The list shows the jobs of
+      that owner that the session may read.],
+    [#cmd("*")], [Accepted when RAKF gives READ on the entity #cmd("..").
+      The list shows every job that the session may read.],
+    [anything else], [#cmd("501 JESOWNER is not permitted").],
+  )
+]
+
+*What is refused with the 501:* a user ID or #cmd("*") without the right to
+read, a pattern such as #cmd("ABC*"), a value of more than eight characters and
+a value with a character other than #cmd("A") to #cmd("Z"), #cmd("0") to
+#cmd("9"), #cmd("$"), #cmd("#") and #cmd("@"). FTPD does not cut a long value to
+eight characters. The text is the same for every cause and does not repeat the
+value, so that the reply does not tell a client which user IDs exist. The
+filter stays as it was. The other words on the line are applied, and the reply
+then has the two lines #cmd("501-JESOWNER is not permitted") and
+#cmd("501 Other parameters on this command were applied.") (@ref-site-reply).
+The log has a line at the level WARN (_FTPD User's Guide_, "Reading the Log").
+
+The owner of a job is compared whole with the value: #cmd("ABC") does not match
+a job of #cmd("ABCD"). The filter acts on #cmd("LIST") and #cmd("NLST"). It has
+no part in #cmd("LIST JOBnnnnn"), #cmd("RETR") and #cmd("DELE"): the job ID
+decides, and the profile of the class #cmd("JESSPOOL") for the owner of that
+job. The profiles are in the _FTPD User's Guide_, "Letting Users See the Jobs of
+Others: JESSPOOL".
+
 == JESSTATUS <ref-site-jesstatus>
 
 #idx("JESSTATUS")
@@ -360,9 +407,8 @@ did nothing, and FTPD cut every long line, with a plain #cmd("250").
 - #cmd("LIST") and #cmd("NLST"): the list has the jobs in that status only. The
   header #cmd("125 List started OK for JESJOBNAME=n, JESSTATUS=s and JESOWNER=o")
   names the filter.
-- #cmd("LIST JOBnnnnn"): a job outside the filter gives
-  #cmd("550 No job found with ID JOBnnnnn for JESSTATUS=s").
-- #cmd("RETR") and #cmd("DELE"): a job outside the filter gives
+- #cmd("LIST JOBnnnnn"), #cmd("RETR") and #cmd("DELE"): a job outside the
+  filter gives
   #cmd("550 Jobid JOBnnnnn not found for JESJOBNAME=n, JESSTATUS=s, JESOWNER=o").
 
 The statuses are those of the STATUS column of the job list. #cmd("INPUT"),

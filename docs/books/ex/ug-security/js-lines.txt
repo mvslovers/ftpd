@@ -1,0 +1,4 @@
+JESSPOOL*                                                   NONE
+JESSPOOL*                                           ADMIN   UPDATE
+JESSPOOL*                                           AUDIT   READ
+JESSPOOLSYSTEM.*                                            NONE

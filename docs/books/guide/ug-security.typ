@@ -6,8 +6,8 @@
 FTPD has no user database of its own. RAKF verifies every user ID and
 password, and RAKF decides every access to a data set. Without RAKF nobody can
 log in, and no parameter turns that off. This chapter says what FTPD asks RAKF,
-what a client sees when RAKF says no, and which identity the started task
-itself has. The tables, the profiles and the steps to change them are in
+what a client sees when RAKF says no, which identity the started task
+itself has, and how an administrator lets users see the jobs of others. The tables, the profiles and the steps to change them are in
 `docs/FTPD_RAKF_SETUP.md` in the FTPD (ftpd) repository. This book does not
 repeat them.
 
@@ -157,8 +157,146 @@ statement has no #cmd("NOTIFY"), and does not look at the rest of the JCL. It
 adds the two operands only when it finds a JOB statement. What the job may do is what
 RAKF allows this user.
 
-#note[*Other users' jobs.* #cmd("get") and #cmd("delete") in the JES view find a
-job by its ID and do not compare its owner with the user ID of the session
-(@ug-jes-output). A user who has FTP access can fetch the output of another
-user's job when the ID is known, and can cancel it. Do not give FTP access to a
-user who must not have this.]
+Jobs of other users are a separate matter: FTPD asks RAKF for each one
+(@ug-security-jesspool).
+
+== Letting Users See the Jobs of Others: JESSPOOL <ug-security-jesspool>
+
+#idx("JESSPOOL")#idx("JES", "security")#idx("RAKF", "JESSPOOL")
+In the JES view (@ug-jes) FTPD decides for every job whether the user may list
+it, read its output and cancel it. A user always works on the own jobs. For a
+job of another user FTPD asks RAKF, in the class #cmd("JESSPOOL"), for READ
+access, and for a #cmd("delete") for UPDATE access. The entity is the owner, the
+job name and the job ID, separated by dots:
+
+```
+ALICE.PAYROLL.JOB00038
+```
+
+A job without an owner has the entity #cmd(".PAYROLL.JOB00038"). The owner comes
+first because RAKF compares only the first eight characters of an entity, so a
+profile #cmd("ALICE.*") is a rule about the user ALICE.
+
+When no profile covers the entity, or the profile gives #cmd("NONE"), the job
+is hidden: it is not in the list, and #cmd("get"), #cmd("delete") and
+#cmd("dir JOBnnnnn") answer #cmd("550 Jobid ... not found ..."), the reply for
+a job that does not exist. #cmd("READ") lists and reads the job, and a
+#cmd("delete") gets #cmd("550 Access denied - cannot cancel JOBnnnnn").
+#cmd("UPDATE"), #cmd("CONTROL") and #cmd("ALTER") allow everything
+(@ug-jes-others has the sessions). #cmd("site jesowner=*") and
+#cmd("site jesowner=USERID") need READ on the jobs they would show: the check
+for #cmd("*") asks for the entity #cmd("..") and the check for another user ID
+asks for #cmd("USERID.."). The profile #cmd("*") covers both, and the profile
+#cmd("USERID.*") covers the second.
+
+*Without any profile every user sees only the own jobs.* That is the state
+after the upgrade to FTPD 1.3.0, and it is the most restrictive one. FTPD 1.2.0
+let every user list, read and cancel the jobs of everybody. An administrator
+who relied on that creates the profiles before the upgrade.
+
+=== Creating the Profiles
+
+The profiles are lines in #cmd("SYS1.SECURE.CNTL(PROFILES)"). Create them with
+the RAKF commands #cmd("RDEFINE") (#cmd("RDEF")) and #cmd("PERMIT")
+(#cmd("PE")), and reload the tables with the procedure #cmd("RAKFPROF"). The
+commands come with RAKF 2.0.0 and run in a TSO batch job. The user of the job
+must be connected to the group #cmd("RAKFADM") and have the SPECIAL authority
+(@ug-install-rakfsetup says how to give it). The job below sets this up:
+
+- Everyone sees only the own jobs (#cmd("*") with #cmd("NONE")).
+- The group #cmd("AUDIT") reads the jobs of all users (#cmd("PE") with
+  #cmd("READ")).
+- The started tasks stay closed to everyone (#cmd("SYSTEM.*") with
+  #cmd("NONE")).
+
+#screen(```
+//JESSPOOL JOB (ACCT),'JESSPOOL',CLASS=A,MSGCLASS=H,GROUP=RAKFADM
+//TSO      EXEC PGM=IKJEFT01,REGION=4096K
+//SYSPRINT DD SYSOUT=*
+//SYSTSPRT DD SYSOUT=*
+//SYSTSIN  DD *
+RDEF * CL(JESSPOOL) UACC(NONE)
+PE * CL(JESSPOOL) ID(AUDIT) ACCESS(READ)
+RDEF SYSTEM.* CL(JESSPOOL) UACC(NONE)
+/*
+//RAKFPROF EXEC RAKFPROF
+```)
+
+The first command defines the universal access of the profile #cmd("*"), and
+the second adds the group. The output of the step shows the answers of the
+second and the third command:
+
+#screen(raw(read("../ex/ug-security/js-profile.txt"), block: true))
+
+#cmd("RAKFPROF") reloads the tables, and the job log says
+#cmd("RAKFPROF7  RAKF PROFILES UPDATED"). Without the reload the profiles are
+not in effect. A change applies from the next command of a session that is
+running, and a change of the groups of a user applies at the next login.
+
+The group #cmd("ADMIN") of MVS/CE gets the right to cancel jobs in the same
+way, with one more command and the reload:
+
+#screen(raw(read("../ex/ug-security/js-admin.txt"), block: true))
+
+The two jobs wrote these lines to #cmd("SYS1.SECURE.CNTL(PROFILES)"). The lines
+are column-positioned: the class in columns 1 to 8, the entity from column 9,
+the group in columns 53 to 60 and the access from column 61
+(@ug-install-rakfsetup):
+
+#screen(raw(read("../ex/ug-security/js-lines.txt"), block: true))
+
+Everybody sees the own jobs, #cmd("AUDIT") reads all jobs, #cmd("ADMIN") reads
+and cancels all jobs, and the jobs of the started tasks, which have the owner
+#cmd("SYSTEM"), are closed to all of them. The sessions in @ug-jes-others ran
+against these profiles.
+
+#note[*#cmd("RDEFINE * CLASS(JESSPOOL)") is refused on MVS/CE.* The first
+command of the job answers that the profile exists, and the next #cmd("PE") for
+#cmd("*") answers that it finds no universal access record:
+
+#screen(raw(read("../ex/ug-security/js-refused.txt"), block: true))
+
+#cmd("RDEFINE") compares only the name of the profile, not the class, and the
+profile #cmd("*") exists in the classes #cmd("DATASET"), #cmd("DASDVOL") and
+#cmd("TAPEVOL"). The workaround is one line that you write into
+#cmd("PROFILES") by hand, once, before the first #cmd("PE") for #cmd("*"): the
+universal line of #cmd("*") in the class #cmd("JESSPOOL"), between the lines
+of #cmd("FACILITY") and #cmd("TAPEVOL"). It is the first of the four lines
+shown earlier: #cmd("JESSPOOL") in columns 1 to 8, the #cmd("*") in column 9 and
+#cmd("NONE") from column 61. Leave #cmd("RDEF *") out of the job. Take a copy
+of #cmd("PROFILES") first, because a broken table can stop JES2 at the next IPL
+on RAKF 2.0.0. The commands #cmd("PE") and #cmd("RDEF SYSTEM.*") then work as
+shown.]
+
+=== Rules for the Profiles
+
+The setup guide (`docs/FTPD_RAKF_SETUP.md`, section 7) has all the rules and
+more examples. The ones that decide most cases are:
+
+- *Write an owner profile with a star:* #cmd("ALICE.*"), never #cmd("ALICE").
+  Write at most one #cmd("*") profile.
+- *The last matching profile wins, not the longest.* RAKF orders the profiles
+  by the EBCDIC collating sequence, and #cmd("*") sorts after #cmd("."). A
+  profile for an owner therefore beats #cmd("*") for the jobs of that owner.
+  The exceptions are the owners that sort before #cmd("*"), such as a user ID
+  that starts with #cmd("$").
+- *Write #cmd("SYSTEM.*") with #cmd("NONE")* as soon as a universal line gives
+  READ. Otherwise the logs of all started tasks, those of FTPD included, are
+  open to every reader. Nothing enforces this line.
+- *Every entity with a group line needs a universal line:* #cmd("*"),
+  #cmd("SYSTEM.*") and #cmd("ALICE.*") each. #cmd("PE") refuses a profile
+  without one.
+- *Put the line of the administrators into every owner block.* A block
+  without it falls back to its universal access, and as the last matching
+  profile it wins against #cmd("*").
+- *One connected group is enough.* The right comes from any group the user is
+  connected to in #cmd("USERS"). The authority OPERATIONS grants nothing in the
+  class #cmd("JESSPOOL").
+- *The prefix trap:* the profile #cmd("MIKE1.*") does not cover the jobs of
+  #cmd("MIKE10").
+
+#note[*What the profiles do not do.* They never restrict the own jobs of a
+user, so a user ID that must not use the spool is kept out at the login
+(@ug-security-ftpauth). They regulate FTP only, not TSO, SDSF or any other
+interface. And the owner of a job is what the submitter wrote into the job, so
+the view of the spool in FTP is no audit trail.]

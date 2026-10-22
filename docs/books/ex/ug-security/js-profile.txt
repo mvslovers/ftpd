@@ -1,0 +1,7 @@
+PE * CL(JESSPOOL) ID(AUDIT) ACCESS(READ)
+PERMIT:  access READ    granted to JESSPOOL/*
+PERMIT: ID = AUDIT
+PERMIT: Run RAKFPROF to activate the changes
+RDEF SYSTEM.* CL(JESSPOOL) UACC(NONE)
+RDEFINE: JESSPOOL profile defined: SYSTEM.*
+RDEFINE: Run RAKFPROF to activate the changes
