@@ -18,6 +18,17 @@ tables and adds TSO commands for them (`ADDUSER`, `ALTUSER`, `DELUSER`,
 `SYS1.SECURE.SHADOW`, and the mapping of a started task by its name
 (section 2). Where RAKF 2.0.0 changes something, this guide says so in a box.
 
+> **Do not edit `PROFILES` by hand; RAKF's maintainer recommends the
+> commands.** Create profiles with `RDEFINE`, `PERMIT` and `ADDSD`, then reload
+> with `S RAKFPROF`. The commands keep the file sorted, refuse a group line that
+> has no universal line, and do not write a profile twice. A hand-edited file
+> that is wrong aborts the reload (`U0300`, `U0400`, `U0500`) and, on RAKF
+> 2.0.0, keeps JES2 from starting at the next IPL.
+>
+> Wherever this guide shows lines of `PROFILES`, they are what the commands
+> write, so that you can check the result. A RAKF 1.2.x has no such commands;
+> for it the reference at the end of section 7 is all there is.
+
 **FTPD 1.3.0 does not need RAKF 2.0.0 to run.** RAKF itself, for the login, is
 required; the release matters for one thing only. **Letting users see the jobs
 of other users (section 7) needs RAKF 2.0.0 or later**, the release whose class
@@ -46,7 +57,8 @@ Everything lives in two members, both plain 80-column text:
 | `SYS1.SECURE.CNTL(PROFILES)` | what is protected and who may reach it |
 
 Both are **column-positioned**. There is no keyword syntax — a line that looks
-like a RACF command is just a wrong line.
+like a RACF command is just a wrong line. Create the profiles with the RAKF
+commands ([PROFILES](#profiles), below), not by writing lines into the member.
 
 ### USERS
 
@@ -77,6 +89,48 @@ IBMUSER  ADMIN   *SYS1     Y
 
 ### PROFILES
 
+> **Do not edit `PROFILES` by hand; RAKF's maintainer recommends the
+> commands.** Create profiles with `RDEFINE`, `PERMIT` and `ADDSD`, then reload
+> with `S RAKFPROF`. The commands keep the file sorted, refuse a group line that
+> has no universal line, and do not write a profile twice. A hand-edited file
+> that is wrong aborts the reload (`U0300`, `U0400`, `U0500`) and, on RAKF
+> 2.0.0, keeps JES2 from starting at the next IPL.
+
+#### Create profiles with the RAKF commands
+
+```
+RDEFINE resource CLASS(class) UACC(access)        resource of any class but DATASET
+ADDSD   'dsname.*' UACC(access)                   resource of the class DATASET (alias AD)
+PERMIT  resource CLASS(class) ID(group) ACCESS(access)       (alias PE)
+S RAKFPROF
+```
+
+`access` is `NONE`, `READ`, `UPDATE`, `CONTROL` or `ALTER`. For a data set
+profile `PERMIT` needs no `CLASS`.
+
+- `RDEFINE` and `ADDSD` write the universal line of a profile, `PERMIT` the
+  line for one group. For each profile the universal line comes first.
+- `RDEFINE` on a profile that exists answers `RDEFINE: Profile already defined`
+  and changes nothing. `PERMIT` for a resource without a universal line answers
+  `PERMIT: No universal access record found` and writes nothing. A second
+  `PERMIT` for the same group and resource replaces the access instead of
+  writing a second line.
+- The commands put the lines in order, and they remove the comment lines from
+  the member.
+- The commands change the member only. Nothing is in effect before the reload;
+  `S RAKFPROF` answers `RAKFPROF7  RAKF PROFILES UPDATED`.
+- Run them in TSO under a userid with the SPECIAL authority (see the box under
+  USERS) that is connected to the group `RAKFADM`. In a batch TSO step
+  (`PGM=IKJEFT01`) **start every command in column 1**: with a blank in front,
+  `RDEFINE` is run as `ADDSD` and creates a `DATASET` profile.
+
+Section 7 has the details and the examples for the class `JESSPOOL`.
+
+#### The layout of the member — to read a file, not to write one
+
+This is how an existing `PROFILES` is read, and how a broken one is repaired
+(section 7, "Writing `PROFILES` by hand"). It is not how profiles are created.
+
 ```
          1         2         3         4         5         6
 123456789012345678901234567890123456789012345678901234567890123456
@@ -90,17 +144,19 @@ DATASET SYS1.SECURE.*                               RAKFADM UPDATE
 | 53 – 60 | group — **blank means universal access** |
 | 61 – 68 | permission — `NONE`, `READ`, `UPDATE`, `CONTROL`, `ALTER` |
 
-### Three rules that are easy to miss
+#### Three rules that are easy to miss — for a hand-written file
+
+The commands keep these rules for you.
 
 - **Both tables must be in ascending sort order.** A sort error does not skip
   the bad line, it *inhibits initialization of the table* — so one misplaced
-  entry takes down authorization for the whole system, not just for FTPD.
+  entry takes down authorization for the whole system, not just for FTPD. The
+  profile loader of RAKF 2.0.0 sorts its input itself and accepts lines in any
+  order; the users table has to be in order.
 - **The universal entry comes first.** The table is searched from the bottom
   upwards so the most specific hit wins, which only works if the blank-group
   line for a resource precedes its group-specific lines.
-- **A line starting with `*` is a comment.** RAKF's own shipped table writes the
-  equivalent RACF command above each block as a comment. It is worth copying
-  that habit — it is the only place the intent is readable.
+- **A line starting with `*` is a comment.** The commands remove such lines.
 
 ### Reloading
 
@@ -109,6 +165,8 @@ After **any** change to either member:
 ```
 S RAKF
 ```
+
+After a change of `PROFILES` alone, `S RAKFPROF` is enough.
 
 That is the whole procedure, on every system. There is no MODIFY command; RAKF
 reads the tables when it starts. A successful users-table load reports:
@@ -180,16 +238,16 @@ After any change to the tables, `S RAKF`.
 >   ALTER on `DATASET *` and `DASDVOL *`, which is the broad authority that
 >   section 5 forbids. RAKF's own seed files put the `FTPD` user into the group
 >   `STARTED`, which holds nothing but READ on `SVC244`.
-> - A group of your own needs its own `SVC244` line, in ascending group order
->   between the existing group lines:
+> - A group of your own needs its own `SVC244` line. Add it with the command
+>   (do not edit `PROFILES` by hand; RAKF's maintainer recommends the
+>   commands), then reload with `S RAKFPROF`:
 >
 >   ```
->            1         2         3         4         5         6
->   123456789012345678901234567890123456789012345678901234567890123456
->   FACILITYSVC244                                      STARTED READ
+>   PERMIT SVC244 CLASS(FACILITY) ID(STARTED) ACCESS(READ)
 >   ```
 >
->   or `PERMIT SVC244 CLASS(FACILITY) ID(STARTED) ACCESS(READ)`.
+>   The line it writes is `FACILITYSVC244` and the group `STARTED` with `READ`
+>   in columns 61 and on.
 > - The user is created with `ADDUSER FTPD PASSWORD(pw) DFLTGRP(STARTED)`.
 >   Do not code `OPERATIONS`. `LISTUSER FTPD` shows the authority it got.
 >   Both commands need the SPECIAL authority (section 1). Then `S RAKF`.
@@ -215,28 +273,51 @@ After any change to the tables, `S RAKF`.
 verified. It has to exist in `SYS1.SECURE.CNTL(PROFILES)`, and the group of your
 FTP users has to be allowed to read it.
 
-**Look first whether it is already there.** MVS/CE ships `FTPAUTH` in `PROFILES`
-with the universal entry `NONE` and the group `ADMIN` at `READ`. In that case
-add only the line for your group, below the existing ones, and never the
-universal `NONE` line a second time: a duplicate entry makes the table fail its
-sort check, and `S RAKF` ends with `RAKFPROF3 I/P RECORDS OUT OF ORDER` and
-ABEND U0300. If `FTPAUTH` is not there, add both lines, universal first:
+**Do not edit `PROFILES` by hand; RAKF's maintainer recommends the commands.**
+Define the profile and permit the group, then reload:
+
+```
+RDEFINE FTPAUTH CLASS(FACILITY) UACC(NONE)
+PERMIT FTPAUTH CLASS(FACILITY) ID(FTPUSER) ACCESS(READ)
+S RAKFPROF
+```
+
+`RDEFINE` writes the universal line, which denies everyone. `PERMIT` grants one
+group. Run both in TSO under a userid with the SPECIAL authority
+(section 1), each command starting in column 1.
+
+**You need not look first whether the profile is there.** MVS/CE ships
+`FTPAUTH` with the universal entry `NONE` and the group `ADMIN` at `READ`. On
+such a system `RDEFINE` answers `RDEFINE: Profile already defined` and changes
+nothing, and `PERMIT` is the only command that does work:
+
+```
+RDEFINE FTPAUTH CLASS(FACILITY) UACC(NONE)
+RDEFINE: Profile already defined
+PERMIT FTPAUTH CLASS(FACILITY) ID(USER) ACCESS(READ)
+PERMIT:  access READ    granted to FACILITY/FTPAUTH
+PERMIT: ID = USER
+PERMIT: Run RAKFPROF to activate the changes
+```
+
+After `S RAKFPROF` has answered `RAKFPROF7  RAKF PROFILES UPDATED`, `PROFILES`
+has these lines for `FTPAUTH` (here with the shipped `ADMIN` line and the group
+`USER`). They are what the commands wrote, shown so that you can check the
+result:
 
 ```
          1         2         3         4         5         6
 123456789012345678901234567890123456789012345678901234567890123456
-*
-* rdefine facility ftpauth uacc(none)
-* permit ftpauth cl(facility) id(ftpuser) access(read)
-*
 FACILITYFTPAUTH                                             NONE
-FACILITYFTPAUTH                                     FTPUSER READ
+FACILITYFTPAUTH                                     ADMIN   READ
+FACILITYFTPAUTH                                     USER    READ
 ```
 
-The first line denies everyone, the second grants one group. Order matters —
-universal first, as above, and the group lines of one resource in ascending
-group order. Where `FTPAUTH` already exists, the second line is the only one you
-add.
+The first line denies everyone, the others grant one group each. The commands
+put the group lines of one resource in ascending group order. A second
+universal line for `FTPAUTH` is what a hand-edited file gets wrong: it makes the
+reload end with `RAKFPROF3  I/P RECORDS OUT OF ORDER` and the abend U0300
+(section 7).
 
 **The profile must exist.** It is tempting to skip it, because FTPD lets everyone
 in when it is absent — but that is not a permissive default, it is RAKF's
@@ -253,7 +334,7 @@ other reasons.
 If you would rather let every ordinary user in, permit the shared group instead:
 
 ```
-FACILITYFTPAUTH                                     USER    READ
+PERMIT FTPAUTH CLASS(FACILITY) ID(USER) ACCESS(READ)
 ```
 
 Either way, do not permit the userid of the FTPD started task itself.
@@ -274,15 +355,22 @@ operation, under the **client's** identity:
 | `RNFR` / `RNTO` | ALTER |
 
 A common arrangement gives each user full control of their own HLQ and read
-access to the system libraries:
+access to the system libraries. Create the profile with the commands (do not
+edit `PROFILES` by hand; RAKF's maintainer recommends the commands):
+
+```
+ADDSD 'IBMUSER.*' UACC(NONE)
+PERMIT 'IBMUSER.*' ID(IBMUSER) ACCESS(ALTER)
+S RAKFPROF
+```
+
+`ADDSD` answers `ADDSD  : DATASET  profile defined: IBMUSER.*` and `PERMIT`
+answers `PERMIT:  access ALTER   granted to DATASET /IBMUSER.*`. `PROFILES`
+then has these lines:
 
 ```
          1         2         3         4         5         6
 123456789012345678901234567890123456789012345678901234567890123456
-*
-* addsd 'IBMUSER.*'                 uacc(none)
-* permit 'IBMUSER.*' id(ibmuser)    access(alter)
-*
 DATASET IBMUSER.*                                           NONE
 DATASET IBMUSER.*                                   IBMUSER ALTER
 ```
@@ -513,15 +601,25 @@ Do not raise the JESSPOOL entity maximum above 8 without adjusting the FTPD key
 
 ### Create the profiles with the RAKF commands
 
+> **Do not edit `PROFILES` by hand; RAKF's maintainer recommends the
+> commands.** Create profiles with `RDEFINE`, `PERMIT` and `ADDSD`, then reload
+> with `S RAKFPROF`. The commands keep the file sorted, refuse a group line that
+> has no universal line, and do not write a profile twice. A hand-edited file
+> that is wrong aborts the reload (`U0300`, `U0400`, `U0500`) and, on RAKF
+> 2.0.0, keeps JES2 from starting at the next IPL.
+
 Create the profiles with the RAKF commands `RDEFINE` and `PERMIT` and reload the
-in-core tables with `S RAKFPROF`, rather than editing
-`SYS1.SECURE.CNTL(PROFILES)` by hand. The commands come with RAKF 2.0.0.
+in-core tables with `S RAKFPROF`. The commands come with RAKF 2.0.0.
 
 ```
 RDEFINE 'resource' CLASS(class) UACC(NONE|READ|UPDATE|CONTROL|ALTER)      (alias RDEF)
 PERMIT  'resource' CLASS(class) ID(group) ACCESS(NONE|READ|UPDATE|CONTROL|ALTER)   (alias PE)
 ```
 
+- **Start every command in column 1.** In a TSO batch step a command with a
+  leading blank is not run as written: ` RDEFINE ...` is run as `ADDSD` and
+  creates a `DATASET` profile, and ` PERMIT ...` for a profile that does not
+  exist answers `PERMIT: No universal access record found`.
 - **Who may run them:** the user must be connected to the group `RAKFADM` and
   should have the SPECIAL authority (RAKF 2.0.0 `HELP` for `RDEFINE` and
   `PERMIT`: "You must be connected to the RAKFADM group." and "The issuing user
@@ -681,12 +779,15 @@ see. In the `profiles.txt` that ships with RAKF the classes are in the order
 `DASDVOL`, `DATASET`, `FACILITY`, `TAPEVOL`, `TERMINAL`; `JESSPOOL` sorts between
 `FACILITY` and `TAPEVOL`.
 
-### Writing `PROFILES` by hand
+### Writing `PROFILES` by hand — reference only
 
-If you edit the member instead of using the commands, the rules of section 1
-apply, and one more: **a line with an id needs a line without an id for the same
-entity, also for `*` itself.** If it is missing, for example `JESSPOOL*  ADMIN
-UPDATE` without `JESSPOOL*  NONE`, `S RAKFPROF` reports
+**Do not edit `PROFILES` by hand; RAKF's maintainer recommends the commands.**
+This part is for reading a file that exists and for repairing a broken one. It
+is not how profiles are created. Take a copy of the member before you touch
+it. If you have to edit it, the rules of section 1 apply, and one more:
+**a line with an id needs a line without an id for the same entity, also for
+`*` itself.** If it is missing, for example `JESSPOOL*  ADMIN UPDATE` without
+`JESSPOOL*  NONE`, `S RAKFPROF` reports
 
 ```
 RAKFPROF4  PERMIT RECORD WITHOUT UNIVERSAL ACCESS RECORD
@@ -759,6 +860,7 @@ after `S RAKFPROF`.
 | `550 Access denied to <dsn>` | A `DATASET` profile refuses the access under the **client's** identity, not FTPD's |
 | Everyone can reach everything | No `DATASET` profiles. Undefined resources get ALTER — section 4 |
 | `S RAKFPROF` ends with `ABEND S000 U0400` | A profile line with an id has no line without an id for the same entity — section 7. The old tables stay in effect |
+| `S RAKFPROF` ends with `ABEND S000 U0300` or `U0500` | A second line for the same resource and group (`RAKFPROF3  I/P RECORDS OUT OF ORDER`), or a line without a permission (`RAKFPROF6  ENTITY RECORD WITH NO ACCESS AUTHORITY`). The `RAKFPROF8` line before the message is the record that stopped the load. Section 7, "Writing `PROFILES` by hand" |
 | `550 Jobid … not found` for a job that exists | The job is hidden: it belongs to another owner and no JESSPOOL profile gives you READ — section 7 |
 | `501` for `SITE JESOWNER=…` | A pattern, a value of more than 8 characters, or no READ on the owner's jobs — section 7 |
 

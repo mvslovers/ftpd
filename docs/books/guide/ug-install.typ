@@ -570,7 +570,7 @@ two pieces; the short version for the installation:
   #cmd("STARTED"), a group that has nothing else. Do not use #cmd("STCGROUP"):
   in the same table it has ALTER on all data sets and volumes, which is the
   broad authority that the note below rules out. A group of your own needs its
-  own line for #cmd("SVC244"), in the ascending order of the groups.
+  own permission for #cmd("SVC244"): #cmd("PERMIT SVC244 CLASS(FACILITY) ID(group) ACCESS(READ)").
   Create the user with #cmd("ADDUSER FTPD PASSWORD(pw) DFLTGRP(STARTED)") and
   without #cmd("OPERATIONS"), and show it with #cmd("LISTUSER FTPD"). Your
   table of profiles is the one that counts.
@@ -581,25 +581,49 @@ two pieces; the short version for the installation:
   #cmd("SYS1.SECURE.CNTL(USERS)"), and a blank column means no. A table of
   users that you keep from an earlier RAKF has nothing in column 30. Put the
   #cmd("Y") on every line of your administrator, then reload with
-  #cmd("S RAKF"). The commands cannot set it for you, because they need it.]
+  #cmd("S RAKF"). The commands cannot set it for you, because they need it.
+  The administrator must also be connected to the group #cmd("RAKFADM").]
 + Define the profile #cmd("FTPAUTH") in the class #cmd("FACILITY"). It
-  controls who may use FTP at all (@ug-security-ftpauth). Look first whether it
-  is already in #cmd("SYS1.SECURE.CNTL(PROFILES)"): MVS/CE has it, with the
-  universal entry #cmd("NONE") and the group #cmd("ADMIN") at #cmd("READ"). In
-  that case add only the line for your group (#cmd("USER") for every ordinary
-  user, or your own group), in ascending order of the groups, below the
-  existing lines. Never add the universal #cmd("NONE") line a second time: a
-  duplicate makes the table fail its sort check, and #cmd("S RAKF") ends with
-  #cmd("RAKFPROF3 I/P RECORDS OUT OF ORDER") and the abend U0300. If the
-  profile is not there, add both lines, the universal one first. The lines are
-  column-positioned: the class in columns 1 to 8, the resource from column 9,
-  the group in columns 53 to 60 and the permission from column 61.
-+ Reload the tables with #cmd("S RAKF").
+  controls who may use FTP at all (@ug-security-ftpauth). Use the RAKF
+  commands #cmd("RDEFINE") and #cmd("PERMIT") in a TSO session or a TSO batch
+  job of the administrator (SPECIAL authority and group #cmd("RAKFADM"), see the
+  note above), each
+  command starting in column 1:
+
+  #note[*Do not edit #cmd("PROFILES") by hand; RAKF's maintainer recommends
+  the commands.* They keep the file sorted, refuse a group line that has no
+  universal line, and do not write a profile twice. A hand-edited file that
+  is wrong aborts the reload (#cmd("U0300"), #cmd("U0400"), #cmd("U0500")) and,
+  on RAKF 2.0.0, keeps JES2 from starting at the next IPL.]
+
+  You need not look first whether the profile is there. MVS/CE ships it with
+  the universal entry #cmd("NONE") and the group #cmd("ADMIN") at
+  #cmd("READ"). On such a system #cmd("RDEFINE") answers that the profile is
+  already defined and changes nothing, and #cmd("PERMIT") adds the line for
+  your group (#cmd("USER") for every ordinary user, or your own group):
+
+#screen(raw(read("../ex/ug-install/ftpauth-commands.txt"), block: true))
+
++ Reload the tables. #cmd("S RAKFPROF") reloads the profiles and
+  #cmd("S RAKF") reloads the users and the profiles. After the reload the
+  console shows #cmd("RAKFPROF7  RAKF PROFILES UPDATED").
+
+The profile now has these lines in #cmd("SYS1.SECURE.CNTL(PROFILES)"). They
+are what the commands wrote, shown so that you can check the result. The lines
+are column-positioned: the class in columns 1 to 8, the resource from column 9,
+the group in columns 53 to 60 and the permission from column 61.
 
 #screen(```
 FACILITYFTPAUTH                                             NONE
+FACILITYFTPAUTH                                     ADMIN   READ
 FACILITYFTPAUTH                                     USER    READ
 ```)
+
+`docs/FTPD_RAKF_SETUP.md` in the FTPD (ftpd) repository keeps the layout of
+the file as a reference for reading and repairing it. A
+second universal line for #cmd("FTPAUTH") is what a hand-edited file gets
+wrong: the reload ends with #cmd("RAKFPROF3 I/P RECORDS OUT OF ORDER") and the
+abend U0300.
 
 FTPD asks RAKF for READ on #cmd("FTPAUTH"). If no profile covers it, RAKF
 answers "not protected" (return code 4), and FTPD lets every authenticated user

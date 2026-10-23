@@ -882,38 +882,42 @@ Without this, FTPD starts and refuses every login. The short version:
    — not `STCGROUP`, which has ALTER on all datasets there. Create the user
    with `ADDUSER FTPD PASSWORD(pw) DFLTGRP(STARTED)`; `ADDUSER` and `PERMIT`
    need the SPECIAL authority, which is column 30 of the `USERS` line (a `Y`),
-   and a `USERS` table from an earlier RAKF has none. The setup guide, sections
-   1 and 2, has the details.
+   and a `USERS` table from an earlier RAKF has none. The user must also be
+   connected to the group `RAKFADM`. The setup guide, sections 1 and 2, has the
+   details.
 
 2. Define the `FTPAUTH` FACILITY profile, which controls who may use FTP at
-   all: make sure it exists in `SYS1.SECURE.CNTL(PROFILES)` and that the group
-   of your FTP users may read it. If it is **not** defined, RAKF answers
-   "undefined resource" with ALTER and every authenticated user is let in.
+   all, and let the group of your FTP users read it. If it is **not** defined,
+   RAKF answers "undefined resource" with ALTER and every authenticated user is
+   let in.
 
-   **Look first whether `FTPAUTH` is already in PROFILES.** MVS/CE ships it,
-   with the universal entry `NONE` and the group `ADMIN` at `READ`. If it is
-   there, add only the line for your group (`USER` for every ordinary user, or
-   your own group), in ascending group order, below the existing lines:
+   **Do not edit `PROFILES` by hand; RAKF's maintainer recommends the
+   commands.** Create profiles with `RDEFINE`, `PERMIT` and `ADDSD`, then
+   reload with `S RAKFPROF`. The commands keep the file sorted, refuse a group
+   line that has no universal line, and do not write a profile twice. A
+   hand-edited file that is wrong aborts the reload (`U0300`, `U0400`,
+   `U0500`) and, on RAKF 2.0.0, keeps JES2 from starting at the next IPL.
 
-   ```
-   FACILITYFTPAUTH                                     USER    READ
-   ```
-
-   Never add the universal `NONE` line a second time: a duplicate makes the
-   table fail its sort check, `S RAKF` ends with `RAKFPROF3 I/P RECORDS OUT OF
-   ORDER` and ABEND U0300. If the profile is **not** there, add both lines,
-   the universal one first:
+   Run the commands in TSO under a userid with the SPECIAL authority that is
+   connected to the group `RAKFADM`, each command starting in column 1 (`USER`
+   for every ordinary user, or your own group):
 
    ```
-   FACILITYFTPAUTH                                             NONE
-   FACILITYFTPAUTH                                     USER    READ
+   RDEFINE FTPAUTH CLASS(FACILITY) UACC(NONE)
+   PERMIT FTPAUTH CLASS(FACILITY) ID(USER) ACCESS(READ)
    ```
 
-   The lines are column-positioned (class in columns 1-8, resource from
-   column 9, group in columns 53-60, permission from column 61); section 3 of
-   the RAKF guide has the ruler.
+   You need not look first whether `FTPAUTH` is already there. MVS/CE ships
+   it, with the universal entry `NONE` and the group `ADMIN` at `READ`; there
+   `RDEFINE` answers `RDEFINE: Profile already defined` and changes nothing,
+   and `PERMIT` adds the line for your group. A RAKF 1.2.x has no such
+   commands; the reference in section 7 of the RAKF guide covers the file
+   there.
 
-3. Reload: `S RAKF` (RAKF reads its tables again when the started task runs).
+3. Reload the tables: `S RAKF` reloads the users and the profiles and
+   answers `RAKFPROF7  RAKF PROFILES UPDATED` and `RAKFUIDS4  USER TABLE
+   UPDATED`; `S RAKFPROF` reloads only the profiles. The lines the commands
+   wrote are described in section 3 of the RAKF guide.
 
 **One security invariant:** the identity of the started task must stay
 least-privilege — no broad `ID(FTPD) ACCESS(ALTER)` dataset profiles. Per-user

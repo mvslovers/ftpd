@@ -11,6 +11,8 @@ itself has, and how an administrator lets users see the jobs of others. The tabl
 `docs/FTPD_RAKF_SETUP.md` in the FTPD (ftpd) repository. This book does not
 repeat them.
 
+#note[*Do not edit #cmd("PROFILES") by hand; RAKF's maintainer recommends the commands.* Create profiles with #cmd("RDEFINE"), #cmd("PERMIT") and #cmd("ADDSD"), then reload with #cmd("S RAKFPROF"). A hand-edited file that is wrong aborts the reload and, on RAKF 2.0.0, keeps JES2 from starting at the next IPL.]
+
 == Checking How Users Log In <ug-security-login>
 
 #idx("login")#idx("password")
@@ -59,8 +61,8 @@ The third refusal ends the connection: #cmd("530 Not authorized for FTP access. 
 #note[*Define the profile.* When no profile covers #cmd("FTPAUTH"), RAKF
 answers that the resource is not protected, and FTPD lets the user in. This is
 not a safe default. RAKF gives ALTER access to resources that have no profile,
-so every user who knows a password can use FTP. The setup guide has the two
-lines to add.]
+so every user who knows a password can use FTP. Create it with
+#cmd("RDEFINE") and #cmd("PERMIT") (@ug-install-rakfsetup).]
 
 == Controlling Access to Data Sets <ug-security-dsn>
 
@@ -200,6 +202,8 @@ let every user list, read and cancel the jobs of everybody. An administrator
 who relied on that creates the profiles before the upgrade.
 
 === Creating the Profiles
+
+#note[*Do not edit #cmd("PROFILES") by hand; RAKF's maintainer recommends the commands.* Create profiles with #cmd("RDEFINE"), #cmd("PERMIT") and #cmd("ADDSD"), then reload with #cmd("S RAKFPROF"). A hand-edited file that is wrong aborts the reload and, on RAKF 2.0.0, keeps JES2 from starting at the next IPL.]
 
 The profiles are lines in #cmd("SYS1.SECURE.CNTL(PROFILES)"). Create them with
 the RAKF commands #cmd("RDEFINE") (#cmd("RDEF")) and #cmd("PERMIT")
