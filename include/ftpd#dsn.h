@@ -19,8 +19,8 @@
 ** that the check, the LIST path and the message that names the offending
 ** qualifier cannot drift apart.  '?' is here because FTPD has always
 ** documented and rejected it alongside '*' and '%' -- the matcher itself
-** (dsn_match(), ftpd#mvs.c) implements only '*', '**' and '%', so a '?' in a
-** LIST pattern matches nothing.
+** (ftpd_dsn_match() in ftpd#lvl.c) implements only '*', '**' and '%', so a
+** '?' in a LIST pattern matches nothing.
 */
 #define FTPD_DSN_WILDCARDS  "*%?"
 

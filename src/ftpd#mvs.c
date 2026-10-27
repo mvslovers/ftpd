@@ -15,6 +15,7 @@
 #include "ftpd#dsn.h"
 #include "ftpd#lmp.h"
 #include "ftpd#lse.h"
+#include "ftpd#lvl.h"
 #include "ftpd#mvs.h"
 #include "ftpd#ret.h"
 #include "ftpd#xlt.h"
@@ -22,80 +23,6 @@
 #include <mvs/idcams.h>
 #include <mvs/pds.h>
 #include <time.h>
-
-/* --------------------------------------------------------------------
-** z/OS-compatible dataset name wildcard matcher.
-**
-** Qualifier-based matching where each qualifier is separated by '.':
-**   *   = matches exactly one qualifier (any characters)
-**   **  = matches one or more qualifiers
-**   %   = matches exactly one character within a qualifier
-**   literal characters match case-insensitively
-**
-** Both pattern and name must be fully qualified (no trailing dots).
-** Returns 1 if match, 0 if no match.
-** ----------------------------------------------------------------- */
-static int
-dsn_match(const char *pattern, const char *name)
-{
-    const char *p = pattern;
-    const char *n = name;
-
-    while (*p && *n) {
-        if (*p == '*' && *(p + 1) == '*') {
-            /* ** = match one or more qualifiers */
-            p += 2;
-            if (*p == '.')
-                p++;  /* skip dot after ** */
-            if (*p == '\0')
-                return 1;  /* ** at end matches everything */
-
-            /* Try matching rest of pattern at each qualifier boundary */
-            while (*n) {
-                if (dsn_match(p, n))
-                    return 1;
-                /* Skip to next qualifier */
-                while (*n && *n != '.')
-                    n++;
-                if (*n == '.')
-                    n++;
-            }
-            return 0;
-        }
-        if (*p == '*') {
-            /* * = match exactly one qualifier */
-            p++;
-            /* Skip the current qualifier in name */
-            while (*n && *n != '.')
-                n++;
-            /* Both should be at dot or end */
-            if (*p == '.' && *n == '.') {
-                p++;
-                n++;
-                continue;
-            }
-            if (*p == '\0' && *n == '\0')
-                return 1;
-            return 0;
-        }
-        if (*p == '%') {
-            /* % = match one character (not dot) */
-            if (*n == '.' || *n == '\0')
-                return 0;
-            p++;
-            n++;
-            continue;
-        }
-        /* Literal match (case insensitive) */
-        if (toupper((unsigned char)*p) != toupper((unsigned char)*n))
-            return 0;
-        p++;
-        n++;
-    }
-
-    /* Both must be exhausted */
-    return (*p == '\0' && *n == '\0');
-}
 
 /* --------------------------------------------------------------------
 ** Helper: check RACF dataset access for the current session.
@@ -1173,6 +1100,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
     } else {
         /* --- Dataset listing --- */
         DSLIST **dsl;
+        char level[FTPD_MAX_DSN_LEN + 2];
         int has_filter;
         int has_wildcard;
         int i;
@@ -1181,12 +1109,22 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         /* Determine if we need to filter results.
         ** "ls *" was normalized to no-arg above (prefix == cwd).
         ** Any other arg means we filter:
-        **   - with wildcards: dsn_match() for pattern matching
+        **   - with wildcards: ftpd_dsn_match() for pattern matching
         **   - without wildcards: prefix match on resolved name
         */
         has_filter = (arg && arg[0] && strcmp(arg, "*") != 0);
         has_wildcard = (has_filter &&
                         (strchr(arg, '*') || strchr(arg, '%')));
+
+        /* The catalog level to read is the one that holds what the filter
+        ** can match, which is not the working directory when the name is
+        ** absolute: LIST 'SYS2.PROCLIB' and LIST 'SYS2.**' read SYS2
+        ** whatever the CWD is (#331).  Reading the CWD and filtering would
+        ** never see a name outside it.  A filter whose first qualifier is a
+        ** pattern has no level, and keeps the CWD as before. */
+        strcpy(level, cwd_notrail);
+        if (has_filter)
+            ftpd_lvl_of(prefix, level, sizeof(level));
 
         /* No identity window here, and that is measured rather than assumed
         ** -- the "confirm on TK5" this comment used to carry was confirmed
@@ -1218,7 +1156,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         ** for the started task does not come from here -- ruled out, along
         ** with __locate(), by the same run. */
         errno = 0;
-        dsl = __listds(cwd_notrail, "NONVSAM VOLUME", NULL);
+        dsl = __listds(level, "NONVSAM VOLUME", NULL);
         list_errno = errno;
 
         /* NULL with ENOMEM is a storage shortage, not an empty level
@@ -1227,10 +1165,10 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         ** so a stale ENOMEM cannot misreport an empty level. */
         if (ftpd_list_nomem(dsl, list_errno)) {
             ftpd_log(LOG_ERROR, "LIST: out of storage listing %s",
-                     cwd_notrail);
+                     level);
             ftpd_session_reply(sess, FTP_451,
                                "Insufficient storage to list %s.",
-                               cwd_notrail);
+                               level);
             return 0;
         }
 
@@ -1244,7 +1182,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             LOCWORK lw;
             if (dsl) __freeds(&dsl);
             memset(&lw, 0, sizeof(lw));
-            if (__locate(cwd_notrail, &lw) != 0) {
+            if (__locate(level, &lw) != 0) {
                 ftpd_session_reply(sess, FTP_550,
                                    "No data sets found.");
                 return 0;
@@ -1273,7 +1211,7 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             for (i = 0; dsl[i]; i++) {
                 if (has_filter) {
                     if (has_wildcard) {
-                        if (!dsn_match(prefix, dsl[i]->dsn))
+                        if (!ftpd_dsn_match(prefix, dsl[i]->dsn))
                             continue;
                     } else {
                         if (strcmp(prefix, dsl[i]->dsn) != 0 &&
