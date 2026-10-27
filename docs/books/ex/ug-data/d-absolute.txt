@@ -1,0 +1,51 @@
+ftp> pwd
+Remote directory: 'IBMUSER.'
+ftp> nlist 'SYS2.PROCLIB'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+SYS2.PROCLIB
+226 List completed successfully.
+ftp> dir 'SYS2.PROCLIB'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+Volume Unit    Referred Ext Used Recfm Lrecl BlkSz Dsorg Dsname
+MVS000 3350 2026/10/27  1    7  FB       80 19040  PO   SYS2.PROCLIB
+226 List completed successfully.
+ftp> nlist 'SYS2.**'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+SYS2.CMDLIB
+SYS2.CMDPROC
+SYS2.CONTROL
+SYS2.EXEC
+SYS2.HELP
+SYS2.JCLLIB
+SYS2.LINKLIB
+SYS2.MACLIB
+SYS2.PARMLIB
+SYS2.PROCLIB
+SYS2.SAMPLIB
+226 List completed successfully.
+ftp> nlist 'SYS2.PROC*'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+SYS2.PROCLIB
+226 List completed successfully.
+ftp> nlist 'SYS2.NOSUCH'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+226 List completed successfully.
+ftp> nlist 'NOSUCH.**'
+229 Entering Extended Passive Mode (|||22000|)
+550 No data sets found.
+ftp> nlist '**'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+CLIST
+CNTL
+EXEC
+ISP.PROF
+LOAD
+SOURCE
+UFSHOME
+226 List completed successfully.

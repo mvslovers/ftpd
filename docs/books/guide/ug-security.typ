@@ -96,9 +96,9 @@ every data set, and FTPD only shows that.
 
 #note[*A list of data sets shows names, not contents.* A catalog list
 (#cmd("LIST") without a partitioned data set as working directory) returns
-every name below the prefix, also names of data sets that the user may not
-read. The profile protects the contents: #cmd("RETR") of such a data set is
-refused with #cmd("550"). This is how the catalog works on MVS, and the same
+every name that fits the name or pattern, also names of data sets that the user
+may not read. The profile protects the contents: #cmd("RETR") of such a data
+set is refused with #cmd("550"). This is how the catalog works on MVS, and the same
 is true for #cmd("LISTCAT") in TSO.]
 
 == Giving the Started Task Its Identity <ug-security-stc>

@@ -110,10 +110,10 @@ the member has (the session in @ug-data-cwd shows both).
 
 A name given to the command is a filter. Inside a partitioned data set it
 filters the member names, as #cmd("dir IEAS*") did in the session above.
-Outside, FTPD reads the catalog level of the working directory and keeps the
-names that fit the filter. A filter without a wildcard keeps the data set of
-that name and all data sets below it. These wildcards work in a data set
-filter:
+Outside, FTPD reads the catalog and keeps the names that fit the filter. A
+filter without a wildcard keeps the data set of that name and all data sets
+below it. Which part of the catalog FTPD reads depends on the name
+(@ug-data-list-abs). These wildcards work in a data set filter:
 
 #deflist(width: 0.9in,
   [#cmd("*")], [a whole qualifier, or the rest of a qualifier. #cmd("OLD*")
@@ -132,18 +132,65 @@ data set is not there, is not partitioned, or has no member that fits. Before
 FTPD 1.3.1 the list of such a name was empty. The _FTPD Reference_, "LIST and
 NLST", has the rules.
 
-#note[The catalog is read at the level of the working directory. A filter
-can only keep names below it, so to list another high-level qualifier, change
-the working directory to it first.]
+=== Absolute Names and Patterns <ug-data-list-abs>
+
+#idx("LIST", "absolute name")#idx("NLST", "absolute name")#idx("catalog level")
+A name in single quotes is read at its own place in the catalog, whatever the
+working directory is. The session lists the data sets of #cmd("SYS2") from the
+working directory #cmd("IBMUSER."), without a #cmd("cd") before:
+
+#screen(raw(read("../ex/ug-data/d-absolute.txt"), block: true))
+
+FTPD reads the catalog at the *level* of the name: the qualifiers in front of
+the first qualifier that holds a wildcard. The filter then keeps what fits.
+
+#tab(caption: [The catalog level that LIST and NLST read])[
+  #table(columns: (1.5in, 1fr),
+    [Name], [What FTPD reads and lists],
+    [#cmd("'SYS2.PROCLIB'")], [The level #cmd("SYS2"). The result is the data
+      set #cmd("SYS2.PROCLIB") and every data set below it.],
+    [#cmd("'SYS2.**'")], [The level #cmd("SYS2"). The result is every data set
+      below #cmd("SYS2"), with any number of further qualifiers.],
+    [#cmd("'SYS2.PROC*'")], [The level #cmd("SYS2"). The result is the names
+      below #cmd("SYS2") that fit.],
+    [#cmd("'**'"), #cmd("'*.PROCLIB'")], [The first qualifier is a pattern, so
+      there is no level in the name. FTPD reads the working directory and keeps
+      what fits.],
+    [#cmd("TEST.*") without quotes], [FTPD puts the working directory in
+      front of the name. With #cmd("IBMUSER."), that is #cmd("IBMUSER.TEST.*")
+      at the level #cmd("IBMUSER.TEST").],
+  )
+]
+
+The name without a wildcard is read one level up because the catalog lists what
+is below a name, and not the data set of that name. A one-qualifier name is
+its own level. In a long listing the name is shortened by the working directory
+prefix, as above\; a name outside the working directory shows in full. As long
+as the working directory is a partitioned data set, the argument is a member
+filter, and a name like #cmd("'SYS2.PROCLIB'") answers
+#cmd("550 No data sets found."). Change to a prefix first (@ug-data-cwd).
+
+A listing shows names, not contents. FTPD does not check each entry of the list
+against RAKF (@ug-security-dsn), also not for the data sets of another
+high-level qualifier. #cmd("RETR") of a data set the user may not read is still
+refused.
+
+Some clients ask for an absolute name or pattern without a #cmd("CWD") before
+it. The Zowe FTP plugin does so when it lists data sets
+(#cmd("zowe zftp ls ds")). FTPD 1.4.0 and later answer such a request as the
+session shows. Earlier releases read only the working directory, and the list
+stayed empty unless the working directory was the high-level qualifier of the
+name.
 
 The replies mean:
 
-- *The working directory is a prefix that is not cataloged, or a partitioned
-  data set has no members that fit:* #cmd("550 No data sets found."). For a
-  data set level the reply means that nothing is cataloged below the prefix and
-  the prefix is not a data set itself. When the
-  prefix is cataloged but nothing below it fits the filter, the list is empty
-  and the reply is #cmd("226 List completed successfully.").
+- *The level is not cataloged, or a partitioned data set has no members that
+  fit:* #cmd("550 No data sets found."). For a data set level the reply means
+  that nothing is cataloged below the level and the level is not a data set
+  itself, as for #cmd("'NOSUCH.**'") in the session above. When the level is
+  cataloged but nothing below it fits the filter, the list is empty and the
+  reply is #cmd("226 List completed successfully."), as for
+  #cmd("'SYS2.NOSUCH'").
 - *FTPD ran out of storage while it built the list:*
   #cmd("451 Insufficient storage to list IBMUSER."), with the prefix or the
   partitioned data set in place of #cmd("IBMUSER"). This is a shortage in the

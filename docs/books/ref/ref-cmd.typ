@@ -256,7 +256,11 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
     [View], [Behaviour],
     [MVS], [One line for each data set, or for each member inside a partitioned
       data set. The argument is a filter. #cmd("*"), #cmd("**") and
-      #cmd("%") are wildcards. Reply: #cmd("226 List completed successfully."); #cmd("550 No data sets found."); #cmd("451 Insufficient storage to list NAME."). #cmd("NLST") sends the names only.],
+      #cmd("%") are wildcards. A name in quotes is read at its own catalog
+      level, whatever the working directory is: the qualifiers in front of the
+      first qualifier with a wildcard, or the parent level of a name without
+      a wildcard. A name whose first qualifier is a wildcard is read at the
+      working directory. Reply: #cmd("226 List completed successfully."); #cmd("550 No data sets found."); #cmd("451 Insufficient storage to list NAME."). #cmd("NLST") sends the names only.],
     [MVS, #cmd("DSN(pattern)")], [The members of the partitioned data set
       #cmd("DSN") that fit the pattern, from any working directory. With quotes,
       #cmd("'DSN(pattern)'"), the name is the full name, and the closing quote
