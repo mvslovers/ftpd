@@ -3601,6 +3601,100 @@ ftp_run "rmdir '$LMP_PDS'
 delete '$LMP_SEQ'" /dev/null
 
 # ============================================================
+# Test 20: names with a '(' in CWD, LIST and the other commands (#335)
+#
+# The check of a data set name used to stop at the first '(' and never read
+# the rest.  A member is exactly "(NAME)" at the end of a name now, and CWD,
+# which sets a prefix, takes no member at all; neither do MKD and RMD (#339).
+# ============================================================
+section "Test 20: parentheses in names (#335)"
+
+PAR_PDS="${HLQ}.TEST.PARPDS"
+PAR_OUT="$TMPDIR/ftp_par.log"
+
+ftp_run "rmdir '$PAR_PDS'" /dev/null
+ftp_run "mkdir '$PAR_PDS'
+type ascii
+put $LMP_TEXT '$PAR_PDS(ALPHA)'" "$PAR_OUT"
+
+# One command that has to be refused with 501 and has to leave the working
+# directory where the previous cd put it.
+par_refused() {
+    local cmd="$1" label="$2"
+    ftp_run "cd '${PAR_PDS}.'
+$cmd
+pwd" "$PAR_OUT"
+    if grep -q '^501 ' "$PAR_OUT" && ! grep -q '^226 ' "$PAR_OUT" \
+       && grep -q "^257 .*${PAR_PDS}\." "$PAR_OUT"; then
+        pass "$label: 501, working directory unchanged"
+    else
+        fail "$label"; tail -6 "$PAR_OUT" | sed 's/^/    /'
+    fi
+}
+
+par_refused "cd '$PAR_PDS(ALPHA)'" "CWD to DSN(MEMBER)"
+par_refused "cd '$PAR_PDS(ALPHA'" "CWD to a member that is not closed"
+par_refused "cd '${PAR_PDS}.X(Y'" "CWD to a prefix with an open parenthesis"
+par_refused "ls '$PAR_PDS(ALPHA'" "ls of a member that is not closed"
+par_refused "ls '$PAR_PDS(ALPHA)(B)'" "ls of two members"
+par_refused "ls '$PAR_PDS(ALPHA)X'" "ls with text after the member"
+par_refused "quote DELE '$PAR_PDS(AL PHA)'" "DELE of a member holding a blank"
+par_refused "quote DELE '$PAR_PDS(AL'PHA)'" "DELE of a member holding a quote"
+
+# RMD and MKD act on a data set.  A name with a member is refused with 501
+# before RACF or IDCAMS see it: RMD used to delete the member (#339).
+par_refused "quote RMD '$PAR_PDS(ALPHA)'" "RMD of DSN(MEMBER)"
+par_refused "quote MKD '$PAR_PDS(NEWPDS)'" "MKD of DSN(MEMBER)"
+par_refused "quote RMD '$PAR_PDS(ALPHA'" "RMD of a member that is not closed"
+
+# Inside the PDS an unquoted name resolves to a member, so it is refused too.
+ftp_run "cd '$PAR_PDS'
+quote RMD ALPHA
+quote MKD BETA
+ls" "$PAR_OUT"
+if [ "$(grep -c '^501 ' "$PAR_OUT")" = 2 ] && grep -q 'ALPHA' "$PAR_OUT" \
+   && ! grep -q ' deleted\|^257 .*created' "$PAR_OUT"; then
+    pass "RMD and MKD inside a PDS of a name that is a member: 501, members untouched"
+else
+    fail "RMD and MKD inside a PDS of a name that is a member"; tail -8 "$PAR_OUT" | sed 's/^/    /'
+fi
+
+# The member the refused commands were aimed at is still there, and so is the PDS.
+ftp_run "type ascii
+get '$PAR_PDS(ALPHA)' $TMPDIR/par_alpha0.txt" "$PAR_OUT"
+if [ -s "$TMPDIR/par_alpha0.txt" ] && grep -q '^226 ' "$PAR_OUT"; then
+    pass "the member RMD 'DSN(MEMBER)' was aimed at is still there"
+else
+    fail "the member RMD 'DSN(MEMBER)' was aimed at is still there"; tail -8 "$PAR_OUT" | sed 's/^/    /'
+fi
+
+# The members and the listing forms that worked before still do.
+ftp_run "type ascii
+ls '$PAR_PDS(*)'
+cd '$PAR_PDS'
+ls
+cd '${HLQ}.'
+ls '$PAR_PDS(ALPHA)'" "$PAR_OUT"
+if [ "$(grep -c '^226 ' "$PAR_OUT")" = 3 ] && grep -q '^250 .*partitioned data set' "$PAR_OUT" \
+   && ! grep -q '^501 ' "$PAR_OUT"; then
+    pass "DSN(pattern), ls in a PDS and a quoted member still list"
+else
+    fail "DSN(pattern), ls in a PDS and a quoted member still list"; tail -12 "$PAR_OUT" | sed 's/^/    /'
+fi
+
+ftp_run "cd '$PAR_PDS'
+get ALPHA $TMPDIR/par_alpha.txt
+cd '${HLQ}.'
+delete '$PAR_PDS(ALPHA)'" "$PAR_OUT"
+if [ -s "$TMPDIR/par_alpha.txt" ] && grep -q '^250 ' "$PAR_OUT" && ! grep -q '^501 ' "$PAR_OUT"; then
+    pass "get a member from the PDS and delete DSN(MEMBER): unchanged"
+else
+    fail "get a member from the PDS and delete DSN(MEMBER)"; tail -8 "$PAR_OUT" | sed 's/^/    /'
+fi
+
+ftp_run "rmdir '$PAR_PDS'" /dev/null
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""

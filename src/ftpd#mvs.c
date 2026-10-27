@@ -229,6 +229,11 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
         if (len >= bufsz)
             return -1;
 
+        /* sanitize_member() uppercases and cuts the name down, it does not
+        ** look at the characters.  Ask like every other branch does. */
+        if (!ftpd_dsn_valid(buf, allow_wildcards))
+            return -3;
+
         return 0;        /* member already clean; skip uppercase/dot-strip */
     } else {
         /* Relative: prepend CWD prefix */
@@ -376,6 +381,31 @@ dsn_error(ftpd_session_t *sess, const char *arg, const char *dsn, int rc)
 }
 
 /* --------------------------------------------------------------------
+** Helper: resolve a name for a command that acts on a data set as a whole
+** (CWD, MKD, RMD).  A member is refused with the reply already sent:
+** CWD sets a prefix and DSN(MEMBER) kept as one would be read back by LIST
+** as a data set name; RMD would delete the member; and neither RACF nor
+** LOCATE can be asked about DSN(MEMBER), so the check has to come before
+** both (#339).
+**
+** Returns 0 with the name in buf, -1 after a 501 reply.
+** ----------------------------------------------------------------- */
+static int
+resolve_whole_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz)
+{
+    int rc = resolve_dsn(sess, arg, buf, bufsz, 0);
+
+    if (rc == 0 && ftpd_dsn_has_member(buf))
+        rc = -3;
+    if (rc != 0) {
+        dsn_error(sess, arg, buf, rc);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** CDUP — remove last qualifier from CWD
 ** SYS1.MACLIB. → SYS1.
 ** SYS1. → (empty, reset to HLQ)
@@ -423,7 +453,6 @@ int
 ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
-    int rc;
     int is_pds;
     int has_trailing_dot;
 
@@ -466,11 +495,8 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
         }
     }
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc != 0) {
-        dsn_error(sess, arg, dsn, rc);
+    if (resolve_whole_dsn(sess, arg, dsn, sizeof(dsn)) != 0)
         return 0;
-    }
 
     /* PDS detection only if argument had NO trailing dot.
     ** Trailing dot = prefix-only mode (no I/O, no OBTAIN). */
@@ -997,6 +1023,11 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             strcpy(prefix, cwd_notrail);
         } else {
             int rc = resolve_dsn(sess, arg, prefix, sizeof(prefix), 1);
+            if (rc == 0 && strchr(prefix, '(') != NULL) {
+                /* A member form that ftpd_lmp_split() did not take is not a
+                ** data set listing either; the catalog is asked for names. */
+                rc = -3;
+            }
             if (rc != 0) {
                 dsn_error(sess, arg, prefix, rc);
                 return 0;
@@ -2152,13 +2183,10 @@ ftpd_mvs_scratch(ftpd_session_t *sess, const char *dsn)
     if (!dsn || !dsn[0])
         return -1;
 
-    /* idcams() takes a format string and cmd is not a literal, which is
-    ** safe only because the name came through resolve_dsn(): a valid MVS
-    ** data set name cannot contain a '%'. */
     snprintf(cmd, sizeof(cmd), " DELETE '%s'", dsn);
 
     ftpd_acee_enter(sess);
-    rc = idcams(cmd);
+    rc = idcams("%s", cmd);
     ftpd_acee_leave(sess);
 
     if (rc != 0)
@@ -2919,7 +2947,7 @@ ftpd_mvs_dele(ftpd_session_t *sess, const char *arg)
 
     /* Switch to user's security environment for IDCAMS */
     ftpd_acee_enter(sess);
-    rc = idcams(cmd);
+    rc = idcams("%s", cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_log(LOG_ERROR, "%s: idcams(\"%s\") rc=%d", __func__, cmd, rc);
@@ -2955,11 +2983,8 @@ ftpd_mvs_mkd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc != 0) {
-        dsn_error(sess, arg, dsn, rc);
+    if (resolve_whole_dsn(sess, arg, dsn, sizeof(dsn)) != 0)
         return 0;
-    }
 
     /* RACF access check */
     if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
@@ -3011,11 +3036,8 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc != 0) {
-        dsn_error(sess, arg, dsn, rc);
+    if (resolve_whole_dsn(sess, arg, dsn, sizeof(dsn)) != 0)
         return 0;
-    }
 
     /* RACF access check */
     if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
@@ -3033,7 +3055,7 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
 
     /* Switch to user's security environment for IDCAMS */
     ftpd_acee_enter(sess);
-    rc = idcams(cmd);
+    rc = idcams("%s", cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_log(LOG_ERROR, "%s: idcams(\"%s\") rc=%d", __func__, cmd, rc);
@@ -3236,7 +3258,7 @@ ftpd_mvs_rnto(ftpd_session_t *sess, const char *arg)
              " ALTER '%s' NEWNAME('%s')", src, dsn);
 
     ftpd_acee_enter(sess);
-    rc = idcams(cmd);
+    rc = idcams("%s", cmd);
     ftpd_acee_leave(sess);
     if (rc != 0) {
         ftpd_log(LOG_ERROR, "%s: idcams(\"%s\") rc=%d", __func__, cmd, rc);

@@ -35,9 +35,14 @@
 ** fix up silently.  A trailing dot counts as an empty qualifier; resolve_dsn()
 ** strips it before asking, because there it means "prefix only".
 **
-** A member -- everything from the first '(' -- is not looked at.  Member
-** names are sanitized on their own path (sanitize_member() in ftpd#mvs.c),
-** and the callers still hold the combined DSN(MEMBER) form when they ask.
+** A member -- everything from the first '(' -- has to be exactly "(NAME)" at
+** the end of the name: NAME holds the characters a qualifier holds and is not
+** empty, nothing follows the closing parenthesis, and there is one member
+** only.  An extension after a '.' in NAME (`DSN(name.ext)`, from a client
+** that sends file names) is accepted but its characters are checked too;
+** sanitize_member() in ftpd#mvs.c cuts it off afterwards (#335).  Whether a
+** member is acceptable where the name is used -- a CWD sets a prefix and takes
+** none -- is for the caller to decide.
 **
 ** Deliberately NOT checked, so that names MVS accepts today keep working:
 ** qualifier length (<= 8) and the rule that a qualifier begins with an
@@ -47,12 +52,27 @@
 ** are.  Both are separate decisions; see issue #95.
 **
 ** allow_wildcards -- when nonzero, FTPD_DSN_WILDCARDS are accepted as
-**                    ordinary characters.  LIST and NLST resolve patterns,
-**                    every other command resolves one name.
+**                    ordinary characters, in the member as well.  LIST and
+**                    NLST resolve patterns, every other command resolves one
+**                    name.
 **
 ** Returns 1 when the name is valid, 0 when it is not.  A NULL or empty name
 ** is not valid.
 */
 int ftpd_dsn_valid(const char *dsn, int allow_wildcards)     asm("FTPDSNVL");
+
+/*
+** Does the resolved name carry a member, DSN(MEMBER)?
+**
+** For the commands that act on a whole data set -- CWD, MKD and RMD.  They
+** have to answer 501 for a name with a member before they ask RACF or the
+** catalog anything: neither can be asked about DSN(MEMBER) (a profile is held
+** under the data set name, LOCATE ignores the member), and IDCAMS DELETE of
+** DSN(MEMBER) removes the member (#339).  Looks for a '(' only; whether the
+** rest is a well-formed member is ftpd_dsn_valid()'s question.
+**
+** Returns 1 when dsn holds a '(', 0 when it does not or is NULL.
+*/
+int ftpd_dsn_has_member(const char *dsn)                    asm("FTPDSNHM");
 
 #endif /* FTPD_DSN_H */
