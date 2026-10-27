@@ -86,3 +86,12 @@ ftpd_dsn_valid(const char *dsn, int allow_wildcards)
     /* Closed, and nothing after the closing parenthesis. */
     return (*p == ')' && p[1] == '\0' && mlen > 0);
 }
+
+/* --------------------------------------------------------------------
+** Does the name carry a member?  See ftpd#dsn.h for the contract.
+** ----------------------------------------------------------------- */
+int
+ftpd_dsn_has_member(const char *dsn)
+{
+    return dsn != NULL && strchr(dsn, '(') != NULL;
+}

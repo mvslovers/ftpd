@@ -3605,7 +3605,7 @@ delete '$LMP_SEQ'" /dev/null
 #
 # The check of a data set name used to stop at the first '(' and never read
 # the rest.  A member is exactly "(NAME)" at the end of a name now, and CWD,
-# which sets a prefix, takes no member at all.
+# which sets a prefix, takes no member at all; neither do MKD and RMD (#339).
 # ============================================================
 section "Test 20: parentheses in names (#335)"
 
@@ -3640,6 +3640,33 @@ par_refused "ls '$PAR_PDS(ALPHA)(B)'" "ls of two members"
 par_refused "ls '$PAR_PDS(ALPHA)X'" "ls with text after the member"
 par_refused "quote DELE '$PAR_PDS(AL PHA)'" "DELE of a member holding a blank"
 par_refused "quote DELE '$PAR_PDS(AL'PHA)'" "DELE of a member holding a quote"
+
+# RMD and MKD act on a data set.  A name with a member is refused with 501
+# before RACF or IDCAMS see it: RMD used to delete the member (#339).
+par_refused "quote RMD '$PAR_PDS(ALPHA)'" "RMD of DSN(MEMBER)"
+par_refused "quote MKD '$PAR_PDS(NEWPDS)'" "MKD of DSN(MEMBER)"
+par_refused "quote RMD '$PAR_PDS(ALPHA'" "RMD of a member that is not closed"
+
+# Inside the PDS an unquoted name resolves to a member, so it is refused too.
+ftp_run "cd '$PAR_PDS'
+quote RMD ALPHA
+quote MKD BETA
+ls" "$PAR_OUT"
+if [ "$(grep -c '^501 ' "$PAR_OUT")" = 2 ] && grep -q 'ALPHA' "$PAR_OUT" \
+   && ! grep -q ' deleted\|^257 .*created' "$PAR_OUT"; then
+    pass "RMD and MKD inside a PDS of a name that is a member: 501, members untouched"
+else
+    fail "RMD and MKD inside a PDS of a name that is a member"; tail -8 "$PAR_OUT" | sed 's/^/    /'
+fi
+
+# The member the refused commands were aimed at is still there, and so is the PDS.
+ftp_run "type ascii
+get '$PAR_PDS(ALPHA)' $TMPDIR/par_alpha0.txt" "$PAR_OUT"
+if [ -s "$TMPDIR/par_alpha0.txt" ] && grep -q '^226 ' "$PAR_OUT"; then
+    pass "the member RMD 'DSN(MEMBER)' was aimed at is still there"
+else
+    fail "the member RMD 'DSN(MEMBER)' was aimed at is still there"; tail -8 "$PAR_OUT" | sed 's/^/    /'
+fi
 
 # The members and the listing forms that worked before still do.
 ftp_run "type ascii

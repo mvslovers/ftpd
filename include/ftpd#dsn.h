@@ -61,4 +61,18 @@
 */
 int ftpd_dsn_valid(const char *dsn, int allow_wildcards)     asm("FTPDSNVL");
 
+/*
+** Does the resolved name carry a member, DSN(MEMBER)?
+**
+** For the commands that act on a whole data set -- CWD, MKD and RMD.  They
+** have to answer 501 for a name with a member before they ask RACF or the
+** catalog anything: neither can be asked about DSN(MEMBER) (a profile is held
+** under the data set name, LOCATE ignores the member), and IDCAMS DELETE of
+** DSN(MEMBER) removes the member (#339).  Looks for a '(' only; whether the
+** rest is a well-formed member is ftpd_dsn_valid()'s question.
+**
+** Returns 1 when dsn holds a '(', 0 when it does not or is NULL.
+*/
+int ftpd_dsn_has_member(const char *dsn)                    asm("FTPDSNHM");
+
 #endif /* FTPD_DSN_H */

@@ -133,6 +133,18 @@ main(void)
     CHECK(ftpd_dsn_valid("HERC01..*", 1) == 0,
           "allowing patterns does not allow an empty qualifier");
 
+    /* --- a member is not a data set (#339) ----------------------------- */
+    CHECK(ftpd_dsn_has_member("HERC01.PDS(MEM)") == 1,
+          "DSN(MEMBER) carries a member");
+    CHECK(ftpd_dsn_has_member("HERC01.PDS(MEM") == 1,
+          "an unclosed member is still a member form");
+    CHECK(ftpd_dsn_has_member("HERC01.PDS(") == 1,
+          "an open parenthesis alone is a member form");
+    CHECK(ftpd_dsn_has_member("HERC01.PDS") == 0, "a data set name carries none");
+    CHECK(ftpd_dsn_has_member("A.B") == 0, "a short data set name carries none");
+    CHECK(ftpd_dsn_has_member("") == 0, "an empty name carries none");
+    CHECK(ftpd_dsn_has_member(NULL) == 0, "a NULL name carries none");
+
     /* --- nothing is not a name ---------------------------------------- */
     CHECK(bad(""), "an empty name is rejected");
     CHECK(ftpd_dsn_valid(NULL, 0) == 0, "a NULL name is rejected");
