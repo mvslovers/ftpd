@@ -164,8 +164,8 @@ the first qualifier that holds a wildcard. The filter then keeps what fits.
 
 The name without a wildcard is read one level up because the catalog lists what
 is below a name, and not the data set of that name. A one-qualifier name is
-its own level. In a long listing the name is shortened by the working directory
-prefix, as above\; a name outside the working directory shows in full. As long
+its own level. #cmd("LIST") and #cmd("NLST") shorten a name by the working
+directory prefix, as above\; a name outside the working directory shows in full. As long
 as the working directory is a partitioned data set, the argument is a member
 filter, and a name like #cmd("'SYS2.PROCLIB'") answers
 #cmd("550 No data sets found."). Change to a prefix first (@ug-data-cwd).
@@ -176,7 +176,7 @@ high-level qualifier. #cmd("RETR") of a data set the user may not read is still
 refused.
 
 Some clients ask for an absolute name or pattern without a #cmd("CWD") before
-it. The Zowe FTP plugin does so when it lists data sets
+it. Clients like the Zowe FTP plugin do so when they list data sets
 (#cmd("zowe zftp ls ds")). FTPD 1.4.0 and later answer such a request as the
 session shows. Earlier releases read only the working directory, and the list
 stayed empty unless the working directory was the high-level qualifier of the
