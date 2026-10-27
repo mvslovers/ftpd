@@ -1,0 +1,38 @@
+ftp> pwd
+Remote directory: 'IBMUSER.'
+ftp> cd 'IBMUSER.MYLIB(ALPHA)'
+501 Invalid data set name "'IBMUSER.MYLIB(ALPHA)'".  Use MVS Dsname conventions.
+ftp> cd 'IBMUSER.MYLIB(ALPHA'
+501 Invalid data set name "'IBMUSER.MYLIB(ALPHA'".  Use MVS Dsname conventions.
+ftp> pwd
+Remote directory: 'IBMUSER.'
+ftp> nlist 'IBMUSER.MYLIB(ALPHA'
+229 Entering Extended Passive Mode (|||22000|)
+501 Invalid data set name "'IBMUSER.MYLIB(ALPHA'".  Use MVS Dsname conventions.
+ftp> nlist 'IBMUSER.MYLIB(AL*)'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+ALPHA
+226 List completed successfully.
+ftp> get 'IBMUSER.MYLIB(alpha.txt)' alpha3.txt
+local: alpha3.txt remote: 'IBMUSER.MYLIB(alpha.txt)'
+229 Entering Extended Passive Mode (|||22000|)
+125 Sending data set 'IBMUSER.MYLIB(alpha.txt)' FIXrecfm 80
+250 Transfer completed successfully.
+14 bytes received in 00:00 (0.29 KiB/s)
+ftp> cd MYLIB
+250 The working directory "IBMUSER.MYLIB" is a partitioned data set
+ftp> cd ALPHA
+501 Invalid data set name "'IBMUSER.MYLIB(ALPHA)'".  Use MVS Dsname conventions.
+ftp> delete AL_PHA
+501 Invalid data set name "'IBMUSER.MYLIB(AL_PHA)'".  Use MVS Dsname conventions.
+ftp> delete 'IBMUSER.MYLIB(.X)'
+501 Invalid data set name "'IBMUSER.MYLIB(.X)'".  Use MVS Dsname conventions.
+ftp> pwd
+Remote directory: 'IBMUSER.MYLIB'
+ftp> nlist
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+ALPHA
+BETA
+226 List completed successfully.
