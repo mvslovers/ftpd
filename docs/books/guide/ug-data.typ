@@ -48,7 +48,8 @@ is refused with a #cmd("501"); @ug-errors-names shows the replies. The
 characters #cmd("*"), #cmd("%") and #cmd("?") make a name a pattern, but #cmd("?")
 matches nothing in a listing, so use #cmd("%") for one character. Only
 listing accepts a pattern (@ug-data-list). Every other command answers
-#cmd("501") and names the qualifier that carries the character.
+#cmd("501") and names the qualifier that carries the character. A member in
+parentheses follows rules of its own (@ug-data-parens).
 
 == Changing the Working Directory <ug-data-cwd>
 
@@ -68,6 +69,10 @@ The rules are:
   changes nothing.
 - A name that ends in a period, as in #cmd("cd 'SYS1.'"), is taken as a prefix
   as it is. FTPD does not look it up.
+- #cmd("cd") takes a prefix or a partitioned data set, never a member. A name
+  with a parenthesis, such as #cmd("cd 'SYS1.PARMLIB(IEASYS00)'") or
+  #cmd("cd 'SYS1.PARMLIB(IEASYS00'"), is answered with #cmd("501"), and the
+  working directory stays as it was (@ug-data-parens).
 - For any other name FTPD checks the catalog. When the name is a partitioned
   data set, the reply says so (the #cmd("cd 'SYS1.PARMLIB'") above).
   Otherwise the name becomes the prefix, with a period added, and FTPD does
@@ -372,7 +377,8 @@ There are two ways to name a member:
   and so is everything from the first period on (a file extension that the
   client adds). The rest is folded to upper case and cut to eight characters.
   So #cmd("put hello.c") and #cmd("put HELLO") both store the member
-  #cmd("HELLO").
+  #cmd("HELLO"). FTPD then checks the member name like the other names do
+  (@ug-data-parens).
 - *With the data set and the member in the name*, as in
   #cmd("'IBMUSER.MYLIB(BETA)'"), as in the second #cmd("get") above. FTPD makes
   the member name valid in the same way.
@@ -388,6 +394,86 @@ first #cmd("put") shows the reply for a name with a parenthesis, and #cmd("mkdir
 creates the partitioned data set (@ug-data-manage). The attributes of the
 session apply (@ug-data-create), and #cmd("site directory=n") sets the number
 of directory blocks.
+
+=== Parentheses in Names <ug-data-parens>
+
+#idx("parenthesis")#idx("member", "name form")#idx("501", "parenthesis")
+FTPD reads a name to its end, the part in parentheses included. A member is
+written #cmd("DSN(MEMBER)") and stands at the end of the name. These rules
+decide whether FTPD takes it:
+
+- *The member is not empty.* In a command that names one member, it holds the
+  characters that a qualifier holds (@ug-data-names): letters, digits,
+  #cmd("@"), #cmd("#"), #cmd("$") and #cmd("-").
+- *Nothing follows the closing parenthesis*, and there is one member only.
+- *An extension is allowed.* #cmd("'DSN(alpha.txt)'") is the member
+  #cmd("ALPHA"): FTPD cuts the extension off, as it does for a name in a
+  partitioned data set, but it checks the characters of the extension too. In a
+  command that names one member, a member that is empty once the extension is
+  cut off, such as #cmd("'DSN(.X)'"), is refused.
+- *Lower case is folded to upper case*, as it is in the rest of the name.
+- *A pattern character is allowed in a listing only*, as in
+  #cmd("nlist 'DSN(AL*)'") (@ug-data-list).
+
+A name that breaks a rule is answered with
+#cmd("501 Invalid data set name ... Use MVS Dsname conventions."), and FTPD does
+nothing else. That holds for every command that names one member: #cmd("get"),
+#cmd("put"), #cmd("delete") and #cmd("rename"). #cmd("mkdir") and #cmd("rmdir")
+take no member at all and answer #cmd("501") for a well-formed one too. A
+listing checks only the form of the name: a member that is not closed, or text
+after the closing parenthesis, is refused. The text between the parentheses is
+a filter that FTPD does not check character by character, so a character that
+no member name can hold finds no member, and the reply is
+#cmd("550 No data sets found.").
+The session shows the cases that matter, from the working directory
+#cmd("IBMUSER.") first and then from inside the partitioned data set:
+
+#screen(raw(read("../ex/ug-data/d-parens.txt"), block: true))
+
+Notes on the session:
+
+- *#cmd("cd") takes no member.* Both #cmd("cd 'IBMUSER.MYLIB(ALPHA)'") and the
+  one with the missing parenthesis are answered with #cmd("501"), and the
+  second #cmd("pwd") shows the working directory unchanged. Inside the
+  partitioned data set, #cmd("cd ALPHA") without quotes is a member form too,
+  and is refused in the same way. #cmd("cd 'IBMUSER.MYLIB'") with quotes and
+  #cmd("cd ..") work there as before.
+- *#cmd("mkdir") and #cmd("rmdir") take no member either.* They act on a whole
+  data set. A name with a member, such as
+  #cmd("rmdir 'IBMUSER.MYLIB(ALPHA)'"), is answered with #cmd("501") before
+  FTPD asks the security system, the catalog or IDCAMS anything, and the member
+  stays. Inside the partitioned data set, #cmd("rmdir ALPHA") without quotes is
+  a member form and is refused in the same way. To delete a member, use
+  #cmd("delete") (@ug-data-manage).
+- *A listing of a member that is not closed is refused.* The same holds for
+  #cmd("'DSN(A)(B)'") and #cmd("'DSN(A)X'"). A pattern in the parentheses, as in
+  #cmd("'IBMUSER.MYLIB(AL*)'"), lists the members that fit. #cmd("nlist 'DSN()'") and
+  #cmd("nlist 'DSN(*)'") list every member. This applies when the
+  working directory is not a partitioned data set. Inside one, a listing
+  argument is a member filter, and FTPD does not read a name in it: the
+  malformed arguments find no member and are answered with
+  #cmd("550 No data sets found.").
+- *A member with an extension still works.* The #cmd("get") of
+  #cmd("'IBMUSER.MYLIB(alpha.txt)'") sends the member #cmd("ALPHA").
+- *A name that no member can have is refused at once.* Inside the partitioned
+  data set, #cmd("delete AL_PHA") is a member form, and the underscore cannot
+  be in a member name. FTPD answers with the member name it built,
+  #cmd("IBMUSER.MYLIB(AL_PHA)"). FTPD 1.3.1 and earlier did not check such a
+  name, and it went on to the security check and to the system as it was.
+
+#note[*Empty members and #cmd("DELE").* FTPD 1.3.1 and earlier cut the
+extension off first and did not look at what was left. With
+#cmd("delete 'IBMUSER.MYLIB(.X)'") no member name was left, FTPD took the name
+for the data set itself, and deleted the whole partitioned data set. Later
+versions answer #cmd("501"). A script that built member names from file names
+and deleted them has been exposed to this.]
+
+FTPD 1.3.1 and earlier read a name only up to the first parenthesis and did
+not look at the rest. #cmd("cd 'IBMUSER.MYLIB(ALPHA)'") was answered with
+#cmd("250") and kept the parenthesis in the working directory prefix.
+#cmd("rmdir 'IBMUSER.MYLIB(ALPHA)'") deleted the member. Only arguments that
+FTPD handled wrongly before change their answer. The _FTPD Reference_,
+"Member Names", has the forms in a table.
 
 === When the Directory Is Full <ug-data-dirfull>
 
@@ -529,7 +615,8 @@ name is a member, so quote the name to delete a data set. The reply for a data s
 #cmd("550 DELE fails: NAME does not exist."), as the second #cmd("delete
 NEWAPP") shows, after the first one, with the full name in quotes, had deleted
 it. #cmd("rmdir MYLIB") deleted the partitioned data set with all its members.
-These commands need the authority to alter the data set (@ug-security-dsn).
+#cmd("rmdir") and #cmd("mkdir") take the name of a data set, never a member
+(@ug-data-parens). These commands need the authority to alter the data set (@ug-security-dsn).
 The reply to a #cmd("delete"), a #cmd("rmdir") or the rename of a whole data set
 that fails names the reason and the return code of IDCAMS.
 

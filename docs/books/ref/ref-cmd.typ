@@ -238,6 +238,13 @@ it. The replies are:
 - #cmd("250 The working directory \"SYS1.MACLIB\" is a partitioned data set")
   for a partitioned data set.
 - #cmd("501") for a name that is not valid (@ref-reply-501).
+- #cmd("501 Invalid data set name ...") for a name with a parenthesis, such as
+  #cmd("CWD 'DSN(MEMBER)'") and #cmd("CWD 'DSN(MEM'"). #cmd("CWD") sets a
+  prefix and takes no member. The working directory stays as it was. Inside a
+  partitioned data set, an unquoted #cmd("CWD name") is the member form
+  #cmd("DSN(NAME)") and gets the same reply, and #cmd("CWD 'DSN'") with quotes
+  and #cmd("CWD ..") work as before. FTPD 1.3.1 and earlier answered these
+  names with #cmd("250"), and the parenthesis stayed in the prefix.
 
 The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
 
@@ -266,9 +273,14 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       when the data set does not exist, is not a partitioned data set, or has no
       member that fits the pattern; #cmd("501") when the name part has a
       wildcard, a character that a data set name cannot have, or more than 44
-      characters (@ref-reply-501). Before FTPD 1.3.1 FTPD took the argument for
-      a data set level, and the list had the header, no entry and
-      #cmd("226"). The forms #cmd("LIST DSN") without parentheses, and
+      characters (@ref-reply-501). An argument with a parenthesis that is not
+      of the form #cmd("DSN(pattern)"), such as #cmd("DSN(x"),
+      #cmd("DSN(x)(y)") and #cmd("DSN(x)z"), gets #cmd("501") as well (the rule is in
+      @ref-cmd-member). Inside a partitioned data
+      set after #cmd("CWD") the argument is a member filter and FTPD reads no
+      name in it, so these arguments find no member and get #cmd("550").
+      Before FTPD 1.3.1 FTPD took the argument for a data set level, and the
+      list had the header, no entry and #cmd("226"). The forms #cmd("LIST DSN") without parentheses, and
       #cmd("LIST pattern") inside a partitioned data set after #cmd("CWD"), are
       as before.],
     [UFS], [#cmd("150 Opening data connection for file list") and
@@ -338,15 +350,82 @@ Guide_, "Working with Data Sets", for the rules.]
     [#cmd("DELE")], [MVS: deletes a data set or a member (#cmd("250 NAME deleted.")). UFS:
       #cmd("250 File deleted"). JES: cancels the job and removes its output
       (@ref-cmd-jes).],
-    [#cmd("MKD")], [MVS: creates a partitioned data set (#cmd("257 'NAME' created.")); #cmd("SITE DIRECTORY")
+    [#cmd("MKD")], [MVS: creates a partitioned data set (#cmd("257 'NAME' created."); #cmd("501") for a name with a member, @ref-cmd-member); #cmd("SITE DIRECTORY")
       sets the directory blocks, #cmd("DEFDIRECTORY") by default (10), and
       #cmd("SITE RETPD") the retention period (@ref-site-retpd). UFS: #cmd("257 \"PATH\" directory created").],
-    [#cmd("RMD")], [MVS: deletes a data set. UFS: #cmd("250 Directory removed"); a directory that is not empty gets #cmd("550").],
+    [#cmd("RMD")], [MVS: deletes a data set, never a member (#cmd("501") for a name with a member, @ref-cmd-member). UFS: #cmd("250 Directory removed"); a directory that is not empty gets #cmd("550").],
     [#cmd("RNFR")], [MVS: #cmd("350 RNFR accepted. Please supply new name for RNTO."). UFS: #cmd("350 File exists, ready for destination").],
     [#cmd("RNTO")], [MVS: renames a data set or a member (#cmd("250 OLD renamed to NEW")). The command must
       follow #cmd("RNFR") at once. UFS: #cmd("502 Rename not supported for UFS").],
   )
 ]
+
+== Member Names <ref-cmd-member>
+
+#idx("member", "name form")#idx("parenthesis")#idx("501", "member")
+A command that takes a name reads the whole name, the member included. This
+holds for #cmd("RETR"), #cmd("STOR"), #cmd("APPE"), #cmd("DELE"), #cmd("RNFR"),
+#cmd("RNTO") and, in the forms of @ref-cmd-list, #cmd("LIST") and #cmd("NLST").
+#cmd("CWD") (@ref-cmd-cwd-mvs), #cmd("MKD") and #cmd("RMD") act on a whole data
+set or a prefix and take no member: a name with a parenthesis gets
+#cmd("501 Invalid data set name ..."), before FTPD asks RACF, the catalog or
+IDCAMS anything. A member is exactly
+#cmd("(NAME)") at the end of the name. #cmd("NAME") is not empty and holds the
+characters that a qualifier holds: the letters, the digits, #cmd("@"),
+#cmd("#"), #cmd("$") and #cmd("-"). FTPD folds it to upper case and cuts it
+to 8 characters. The character check is made for the commands that name one
+member (#cmd("RETR"), #cmd("STOR"), #cmd("APPE"), #cmd("DELE"), #cmd("RNFR"),
+#cmd("RNTO")). #cmd("LIST") and #cmd("NLST") check the form only: the text
+between the parentheses is a filter, and a character that a member name cannot
+hold finds no member (#cmd("550 No data sets found.")).
+
+#tab(caption: [Member forms and the answer to them])[
+  #table(columns: (1.9in, 1fr),
+    [Form], [Answer],
+    [#cmd("'DSN(NAME)'"), #cmd("DSN(NAME)")], [In a command that names one
+      member: the member #cmd("NAME"). Without quotes the working directory is
+      put in front of #cmd("DSN"). #cmd("CWD"), #cmd("MKD") and #cmd("RMD"):
+      #cmd("501 Invalid data set name ..."), and the working directory, the
+      data set and the member stay as they were.],
+    [#cmd("'DSN(NAME.ext)'")], [In a command that names one member: the member
+      #cmd("NAME"). FTPD cuts the extension off after it checked its
+      characters.],
+    [#cmd("'DSN(*)'"), #cmd("'DSN(AL%)'")], [In #cmd("LIST") and #cmd("NLST")
+      the members that fit. Any other command: #cmd("501 A qualifier in ...
+      contains an invalid character") (@ref-reply-501).],
+    [#cmd("'DSN()'")], [In #cmd("LIST") and #cmd("NLST") every member. Any
+      other command: #cmd("501 Invalid data set name ...").],
+    [#cmd("'DSN(.ext)'")], [In a command that names one member:
+      #cmd("501 Invalid data set name ..."). No member
+      name is left once the extension is cut off. FTPD 1.3.1 and earlier took
+      the name for the data set itself, and #cmd("DELE") deleted it.],
+    [#cmd("'DSN(NAME'"), #cmd("'DSN(NAME)(OTHER)'"), #cmd("'DSN(NAME)x'")],
+      [#cmd("501 Invalid data set name ..."), and nothing else happens.],
+    [#cmd("'DSN(A_B)'"), a character that a qualifier cannot hold inside the
+      parentheses], [In #cmd("RETR"), #cmd("STOR"), #cmd("APPE"), #cmd("DELE"),
+      #cmd("RNFR") and #cmd("RNTO"): #cmd("501 Invalid data set name ..."), and
+      nothing else happens. In #cmd("LIST") and #cmd("NLST") the text is a
+      filter that no member fits: #cmd("550 No data sets found.").],
+    [In a partitioned data set after #cmd("CWD"): #cmd("name"),
+      #cmd("name.ext")], [The member #cmd("NAME"), built as
+      #cmd("PDS(NAME)") from the partitioned data set. A character that a
+      member name cannot hold, such as #cmd("_"), gets
+      #cmd("501 Invalid data set name ...") with the name FTPD built. A name
+      that is empty once the extension is cut off, such as #cmd(".x"), gets
+      #cmd("501 Invalid dataset name"). #cmd("MKD name") and #cmd("RMD name")
+      get #cmd("501 Invalid data set name ...") for a name that is a member
+      form here, as does #cmd("CWD name").],
+  )
+]
+
+The text of the reply is #cmd("501 Invalid data set name \"'NAME'\".  Use MVS Dsname conventions.")
+with the resolved name in upper case. A member that FTPD accepts can still be
+answered by the command with its own reply, such as #cmd("550") for a member
+that does not exist. FTPD 1.3.1 and earlier read a name only up to the first
+parenthesis. A character that a member name cannot hold reached the security
+check and the system, and #cmd("RMD 'DSN(MEMBER)'") deleted the member and
+answered #cmd("250"). The _FTPD User's Guide_, "Working with
+Data Sets", has a session.
 
 == The JES View <ref-cmd-jes>
 

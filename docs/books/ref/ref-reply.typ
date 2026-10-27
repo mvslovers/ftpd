@@ -130,7 +130,10 @@ causes are:
 
 - #cmd("501 Invalid dataset name"): the name is longer than 44 characters.
 - #cmd("501 Invalid data set name \"NAME\".  Use MVS Dsname conventions."): the
-  name holds a character that a data set name cannot hold.
+  name holds a character that a data set name cannot hold, or a member in
+  parentheses that is not exactly #cmd("(NAME)") at the end of the name
+  (@ref-cmd-member), or #cmd("CWD"), #cmd("MKD") or #cmd("RMD") got a name with a parenthesis
+  (@ref-cmd-cwd-mvs, @ref-cmd-file).
 - #cmd("501 A qualifier in \"NAME\" contains an invalid character"): a wildcard
   in a command that does not take one.
 - #cmd("501 Missing job ID"): in the JES view, #cmd("RETR") or #cmd("DELE")
