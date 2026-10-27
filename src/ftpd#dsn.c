@@ -23,6 +23,7 @@ ftpd_dsn_valid(const char *dsn, int allow_wildcards)
 {
     const char *p;
     int qlen;               /* characters in the qualifier being read */
+    int mlen;               /* characters in the member name read so far */
 
     if (!dsn)
         return 0;
@@ -51,5 +52,37 @@ ftpd_dsn_valid(const char *dsn, int allow_wildcards)
 
     /* qlen is the last qualifier's length: 0 means the name ended on a dot,
     ** was empty, or was nothing but a member -- "(MEM)". */
-    return (qlen > 0);
+    if (qlen == 0)
+        return 0;
+
+    if (*p == '\0')
+        return 1;
+
+    /* *p is the '(' of a member.  What follows is read to the end: the
+    ** member, a closing parenthesis, and nothing else. */
+    p++;
+    mlen = 0;
+    for (; *p && *p != ')'; p++) {
+        if (*p == '.') {
+            /* An extension (`DSN(name.ext)`, from a client that sends file
+            ** names).  sanitize_member() cuts it off, but only after the
+            ** characters have been looked at here. */
+            if (mlen == 0)
+                return 0;
+            continue;
+        }
+
+        if (allow_wildcards && strchr(FTPD_DSN_WILDCARDS, *p) != NULL) {
+            mlen++;
+            continue;
+        }
+
+        if (strchr(dsn_chars, *p) == NULL)
+            return 0;
+
+        mlen++;
+    }
+
+    /* Closed, and nothing after the closing parenthesis. */
+    return (*p == ')' && p[1] == '\0' && mlen > 0);
 }

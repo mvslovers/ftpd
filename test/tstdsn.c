@@ -86,12 +86,36 @@ main(void)
     CHECK(bad("herc01.test"), "lowercase is rejected -- the caller uppercases first");
     CHECK(bad("HERC01.Test"), "a single lowercase letter is rejected");
 
-    /* --- members are somebody else's business ------------------------- */
-    CHECK(ok("HERC01.PDS(MEM)"), "a member reference is valid -- and not inspected");
-    CHECK(ok("HERC01.PDS(mem.ext)"),
-          "what sanitize_member() still has to clean up is not rejected here");
+    /* --- a member is checked as well ----------------------------------- */
+    /* The scan used to stop at the first '(' and never look at the rest, so
+    ** whatever followed it -- in a CWD, a LIST argument, or the member of a
+    ** DELE -- went on to the catalog and to IDCAMS unchecked (#335). */
+    CHECK(ok("HERC01.PDS(MEM)"), "a member reference is valid");
+    CHECK(ok("HERC01.PDS(MEM.EXT)"),
+          "an extension is valid -- sanitize_member() cuts it off later");
+    CHECK(ok("HERC01.PDS(@#$-1)"), "a member holds the characters a qualifier holds");
+    CHECK(bad("HERC01.PDS(mem)"), "a lowercase member is rejected like a lowercase name");
     CHECK(bad("HERC01.P/DS(MEM)"), "the data set part of a member reference is checked");
     CHECK(bad("(MEM)"), "a member without a data set is not a name");
+    CHECK(bad("HERC01.PDS(MEM"), "a member that is not closed is rejected");
+    CHECK(bad("HERC01.PDS("), "an open parenthesis alone is rejected");
+    CHECK(bad("HERC01.PDS()"), "an empty member is rejected");
+    CHECK(bad("HERC01.PDS(.EXT)"), "a member with nothing before the extension is rejected");
+    CHECK(bad("HERC01.PDS(MEM)X"), "text after the closing parenthesis is rejected");
+    CHECK(bad("HERC01.PDS(MEM)(X)"), "a second member is rejected");
+    CHECK(bad("HERC01.PDS(MEM))"), "a second closing parenthesis is rejected");
+    CHECK(bad("HERC01.PDS(A(B)"), "an opening parenthesis inside the member is rejected");
+    CHECK(bad("HERC01.PDS(M M)"), "a blank in a member is rejected");
+    CHECK(bad("HERC01.PDS(M'M)"), "a quote in a member is rejected");
+    CHECK(bad("HERC01.PDS(M,M)"), "a comma in a member is rejected");
+    CHECK(bad("HERC01.PDS(M/M)"), "a '/' in a member is rejected");
+    CHECK(bad("HERC01.PDS(MEM.E'T)"), "a quote in the extension is rejected");
+    CHECK(bad("HERC01.PDS(M*M)"), "a pattern in a member is rejected when patterns are not allowed");
+    CHECK(ftpd_dsn_valid("HERC01.PDS(M*M)", 1) == 1,
+          "and accepted where patterns are allowed");
+    CHECK(ftpd_dsn_valid("HERC01.PDS(M'M)", 1) == 0,
+          "allowing patterns does not allow anything else in a member");
+    CHECK(bad("HERC01.PDS(MEM)\x01"), "a control character after the member is rejected");
 
     /* --- wildcards belong to LIST and NLST ---------------------------- */
     /* '?' is one of them: FTPD has always documented and rejected it with
