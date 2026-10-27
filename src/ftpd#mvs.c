@@ -381,6 +381,31 @@ dsn_error(ftpd_session_t *sess, const char *arg, const char *dsn, int rc)
 }
 
 /* --------------------------------------------------------------------
+** Helper: resolve a name for a command that acts on a data set as a whole
+** (CWD, MKD, RMD).  A member is refused with the reply already sent:
+** CWD sets a prefix and DSN(MEMBER) kept as one would be read back by LIST
+** as a data set name; RMD would delete the member; and neither RACF nor
+** LOCATE can be asked about DSN(MEMBER), so the check has to come before
+** both (#339).
+**
+** Returns 0 with the name in buf, -1 after a 501 reply.
+** ----------------------------------------------------------------- */
+static int
+resolve_whole_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz)
+{
+    int rc = resolve_dsn(sess, arg, buf, bufsz, 0);
+
+    if (rc == 0 && ftpd_dsn_has_member(buf))
+        rc = -3;
+    if (rc != 0) {
+        dsn_error(sess, arg, buf, rc);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------------------
 ** CDUP — remove last qualifier from CWD
 ** SYS1.MACLIB. → SYS1.
 ** SYS1. → (empty, reset to HLQ)
@@ -428,7 +453,6 @@ int
 ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
 {
     char dsn[FTPD_MAX_DSN_LEN + 2];
-    int rc;
     int is_pds;
     int has_trailing_dot;
 
@@ -471,16 +495,8 @@ ftpd_mvs_cwd(ftpd_session_t *sess, const char *arg)
         }
     }
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc == 0 && ftpd_dsn_has_member(dsn)) {
-        /* CWD sets a prefix.  A member is not one, and DSN(MEMBER) kept as the
-        ** working directory would be read back by LIST as a data set name. */
-        rc = -3;
-    }
-    if (rc != 0) {
-        dsn_error(sess, arg, dsn, rc);
+    if (resolve_whole_dsn(sess, arg, dsn, sizeof(dsn)) != 0)
         return 0;
-    }
 
     /* PDS detection only if argument had NO trailing dot.
     ** Trailing dot = prefix-only mode (no I/O, no OBTAIN). */
@@ -2967,16 +2983,8 @@ ftpd_mvs_mkd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc == 0 && ftpd_dsn_has_member(dsn)) {
-        /* MKD takes a data set, never DSN(MEMBER).  Refused before the access
-        ** check, so that RACF is only ever asked about the data set. */
-        rc = -3;
-    }
-    if (rc != 0) {
-        dsn_error(sess, arg, dsn, rc);
+    if (resolve_whole_dsn(sess, arg, dsn, sizeof(dsn)) != 0)
         return 0;
-    }
 
     /* RACF access check */
     if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
@@ -3028,16 +3036,8 @@ ftpd_mvs_rmd(ftpd_session_t *sess, const char *arg)
         return 0;
     }
 
-    rc = resolve_dsn(sess, arg, dsn, sizeof(dsn), 0);
-    if (rc == 0 && ftpd_dsn_has_member(dsn)) {
-        /* RMD takes a data set, never DSN(MEMBER).  Refused before the access
-        ** check, so that RACF is only ever asked about the data set. */
-        rc = -3;
-    }
-    if (rc != 0) {
-        dsn_error(sess, arg, dsn, rc);
+    if (resolve_whole_dsn(sess, arg, dsn, sizeof(dsn)) != 0)
         return 0;
-    }
 
     /* RACF access check */
     if (check_dataset_access(sess, dsn, RACF_ATTR_ALTER) != 0)
