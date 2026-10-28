@@ -22,6 +22,9 @@ replacement for 1.3.1. SMP FMID `TFTP132`, which deletes `TFTP131`.
   about a name no profile can cover and then delete the member, answering
   `250`. All three now answer `501` before the security product, the catalog or
   IDCAMS are asked, so the access check only ever sees the data set name. (#339)
+- **IDCAMS commands no longer depend on the name.** The command text is passed
+  to the IDCAMS call as an argument, not as the format string, so a `%` in a
+  name cannot be read as a format directive. (#339)
 
 ### Upgrade
 

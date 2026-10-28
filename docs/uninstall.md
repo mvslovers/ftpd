@@ -401,6 +401,7 @@ In the first line of each block, name the FMID that the system carries
   DEL SYSMOD(TFTP132) MOD(FTPD) .
   DEL MOD(FTPD) .
   DEL SYSMOD(TFTP132) .
+  DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
   DEL SYSMOD(TFTP120) .
   DEL SYSMOD(TFTP110) .
