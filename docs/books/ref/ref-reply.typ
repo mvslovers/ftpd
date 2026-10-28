@@ -11,7 +11,7 @@ the last, as in #cmd("250-It is known to JES as JOB00042") followed by
 line.
 
 The text of a reply is meant for people. A client should act on the code. The
-texts that this book quotes are the ones of FTPD 1.3.1.
+texts that this book quotes are the ones of FTPD 1.3.2.
 
 == Codes That FTPD Sends <ref-reply-list>
 

@@ -119,11 +119,13 @@ below it. Which part of the catalog FTPD reads depends on the name
   [#cmd("*")], [a whole qualifier, or the rest of a qualifier. #cmd("OLD*")
     keeps #cmd("OLDREP") but not #cmd("OLD.DATA"). A #cmd("*") may not stand
     in front of letters: #cmd("*REP") does not match #cmd("OLDREP").],
-  [#cmd("**")], [any number of qualifiers, also none. A #cmd("**") is a
+  [#cmd("**")], [any number of qualifiers. A #cmd("**") is a
     qualifier of its own: it stands at the start of the name or behind a
     period, and at the end of the name or in front of a period, as in
     #cmd("**"), #cmd("SYS2.**"), #cmd("**.PROCLIB") and
-    #cmd("SYS2.**.PROCLIB").],
+    #cmd("SYS2.**.PROCLIB"). At the start or in the middle it may stand for no
+    qualifier: #cmd("**.PROCLIB") fits #cmd("PROCLIB"). At the end it needs at
+    least one: #cmd("SYS2.**") does not fit the data set #cmd("SYS2").],
   [#cmd("%")], [one character.],
 )
 
@@ -135,6 +137,12 @@ and #cmd("SYS2.**LIB"). So is a run of three or more #cmd("*"), such as
 #cmd("*"), so that #cmd("**ASM") listed the data set #cmd("ASM") and
 #cmd("DYNABLDL.ASM"). A single #cmd("*") may stand inside a qualifier, as in
 #cmd("OLD*"). @ug-data-list-none shows the replies.
+
+FTPD matches a pattern against one data set name in at most 10000 steps. A
+#cmd("**") between literals, as in #cmd("SYS2.**.PROCLIB"), makes FTPD try the
+rest of the pattern at every qualifier boundary, and several of them against a
+name of many qualifiers can use up the steps. FTPD then counts that name as not
+fitting and goes on with the next one. FTPD 1.3.1 and earlier had no such limit.
 
 A name of the form #cmd("'DSN(pattern)'") is not a data set filter. #cmd("LIST")
 and #cmd("NLST") answer it with the members of that partitioned data set that
@@ -189,7 +197,7 @@ refused.
 
 Some clients ask for an absolute name or pattern without a #cmd("CWD") before
 it. Clients like the Zowe FTP plugin do so when they list data sets
-(#cmd("zowe zftp ls ds")). FTPD 1.4.0 and later answer such a request as the
+(#cmd("zowe zftp ls ds")). FTPD 1.3.2 and later answer such a request as the
 session shows. Earlier releases read only the working directory, and the list
 stayed empty unless the working directory was the high-level qualifier of the
 name.
