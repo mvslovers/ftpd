@@ -3721,8 +3721,8 @@ $lvl_cmd '$lvl_arg'" "$LVL_OUT"
     done
 done
 
-# A '**' that is not a qualifier of its own is 501, as on z/OS (#344); **.ASM,
-# SYS1.**.ONE are patterns.
+# A '**' that is not a qualifier of its own is 501, as on z/OS (#344); the
+# patterns that pass are tested after the loop.
 for lvl_arg in "**ASM" "SYS1.**NOTHERE" "SYS1.A**" "SYS1.A**.B" "***" "SYS1.***"; do
     for lvl_cmd in ls dir; do
         ftp_run "type ascii
