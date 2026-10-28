@@ -24,8 +24,22 @@
 **
 ** Both pattern and name must be fully qualified, without a trailing dot.
 ** Returns 1 for a match, 0 for none.
+**
+** The run time is bounded: '**' between literals tries the rest of the
+** pattern at every qualifier boundary.  After FTPD_DSN_MATCH_LIMIT calls the
+** match gives up and answers 0.  A lookup that matches needs far fewer, so a
+** real one never gets there.
 */
+#define FTPD_DSN_MATCH_LIMIT 10000
+
 int ftpd_dsn_match(const char *pattern, const char *name)    asm("FTPLVMAT");
+
+/*
+** The same with the limit given and the number of calls reported, for the
+** test.  used may be NULL.
+*/
+int ftpd_dsn_match_limit(const char *pattern, const char *name, int limit,
+                         int *used)                          asm("FTPLVMLM");
 
 /*
 ** The catalog level that holds every name a pattern can match: what has to be

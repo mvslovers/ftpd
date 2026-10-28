@@ -132,5 +132,41 @@ main(void)
           ftpd_dsn_match("A.**.**.Z", "A.Z") == 1,
           "A.**.**.Z is A.**.Z");
 
+    /* --- '**' between literals is bounded in run time ----------------- */
+    {
+        /* 22 one-character qualifiers, 43 characters: the longest name that
+        ** fits, and a pattern of 14 "**A": every '**' tries every qualifier
+        ** boundary, so only the bound stops it. */
+        const char *name = "A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.A.B";
+        const char *pat  = "**A**A**A**A**A**A**A**A**A**A**A**A**A**A";
+        const char *pat2 = "**.A.**.A.**.A.**.A.**.A.**.A.**.A.**.A.**.C";
+        int used = -1;
+
+        CHECK(ftpd_dsn_match_limit(pat, name, 10000, &used) == 0 &&
+              used == 10000,
+              "a pattern of 14 '**A' against 22 qualifiers gives up at the "
+              "limit with no match");
+        CHECK(ftpd_dsn_match(pat, name) == 0, "ftpd_dsn_match() gives up too");
+        used = -1;
+        CHECK(ftpd_dsn_match_limit(pat2, name, 10000, &used) == 0 &&
+              used == 10000,
+              "the same with dots around the '**'");
+        used = -1;
+        CHECK(ftpd_dsn_match_limit("**.A.**.B", name, 10000, &used) == 1 &&
+              used < 100,
+              "a match is found long before the limit");
+        used = -1;
+        CHECK(ftpd_dsn_match_limit("A.**.B", "A.B", 10000, &used) == 1 &&
+              used < 10,
+              "A.**.B against A.B takes a handful of calls");
+        CHECK(ftpd_dsn_match_limit("**.A.**.A.**.A.**.B", name, 10000,
+                                   NULL) == 1,
+              "several '**' between literals still match, and used may be "
+              "NULL");
+        CHECK(ftpd_dsn_match_limit("A.**.B", "A.X.B", 1, &used) == 0 &&
+              used == 1,
+              "a limit of 1 call lets no '**' recurse");
+    }
+
     return mbt_test_summary("TSTLVL");
 }
