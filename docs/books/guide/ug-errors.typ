@@ -31,8 +31,8 @@ working directory that does not exist:
 - *#cmd("501 Invalid data set name ..."):* the name has a character that a data
   set name cannot have, or a member in parentheses that is not exactly
   #cmd("(NAME)") at the end of the name, such as #cmd("'DSN(A'") or
-  #cmd("'DSN(A)X'"). The same reply answers a #cmd("cd") to a name with a
-  parenthesis (@ug-data-parens). *#cmd("501 Invalid dataset name"):* the whole
+  #cmd("'DSN(A)X'"). The same reply answers a #cmd("cd"), #cmd("mkdir") or
+  #cmd("rmdir") to a name with a parenthesis (@ug-data-parens). *#cmd("501 Invalid dataset name"):* the whole
   name is longer than 44 characters, or no member name is left.
 - *#cmd("250 \"IBMUSER.NOSUCH.\" is the working directory name prefix."):* a
   #cmd("cd") to a prefix that is not cataloged works. FTPD does not check the

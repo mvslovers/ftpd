@@ -21,21 +21,29 @@ delete = ["TFTP110"]
 a second digit. At patch 9 cut the next minor, at minor 9 the next major;
 ftpd 1.2.10 cannot be expressed and must not be released.
 
-Current: `main` is 1.4.0-dev, so mbt 3 derives **`TFTP140`**; not yet checked on
-any stand. 1.3.1, the patch release cut on the branch `release-1.3.x`, was
-**`TFTP131`**, deleting `TFTP130` only (mbt derives the id from the minor
-version only, so that branch carried an explicit `fmid` and `delete` in
-`[smp]`; `main` does not). Because `TFTP131` owns the modules after an install
-of 1.3.1, the derived `delete` of 1.4.0 (`TFTP130`) is not enough: when 1.4.0
-is cut, `[smp]` needs an explicit `delete` that names `TFTP131` (and `TFTP130`
-for a system that skipped 1.3.1). `TFTP111` was assigned to a 1.1.1 that
-was never cut (the libc370 2.0 port made the next release 1.2.0) and is unspent
-and unassigned. Burned: `TFTP100` (1.0.0–1.0.2), `TFTP110` (1.1.0, released
-2026-09-14), `TFTP120` (1.2.0, released 2026-10-13), `TFTP130` (1.3.0, released
-2026-10-22) and `TFTP131` (1.3.1, released 2026-10-27); `TFTP120` and `TFTP130`
-were free on the maintainer's word, no `LIST` was run on any stand before they
-shipped. `docs/uninstall.md` names every spent id and carries `TFTP131`; add
-each later id there.
+Current: 1.3.0 (`TFTP130`, deleting `TFTP120`) and the patch releases 1.3.1
+(`TFTP131`, deleting `TFTP130` only) and 1.3.2 (`TFTP132`, deleting `TFTP131`
+only) are released. The patch releases were cut on the branch `release-1.3.x`;
+mbt derives the id from the minor version only, so `mbt.toml` carried an
+explicit `fmid` and `delete` in `[smp]` on that branch (see the comment there;
+`main` does not). Not yet checked on any stand: `TFTP132` and `TFTP140`.
+Because `delete` names `TFTP131` only, a system that skipped 1.3.1 and still
+carries `TFTP130` must install 1.3.1 first (the same rule 1.3.1 had for
+`TFTP120`); `docs/installation.md` says so for 1.3.2.
+
+`main` is 1.4.0-dev, so mbt 3 derives **`TFTP140`**. `TFTP132` owns the modules
+after an install of 1.3.2, so the derived `delete` of 1.4.0 (`TFTP130`) is not
+enough: when 1.4.0 is cut, `[smp]` needs an explicit `delete` that names
+`TFTP132` (and `TFTP131` and `TFTP130` for a system that skipped a patch).
+
+`TFTP111` was assigned to a 1.1.1 that was never cut (the libc370 2.0 port made
+the next release 1.2.0) and is unspent and unassigned. Burned: `TFTP100`
+(1.0.0–1.0.2), `TFTP110` (1.1.0, released 2026-09-14), `TFTP120` (1.2.0,
+released 2026-10-13), `TFTP130` (1.3.0, released 2026-10-22), `TFTP131` (1.3.1,
+released 2026-10-27) and `TFTP132` (1.3.2, released 2026-10-28); `TFTP120` and
+`TFTP130` were free on the maintainer's word, no `LIST` was run on any stand
+before they shipped. `docs/uninstall.md` names every spent id and carries
+`TFTP132`; add each later id there.
 
 Never re-spend an id, and never install a test package under the real one: a
 test needs a throwaway id **and** throwaway module names, because SMP keys
@@ -78,8 +86,8 @@ books; that is a manual step after the tag exists.
 Before the tag:
 
 1. The books' part of the release is ready: every behaviour change in the
-   release has its section, and the table "What Is New in FTPD 1.3.1" has one
-   row per change. Check it against the closed issues and merged PRs of the
+   release has its section, and the table "What Is New in FTPD X.Y.Z" of that
+   release has one row per change. Check it against the closed issues and merged PRs of the
    milestone, and against the source, not against the PR texts.
 2. `make -C docs/books` builds both PDFs without errors and without warnings
    beyond the two known ones from the template (the experimental bundle
@@ -102,7 +110,10 @@ Before the tag:
    1.3.1 (the edition notice says so); run them once on a throwaway container
    with the release candidate installed from the SMP package, replace the
    captures with that output, compare it with the text, and name the release
-   they were measured with in the notice.
+   they were measured with in the notice. The captures of a LIST or NLST
+   session (`docs/books/ex/ug-data/`) are re-run against the release candidate
+   in the same way. Do the same for the inline captures of `docs/uninstall.md`
+   and `docs/installation.md`.
 
 After the tag, with the release page created by the workflow:
 
