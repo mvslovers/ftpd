@@ -98,10 +98,46 @@ FTPD runs on MVS 3.8j with these parts:
   every UFS request is answered with #cmd("550 UFS service not available").
 
 FTPD 1.3 is built against LIBC/370 2.25.1, and its load module is
-link-edited authorized (AC(1)). FTPD 1.3.1 carries the client library of
-UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
+link-edited authorized (AC(1)). FTPD 1.3.1 and 1.3.2 carry the client library
+of UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
 authorize them and how to upgrade from an earlier release is the subject of
 @ug-install.
+
+== What Is New in FTPD 1.3.2 <ug-intro-new-132>
+
+#idx("FTPD 1.3.2", "changes")
+FTPD 1.3.2 is a patch release. It changes these behaviours against 1.3.1 and
+adds no function. Each is described where the book explains the subject:
+
+#tab(caption: [Changes in FTPD 1.3.2])[
+  #table(columns: (2.3in, 1fr),
+    [Change], [Where],
+    [#cmd("LIST") and #cmd("NLST") with a name in quotes, or with a pattern such
+      as #cmd("'SYS2.**'"), read the catalog at the level of that name, whatever
+      the working directory is. Before, FTPD read only the working directory,
+      and the list was empty unless the name was below it. Clients such as the
+      Zowe FTP plugin ask this way.],
+      [@ug-data-list-abs, _FTPD Reference_, "LIST and NLST"],
+    [A data set listing that has nothing to show is answered with
+      #cmd("550 No data sets found."), before the data connection opens. Before,
+      FTPD sent #cmd("150"), an empty list and #cmd("226") when the level held
+      data sets or was a data set itself.],
+      [@ug-data-list-none, @ug-errors],
+    [A #cmd("**") that is not a qualifier of its own, as in #cmd("**ASM") or
+      #cmd("SYS2.A**"), is refused with
+      #cmd("501 ** must be preceded and followed by a period or blank").
+      Before, FTPD took it for a wider #cmd("*"). The match of a pattern against
+      one name is limited to 10000 steps.],
+      [@ug-data-list, _FTPD Reference_, "The 501 Reply"],
+    [A parenthesis in a name is checked to the end of the name, in #cmd("CWD"),
+      in the arguments of #cmd("LIST") and #cmd("NLST") and in the member of
+      #cmd("DELE"), #cmd("RNFR"), #cmd("RNTO") and the transfers.
+      #cmd("CWD"), #cmd("MKD") and #cmd("RMD") act on a whole data set and
+      refuse a name with a member with #cmd("501"). Before,
+      #cmd("rmdir 'DSN(MEMBER)'") deleted the member.],
+      [@ug-data-parens, _FTPD Reference_, "Member Names"],
+  )
+] <ug-intro-new-132-tab>
 
 == What Is New in FTPD 1.3.1 <ug-intro-new-131>
 

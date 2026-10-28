@@ -1,0 +1,30 @@
+ftp> mkd EMPTY
+257 'IBMUSER.EMPTY' created.
+ftp> cd 'IBMUSER.EMPTY.'
+250 "IBMUSER.EMPTY." is the working directory name prefix.
+ftp> ls
+229 Entering Extended Passive Mode (|||22000|)
+550 No data sets found.
+ftp> cd 'IBMUSER.'
+250 "IBMUSER." is the working directory name prefix.
+ftp> nlist 'SYS2.**.NOTHERE'
+229 Entering Extended Passive Mode (|||22000|)
+550 No data sets found.
+ftp> nlist 'SYS2.**.PROCLIB'
+229 Entering Extended Passive Mode (|||22000|)
+150 Opening data connection for file list
+SYS2.PROCLIB
+226 List completed successfully.
+ftp> nlist '**ASM'
+229 Entering Extended Passive Mode (|||22000|)
+501 ** must be preceded and followed by a period or blank
+ftp> nlist 'SYS2.A**'
+229 Entering Extended Passive Mode (|||22000|)
+501 ** must be preceded and followed by a period or blank
+ftp> nlist '***'
+229 Entering Extended Passive Mode (|||22000|)
+501 ** must be preceded and followed by a period or blank
+ftp> rmd EMPTY
+250 IBMUSER.EMPTY deleted.
+ftp> quit
+221 Quit command received. Goodbye.

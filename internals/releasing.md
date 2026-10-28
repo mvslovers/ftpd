@@ -87,8 +87,8 @@ books; that is a manual step after the tag exists.
 Before the tag:
 
 1. The books' part of the release is ready: every behaviour change in the
-   release has its section, and the table "What Is New in FTPD 1.3.1" has one
-   row per change. Check it against the closed issues and merged PRs of the
+   release has its section, and the table "What Is New in FTPD X.Y.Z" of that
+   release has one row per change. Check it against the closed issues and merged PRs of the
    milestone, and against the source, not against the PR texts.
 2. `make -C docs/books` builds both PDFs without errors and without warnings
    beyond the two known ones from the template (the experimental bundle
@@ -105,11 +105,12 @@ Before the tag:
    statements. The book chapters `ug-install` and `ug-remove` repeat the same
    jobs: change them in the same commit, together with the FMID table, the
    file names (`ftpd-X.Y.Z-*`) and the captures under `docs/books/ex/ug-install/`
-   and `docs/books/ex/ug-remove/`. The jobs and captures were measured on
-   1.2.0 (the edition notice says so); run them once on a throwaway container
+   and `docs/books/ex/ug-remove/`. Run the jobs once on a throwaway container
    with the release candidate installed from the SMP package, replace the
-   captures with that output, compare it with the text, and then remove the
-   sentence about 1.2.0 from the notice.
+   captures with that output, and compare it with the text. The captures of
+   a LIST or NLST session (`docs/books/ex/ug-data/`) are re-run against the
+   release candidate in the same way. Do the same for the inline captures of
+   `docs/uninstall.md` and `docs/installation.md`.
 
 After the tag, with the release page created by the workflow:
 

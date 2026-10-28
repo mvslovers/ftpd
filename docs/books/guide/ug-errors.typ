@@ -75,8 +75,14 @@ last column is the section with the session.
       [The partitioned data set has no such member. List it first.],
       [@ug-data-pds],
     [#cmd("550 No data sets found.")],
-      [Nothing is cataloged under the working directory, or the partitioned
-      data set has no member that fits.], [@ug-data-list],
+      [No data set fits the name or the pattern, or nothing is cataloged below
+      the working directory, or the partitioned data set has no member that
+      fits. There is no empty list behind it: FTPD answers before it opens the
+      data connection.], [@ug-data-list-none],
+    [#cmd("501 ** must be preceded and followed by a period or blank")],
+      [A #cmd("**") of the pattern is not a qualifier of its own, as in
+      #cmd("**ASM") or #cmd("SYS2.A**"), or three or more #cmd("*") stand in
+      a row. Put the #cmd("**") between periods.], [@ug-data-list-none],
     [#cmd("451 Insufficient storage to list ...")],
       [The started task is out of storage. Narrow the directory, or ask the
       operator to raise the region.], [@ug-data-list],

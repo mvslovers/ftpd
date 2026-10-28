@@ -46,7 +46,7 @@ the user opens a new connection.
       commands between the two lines.],
     [#cmd("NOOP")], [#cmd("200 OK").],
     [#cmd("STAT")], [#cmd("211") and the product name and the version of the
-      build, such as #cmd("211 MVS 3.8j FTPD Server 1.3.1"). There is no form of
+      build, such as #cmd("211 MVS 3.8j FTPD Server 1.3.2"). There is no form of
       the command with a path.],
     [#cmd("AUTH mech")], [#cmd("504 Security mechanism not implemented.")
       FTPD has no TLS.],
@@ -256,7 +256,28 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
     [View], [Behaviour],
     [MVS], [One line for each data set, or for each member inside a partitioned
       data set. The argument is a filter. #cmd("*"), #cmd("**") and
-      #cmd("%") are wildcards. Reply: #cmd("226 List completed successfully."); #cmd("550 No data sets found."); #cmd("451 Insufficient storage to list NAME."). #cmd("NLST") sends the names only.],
+      #cmd("%") are wildcards. A #cmd("**") is a qualifier of its own: it
+      stands at the start of the name or behind a period, and at the end of the
+      name or in front of a period. FTPD matches a pattern against one name in
+      at most 10000 steps and counts a name that needs more as not fitting; a
+      #cmd("**") between literals can use them up. A name in quotes is read at its own catalog
+      level, whatever the working directory is: the qualifiers in front of the
+      first qualifier with a wildcard, or the parent level of a name without
+      a wildcard. A name whose first qualifier is a wildcard is read at the
+      working directory. Reply: #cmd("226 List completed successfully.");
+      #cmd("550 No data sets found."), without #cmd("150") and without a data
+      connection, when no data set is shown: no name fits the filter, a name
+      without a wildcard is not a data set and has none below it, or nothing is
+      cataloged below the working directory (also when the level itself is
+      cataloged); #cmd("501 ** must be preceded and followed by a period or blank")
+      before the catalog is read, when a #cmd("**") is not a qualifier of its
+      own or three or more #cmd("*") stand in a row (@ref-reply-501);
+      #cmd("451 Insufficient storage to list NAME."). FTPD 1.3.1 and earlier
+      answered a data set listing that showed nothing with #cmd("150"), an
+      empty list and #cmd("226") when the level held data sets or was a data
+      set itself, took #cmd("**") inside a name as a wider #cmd("*"), and had no
+      limit on the steps of a match.
+      #cmd("NLST") sends the names only.],
     [MVS, #cmd("DSN(pattern)")], [The members of the partitioned data set
       #cmd("DSN") that fit the pattern, from any working directory. With quotes,
       #cmd("'DSN(pattern)'"), the name is the full name, and the closing quote
@@ -282,7 +303,8 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       Before FTPD 1.3.1 FTPD took the argument for a data set level, and the
       list had the header, no entry and #cmd("226"). The forms #cmd("LIST DSN") without parentheses, and
       #cmd("LIST pattern") inside a partitioned data set after #cmd("CWD"), are
-      as before.],
+      as before, except that a data set listing that shows nothing is
+      #cmd("550") (see the MVS row above).],
     [UFS], [#cmd("150 Opening data connection for file list") and
       #cmd("226 Transfer complete"). The lines are in the Unix long format.
       #cmd("NLST") sends the names only. The entries #cmd(".") and #cmd("..")
