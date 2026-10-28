@@ -1,0 +1,6 @@
+ LIST CDS  MOD(FTPD) .
+FTPD      LASTUPD         = TFTP132  TYPE=ADD
+          LIBRARIES       = DISTLIB=AFTPDLOD
+          FMID            = TFTP132
+          RMID            = TFTP132
+          LMOD            = FTPD
