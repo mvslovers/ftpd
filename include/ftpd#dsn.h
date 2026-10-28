@@ -19,8 +19,8 @@
 ** that the check, the LIST path and the message that names the offending
 ** qualifier cannot drift apart.  '?' is here because FTPD has always
 ** documented and rejected it alongside '*' and '%' -- the matcher itself
-** (dsn_match(), ftpd#mvs.c) implements only '*', '**' and '%', so a '?' in a
-** LIST pattern matches nothing.
+** (ftpd_dsn_match() in ftpd#lvl.c) implements only '*', '**' and '%', so a
+** '?' in a LIST pattern matches nothing.
 */
 #define FTPD_DSN_WILDCARDS  "*%?"
 
@@ -74,5 +74,26 @@ int ftpd_dsn_valid(const char *dsn, int allow_wildcards)     asm("FTPDSNVL");
 ** Returns 1 when dsn holds a '(', 0 when it does not or is NULL.
 */
 int ftpd_dsn_has_member(const char *dsn)                    asm("FTPDSNHM");
+
+/*
+** Is every '**' of a LIST/NLST pattern a qualifier of its own?
+**
+** z/OS FTP refuses "**ASM" and "SYS1.**NOTHERE" with "** must be preceded
+** and followed by a period or blank" (#344).  FTPD matched them as if the
+** '**' were a '*' with a wider reach, so "**ASM" found the data set ASM, and
+** a typo in the pattern was a listing that looked right.
+**
+** A run of two '*' passes when what is in front of it is the start of the
+** name or a '.', and what follows is the end of the name or a '.'.  A single
+** '*' is not looked at: it may sit inside a qualifier (PRO*).  A run of three
+** or more is refused, since no two of its '*' stand alone.  "**.**", "*.**"
+** and a lone "**" pass, as does "SYS1.**" and "**.ASM".
+**
+** pattern -- the resolved name: uppercase, no quotes.  A name without '*'
+**            passes.  NULL passes; ftpd_dsn_valid() is the one that refuses it.
+**
+** Returns 1 when the pattern passes, 0 when it does not.
+*/
+int ftpd_dsn_stars_ok(const char *pattern)                  asm("FTPDSNST");
 
 #endif /* FTPD_DSN_H */

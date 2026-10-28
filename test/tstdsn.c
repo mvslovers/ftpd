@@ -145,6 +145,43 @@ main(void)
     CHECK(ftpd_dsn_has_member("") == 0, "an empty name carries none");
     CHECK(ftpd_dsn_has_member(NULL) == 0, "a NULL name carries none");
 
+    /* --- '**' is a qualifier of its own (#344) ------------------------ */
+    CHECK(ftpd_dsn_stars_ok("**") == 1, "a lone ** passes");
+    CHECK(ftpd_dsn_stars_ok("**.ASM") == 1, "** in front, a period behind");
+    CHECK(ftpd_dsn_stars_ok("SYS1.**.ASM") == 1, "** between two periods");
+    CHECK(ftpd_dsn_stars_ok("SYS1.**") == 1, "** at the end after a period");
+    CHECK(ftpd_dsn_stars_ok("**.**") == 1 && ftpd_dsn_stars_ok("*.**") == 1 &&
+          ftpd_dsn_stars_ok("**.*") == 1,
+          "** next to other qualifier patterns");
+    CHECK(ftpd_dsn_stars_ok("**ASM") == 0,
+          "**ASM is refused: it used to find the data set ASM");
+    CHECK(ftpd_dsn_stars_ok("SYS1.**NOTHERE") == 0,
+          "** with a letter behind it is refused");
+    CHECK(ftpd_dsn_stars_ok("SYS1.A**") == 0,
+          "** with a letter in front of it is refused");
+    CHECK(ftpd_dsn_stars_ok("SYS1.A**.B") == 0 &&
+          ftpd_dsn_stars_ok("SYS1.**B.C") == 0 &&
+          ftpd_dsn_stars_ok("SYS1.A**B.C") == 0,
+          "** inside a qualifier is refused");
+    CHECK(ftpd_dsn_stars_ok("**%") == 0 && ftpd_dsn_stars_ok("%**") == 0,
+          "** next to a % is refused");
+    CHECK(ftpd_dsn_stars_ok("***") == 0 && ftpd_dsn_stars_ok("A.***") == 0 &&
+          ftpd_dsn_stars_ok("A.***.B") == 0 && ftpd_dsn_stars_ok("****") == 0,
+          "a run of three or more * is refused, and ends");
+    CHECK(ftpd_dsn_stars_ok("**.A**") == 0,
+          "a good ** does not excuse a bad one later in the name");
+    CHECK(ftpd_dsn_stars_ok("A**.**") == 0,
+          "a good ** does not excuse a bad one earlier in the name");
+    CHECK(ftpd_dsn_stars_ok("*") == 1 && ftpd_dsn_stars_ok("SYS1.PRO*") == 1 &&
+          ftpd_dsn_stars_ok("SYS1.*.PRO*.A") == 1 &&
+          ftpd_dsn_stars_ok("*.PROCLIB") == 1,
+          "a single * is not looked at, wherever it sits");
+    CHECK(ftpd_dsn_stars_ok("SYS1.PROCLIB") == 1 && ftpd_dsn_stars_ok("") == 1 &&
+          ftpd_dsn_stars_ok(NULL) == 1,
+          "a name without * passes");
+    CHECK(ftpd_dsn_valid("**ASM", 1) == 1,
+          "the character check leaves ** to ftpd_dsn_stars_ok()");
+
     /* --- nothing is not a name ---------------------------------------- */
     CHECK(bad(""), "an empty name is rejected");
     CHECK(ftpd_dsn_valid(NULL, 0) == 0, "a NULL name is rejected");

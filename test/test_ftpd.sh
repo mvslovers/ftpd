@@ -33,6 +33,9 @@
 #   18. JES spool authorization (#90): who sees, reads and deletes which
 #       job (22 cases, RACF class JESSPOOL; needs RAKF 2.0.0 and a RAKF
 #       administrator as test user, see the comment of Test 18)
+#   19. LIST and NLST of 'DSN(pattern)' (#302)
+#   20. LIST and NLST of an absolute name or pattern, outside the working
+#       directory: 'SYS1.PROCLIB', 'SYS1.**' (#331)
 #
 # Test 13 reads the operator command F FTPD,STATS, which an FTP client cannot
 # reach.  Set FTPD_CONSOLE to a command that sends one operator command and
@@ -3601,13 +3604,162 @@ ftp_run "rmdir '$LMP_PDS'
 delete '$LMP_SEQ'" /dev/null
 
 # ============================================================
-# Test 20: names with a '(' in CWD, LIST and the other commands (#335)
+# Test 20: LIST and NLST of an absolute name or pattern (#331)
+#
+# The Zowe FTP plugin lists data sets with LIST 'SYS2.PROCLIB' and
+# LIST 'SYS2.**' and no CWD before.  FTPD read the catalog at the level of the
+# working directory and only filtered that, so a name outside the working
+# directory was never in the list: an empty list and 226, from every
+# directory but SYS2.  SYS1.PROCLIB is on every MVS 3.8j system; the two data
+# sets with three and five qualifiers are the test's own.
+# ============================================================
+section "Test 20: LIST and NLST of an absolute name or pattern"
+
+LVL_ONE="${HLQ}.F331.ONE"
+LVL_DEEP="${HLQ}.F331.TWO.DEEP.X"
+LVL_TEXT="$TMPDIR/lvl_text.txt"
+LVL_OUT="$TMPDIR/ftp_lvl.log"
+printf 'one\n' > "$LVL_TEXT"
+
+ftp_run "delete '$LVL_ONE'
+delete '$LVL_DEEP'" /dev/null
+ftp_run "type ascii
+put $LVL_TEXT '$LVL_ONE'
+put $LVL_TEXT '$LVL_DEEP'" "$TMPDIR/ftp_lvl_setup.log"
+
+# The names one command's listing holds, blank-separated: the first word of an
+# NLST line, the last of a LIST line, whose header is left out.
+lvl_names() {
+    ftp_run "type ascii
+$1" "$LVL_OUT"
+    sed -n '/^150 /,/^226 /p' "$LVL_OUT" | grep -v '^1[0-9][0-9] \|^226 \|^Volume ' \
+        | awk '{ printf "%s ", $NF }' | sed 's/ $//'
+}
+
+lvl_expect() {
+    local got
+    got=$(lvl_names "$1")
+    if [ "$got" = "$2" ]; then
+        pass "$3"
+    else
+        fail "$3: got '$got', wanted '$2'"; tail -8 "$LVL_OUT" | sed 's/^/    /'
+    fi
+}
+
+# Whether the names of one command's listing contain a word, and whether all
+# of them start with a prefix.
+lvl_has() { case " $1 " in *" $2 "*) return 0;; esac; return 1; }
+lvl_all_start() {
+    local n
+    for n in $1; do case "$n" in "$2"*) ;; *) return 1;; esac; done
+    return 0
+}
+
+lvl_expect "ls 'SYS1.PROCLIB'" "SYS1.PROCLIB" \
+    "NLST of a full name outside the HLQ lists that one data set"
+lvl_expect "dir 'SYS1.PROCLIB'" "SYS1.PROCLIB" \
+    "LIST of a full name outside the HLQ lists that one data set"
+lvl_expect "cd '${HLQ}.TEST'
+ls 'SYS1.PROCLIB'" "SYS1.PROCLIB" \
+    "the working directory does not matter for a full name"
+lvl_expect "ls 'sys1.proclib'" "SYS1.PROCLIB" \
+    "a full name is not case-sensitive"
+
+LVL_ALL=$(lvl_names "ls 'SYS1.**'")
+if lvl_has "$LVL_ALL" SYS1.PROCLIB && lvl_has "$LVL_ALL" SYS1.MACLIB \
+   && lvl_all_start "$LVL_ALL" SYS1.; then
+    pass "NLST 'SYS1.**' lists the data sets of SYS1, and only those"
+else
+    fail "NLST 'SYS1.**': $(echo "$LVL_ALL" | wc -w) names"; tail -6 "$LVL_OUT" | sed 's/^/    /'
+fi
+
+lvl_expect "cd 'SYS1'
+ls '${HLQ}.F331.**'" "$LVL_ONE $LVL_DEEP" \
+    "** reaches any number of qualifiers under another HLQ than the CWD"
+lvl_expect "cd 'SYS1'
+dir '${HLQ}.F331.**'" "$LVL_ONE $LVL_DEEP" \
+    "LIST of a ** pattern outside the CWD, full names"
+lvl_expect "ls '${HLQ}.F331.T*.**'" "F331.TWO.DEEP.X" \
+    "a pattern in a middle qualifier (own HLQ: name shortened by the CWD)"
+lvl_expect "ls '${HLQ}.F331'" "F331.ONE F331.TWO.DEEP.X" \
+    "a name without a wildcard keeps the data sets below it"
+lvl_expect "ls '${HLQ}.F331.*'" "F331.ONE" \
+    "* is one qualifier"
+lvl_expect "ls 'SYS1.PROC%IB'" "SYS1.PROCLIB" \
+    "% outside the CWD"
+lvl_expect "ls 'SYS1.PROCLI*'" "SYS1.PROCLIB" \
+    "a * ending a qualifier outside the CWD"
+
+# Unchanged: relative names and the CWD listing.
+lvl_expect "ls F331.*" "F331.ONE" "a relative pattern: name shortened by the CWD"
+lvl_expect "cd '${HLQ}.F331'
+ls" "ONE TWO.DEEP.X" "no argument: the CWD level, as before"
+lvl_expect "cd '${HLQ}.F331'
+ls TWO.**" "TWO.DEEP.X" "a relative ** pattern inside a CWD"
+
+# Nothing there.
+ftp_run "type ascii
+ls 'SYS1.NOSUCH.X'" "$LVL_OUT"
+if grep -q '^550 No data sets found\.' "$LVL_OUT" && ! grep -q '^226 ' "$LVL_OUT"; then
+    pass "ls of a level that is not cataloged: 550 No data sets found."
+else
+    fail "ls 'SYS1.NOSUCH.X'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+fi
+# A name or pattern that finds no data set is 550 with no 150 and no data
+# connection, whether or not its level exists (#344): a 226 behind an empty
+# list leaves the Zowe FTP plugin waiting for a line.
+for lvl_arg in "SYS1.NOSUCH" "SYS1.**.NOTHERE" "**.NOTHERE" "SYS1.NOSU*"; do
+    for lvl_cmd in ls dir; do
+        ftp_run "type ascii
+$lvl_cmd '$lvl_arg'" "$LVL_OUT"
+        if grep -q '^550 No data sets found\.' "$LVL_OUT" \
+           && ! grep -q '^150 \|^226 ' "$LVL_OUT"; then
+            pass "$lvl_cmd '$lvl_arg': 550 No data sets found., no 150"
+        else
+            fail "$lvl_cmd '$lvl_arg'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+        fi
+    done
+done
+
+# A '**' that is not a qualifier of its own is 501, as on z/OS (#344); the
+# patterns that pass are tested after the loop.
+for lvl_arg in "**ASM" "SYS1.**NOTHERE" "SYS1.A**" "SYS1.A**.B" "***" "SYS1.***"; do
+    for lvl_cmd in ls dir; do
+        ftp_run "type ascii
+$lvl_cmd '$lvl_arg'" "$LVL_OUT"
+        if grep -q '^501 .*\*\* must be preceded and followed by a period or blank' "$LVL_OUT" \
+           && ! grep -q '^150 \|^226 ' "$LVL_OUT"; then
+            pass "$lvl_cmd '$lvl_arg': 501, no catalog read"
+        else
+            fail "$lvl_cmd '$lvl_arg'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+        fi
+    done
+done
+lvl_expect "ls '${HLQ}.**.ONE'" "F331.ONE" "a ** between periods is a pattern"
+lvl_expect "ls '**.F331.ONE'" "F331.ONE" "a ** in front, a period behind"
+
+# A '(' that is not a DSN(pattern) form never reaches the catalog.
+for lvl_arg in "SYS1.PROCLIB(X" "SYS1.PROCLIB(X).C" "SYS1.PRO(X'.*"; do
+    ftp_run "type ascii
+ls '$lvl_arg'" "$LVL_OUT"
+    if grep -q '^501 ' "$LVL_OUT" && ! grep -q '^226 ' "$LVL_OUT"; then
+        pass "ls '$lvl_arg': 501, no catalog read"
+    else
+        fail "ls '$lvl_arg'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+    fi
+done
+
+ftp_run "delete '$LVL_ONE'
+delete '$LVL_DEEP'" /dev/null
+
+# ============================================================
+# Test 21: names with a '(' in CWD, LIST and the other commands (#335)
 #
 # The check of a data set name used to stop at the first '(' and never read
 # the rest.  A member is exactly "(NAME)" at the end of a name now, and CWD,
 # which sets a prefix, takes no member at all; neither do MKD and RMD (#339).
 # ============================================================
-section "Test 20: parentheses in names (#335)"
+section "Test 21: parentheses in names (#335)"
 
 PAR_PDS="${HLQ}.TEST.PARPDS"
 PAR_OUT="$TMPDIR/ftp_par.log"
