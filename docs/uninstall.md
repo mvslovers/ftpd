@@ -498,14 +498,20 @@ the lists of step 3 name it, so it stays in both zones, and it still owns the
 load module. Install a release only after you have cleaned it up as described
 here.
 
-Ask SMP which id the system carries:
+Ask SMP which id the system carries, with this job under the SMP procedure of
+your system (it is the one of step 2a in [installation.md](installation.md)):
 
 ```
- LIST CDS MOD(FTPD) .
+//LIST    EXEC SMPAPP
+//SMPCNTL  DD  *
+ LIST CDS  MOD(FTPD) .
+/*
 ```
 
-`FMID = TFTP140` (or any other id that is not in the table above) means that
-you are in the right section.
+`FMID = TFTP140` means that you are in the right section, and so does any other
+id except `TFTP100`, `TFTP110`, `TFTP120`, `TFTP130`, `TFTP131` and `TFTP132`.
+Only `TFTP140` has been measured. If the `FMID` is one of those six, the system
+holds a release, the main way above removes it, and this section is not yours.
 
 The steps are those of the main way, with three differences. The release package
 is on the system before FTPD stops, `TFTP140` is named in every list, and the
@@ -611,8 +617,9 @@ printed their `HMA2240` lines and both member lists are empty.
 ### 4. Free the ids, with `TFTP140` in the lists
 
 Submit the job of [step 3](#3-free-the-ids) with `TFTP140` added to the `DEL`
-statements of both `UCLIN` blocks and to the `LIST` statements. `TFTP140` comes
-first, ahead of `TFTPDEL`:
+statements of both `UCLIN` blocks and to the `LIST` statements. `TFTP140` goes
+right after `TFTPDEL` and ahead of `TFTP132`, in the `DEL` blocks and in the
+`LIST` statements alike:
 
 ```
 //FTPDUCL  JOB (SYS),'FTPD UNINSTALL',
@@ -697,14 +704,22 @@ zone it shows.
 
 ### 5. Do not scratch the libraries
 
-Leave out step 5. The release installs into `FTPD.LINKLIB` and `FTPD.AFTPDLOD`,
-which are empty now.
+If you install a release next, leave out step 5 of the main way. The release
+installs into `FTPD.LINKLIB` and `FTPD.AFTPDLOD`, which are empty now.
+
+**If you want FTPD gone and install no release,** you need no release package:
+leave out section 1 above, and scratch the libraries as in
+[step 5](#5-scratch-the-libraries) of the main way after step 4 here. Then
+continue with [what is not removed](#what-is-not-removed-because-smp-never-owned-it).
+Steps 2 to 4 of this section have been run, and step 5 of the main way is the
+one that scratches the libraries. The combination of the two has not been run.
 
 ### 6. Install the release
 
 Run the install job of the release package that you prepared in section 1.
-**Do not run the allocation job.** It allocates both libraries `NEW` and fails
-on libraries that exist. The steps and the checks are those of the upgrade in
+**Do not run the allocation job.** It allocates both libraries `NEW`, and the
+libraries exist. This has not been run: the test runs skipped the allocation job
+after the development install. The steps and the checks are those of the upgrade in
 [installation.md](installation.md).
 
 `RECEIVE`, `APPLY CHECK`, `APPLY` and `ACCEPT` all end with return code 00. The
@@ -762,36 +777,71 @@ The server starts under the release (the line `FTPD062W` in the output below
 depends on your parameter file):
 
 ```
-  FTPD000I FTPD 1.3.2 (5FA9D0E) STARTING
+  FTPD000I FTPD 1.3.2 (xxxxxxx) STARTING
   FTPD005I LIBC370 2.25.1 (FCDE4E8)
   ...
   FTPD001I FTPD 1.3.2 READY
 ```
 
+**A banner that says `1.4.0-DEV` after this means that the server was loaded
+from another library.** `mbt deploy` writes a development build to
+`FTPD.DEV.LINKLIB` by default, and a procedure whose `STEPLIB` names that
+library ahead of `FTPD.LINKLIB` loads the module from there. An SMP `DELETE`
+acts only on the library that the `HMASMP.LINKLIB` statement of its own job
+names, and the release install writes to `FTPD.LINKLIB`. Neither touches
+`FTPD.DEV.LINKLIB`. So every check above can pass, `FTPD.LINKLIB` can hold the
+release, and the server that starts is still the development build. Read the
+`STEPLIB` of your started task procedure. If `FTPD.DEV.LINKLIB` is named there,
+take it out, or scratch the library if you do not need it any more, and start
+FTPD again. The behaviour of SMP was measured on an MVS/CE system with another
+product that is built and deployed the same way; it has not been run with FTPD.
+
 **What has been measured.** The flow of this section was run on a test
 system started from the TK5 image and on one started from the MVS/CE image,
-each with its own run for the steps above and for the check that follows. The system
-carried a development build of 1.4.0 (`TFTP140`) that was installed with its
-own install job. Both systems gave the same return codes and the same messages
-in every step, except where the text says otherwise.
+each with its own run for the steps above and for the check that follows. Both
+carried a development build of 1.4.0 (`TFTP140`) that was installed with its own
+install job, but they did not hold the same history. On the MVS/CE system there
+was no earlier FTPD in the inventory, and the `APPLY` of the development build
+ended with return code 00. On the TK5 system the image held an SMP installation
+of 1.2.0 (`TFTP120`) and the development build was installed over it: its
+`APPLY` ended with return code 04 and one `HMA2461 SYSMOD TFTP120 NOT FOUND ON
+SMPSCDS LIBRARY`. Both systems gave the same return codes and the same messages
+in every step of this section, with one difference in a report that this
+document does not quote: the status report of the `APPLY` in step 3 lists
+`TFTP110` as `PREVIOUSLY DELETED` on the TK5 system and as `NOT PREVIOUSLY
+INSTALLED` on the MVS/CE system.
 
-**The development id keeps the module.** The check was to install release 1.3.2
-over the development build without this section. `RECEIVE`, `APPLY` and `ACCEPT`
+Where this section speaks of release 1.3.2, the runs used the package of its
+release candidate. It carries the same FMID, `TFTP132`, and the source of the
+module did not change between the candidate and the release. The banner hash is
+that of the candidate, and the text shows a placeholder for it.
+
+**The development id keeps the module.** The check was to install the 1.3.2
+package over the development build without this section. `RECEIVE`, `APPLY` and `ACCEPT`
 all end with return code 00, and the job prints no `HMA2380` line: SMP copies
 nothing. The summary of the `APPLY` and of the `ACCEPT` lists `MOD FTPD` as `NOT SEL`. `LIST CDS MOD(FTPD)`
 still names `TFTP140` as `FMID` and `RMID` in both zones, and the server that
 you start announces itself as 1.4.0-DEV. Only the member lists, the `LIST` and
 the banner show this. The return codes do not.
 
-**What has not been measured.** A system with an older history, for example one
-that holds ids from earlier releases that SMP lost track of, or one on which a
-second development build was installed over the first.
+**What has not been measured.** A system with a longer history than the TK5
+system, for example one that holds ids from earlier releases that SMP lost track
+of. A second development build installed over the first has not been measured
+with FTPD either. A test with another product that is built the same way showed
+that installing the same development id again ends with return code 0, and that
+a second, different development id deletes the first with one `HMA2461` for it.
+If your development build carries another id than `TFTP140`, put that id in the
+`DELETE` operand of step 3 and in the lists of step 4.
 
 ## What is not removed, because SMP never owned it
 
 - The procedure and the configuration member you copied into your PROCLIB and
   PARMLIB.
 - The entry for `FTPD.LINKLIB` in the APF list, if you made one.
+- `FTPD.DEV.LINKLIB`, the library that `mbt deploy` writes a development build
+  to, and its entry in the APF list, if you made one. SMP does not own it. Neither
+  the steps above nor the install of a release clears it (see
+  [step 7](#7-check-the-result)).
 - Your RAKF definitions — the `FTPAUTH` profile, and any identity you mapped
   the started task `FTPD` to (releases before 1.3.0 switched to an `FTPD` user
   at startup). See [FTPD_RAKF_SETUP.md](FTPD_RAKF_SETUP.md).

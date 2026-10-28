@@ -413,15 +413,23 @@ dummy function of step 2 nor the lists of step 3 know it, so it stays in both
 zones, and it still owns the load module. Install a release only after you
 have cleaned the system up as described here.
 
-Ask SMP which id the system carries:
+Ask SMP which id the system carries, with this job under the SMP procedure of
+your system (it is the one of @ug-install-upgrade):
 
 #screen(```
- LIST CDS MOD(FTPD) .
+//LIST    EXEC SMPAPP
+//SMPCNTL  DD  *
+ LIST CDS  MOD(FTPD) .
+/*
 ```)
 
-#cmd("FMID = TFTP140"), or any other id that is not in @ug-remove-what, means
-that you are in the right section. The steps are those of the main way, with
-three differences: the release package is on the system before FTPD stops,
+#cmd("FMID = TFTP140") means that you are in the right section, and so does
+any other id except #cmd("TFTP100"), #cmd("TFTP110"), #cmd("TFTP120"),
+#cmd("TFTP130"), #cmd("TFTP131") and #cmd("TFTP132"). Only #cmd("TFTP140") has
+been measured. If the #cmd("FMID") is one of those six, the system holds a
+release, the main way removes it, and this section is not yours.
+
+The steps are those of the main way, with three differences: the release package is on the system before FTPD stops,
 #cmd("TFTP140") is named in every list, and the libraries stay.
 
 === Upload the Release Package First <ug-remove-dev-upload>
@@ -506,7 +514,8 @@ and both member lists are empty.
 
 Submit the job of step 3 with #cmd("TFTP140") added to the #cmd("DEL")
 statements of both #cmd("UCLIN") blocks and to the #cmd("LIST") statements.
-#cmd("TFTP140") comes first, ahead of #cmd("TFTPDEL"):
+#cmd("TFTP140") goes right after #cmd("TFTPDEL") and ahead of #cmd("TFTP132"),
+in the #cmd("DEL") blocks and in the #cmd("LIST") statements alike:
 
 #screen(```
 //FTPDUCL  JOB (SYS),'FTPD UNINSTALL',
@@ -576,14 +585,23 @@ its id as not found. On the test systems every statement did, and the step ended
 with return code 04. A stanza with #cmd("TYPE = FUNCTION") for #cmd("TFTP140")
 is an entry that is still there, in whichever zone it shows.
 
-Do not scratch the libraries. The release installs into #cmd("FTPD.LINKLIB")
-and #cmd("FTPD.AFTPDLOD"), which are empty now.
+If you install a release next, do not scratch the libraries (step 5 of the
+main way). The release installs into #cmd("FTPD.LINKLIB") and
+#cmd("FTPD.AFTPDLOD"), which are empty now.
+
+*If you want FTPD gone and install no release,* you need no release package:
+leave out the first step of this section, and scratch the libraries as in
+@ug-remove-scratch after the step above. Then continue with @ug-remove-left.
+The steps from stopping the server to freeing the ids have been run, and step 5
+of the main way is the one that scratches the libraries. The combination of the
+two has not been run.
 
 === Install the Release and Check the Result <ug-remove-dev-install>
 
 Run the install job of the release package that you prepared in the first
-step. *Do not run the allocation job.* It allocates both libraries #cmd("NEW")
-and fails on libraries that exist. The steps and the checks are those of the
+step. *Do not run the allocation job.* It allocates both libraries #cmd("NEW"),
+and the libraries exist. This has not been run: the test runs skipped the
+allocation job after the development install. The steps and the checks are those of the
 upgrade (@ug-install-upgrade).
 
 #cmd("RECEIVE"), #cmd("APPLY CHECK"), #cmd("APPLY") and #cmd("ACCEPT") all end
@@ -608,15 +626,44 @@ Start FTPD and read the banner. It must name the release (the line
 
 #screen(raw(read("../ex/ug-remove/dev-banner.txt")))
 
+*A banner that says #cmd("1.4.0-DEV") after this means that the server was
+loaded from another library.* #cmd("mbt deploy") writes a development build to
+#cmd("FTPD.DEV.LINKLIB") by default, and a procedure whose #cmd("STEPLIB")
+names that library ahead of #cmd("FTPD.LINKLIB") loads the module from there.
+An SMP #cmd("DELETE") acts only on the library that the
+#cmd("HMASMP.LINKLIB") statement of its own job names, and the release install
+writes to #cmd("FTPD.LINKLIB"). Neither touches #cmd("FTPD.DEV.LINKLIB"). So
+every check above can pass, #cmd("FTPD.LINKLIB") can hold the release, and the
+server that starts is still the development build. Read the #cmd("STEPLIB") of
+your started task procedure. If #cmd("FTPD.DEV.LINKLIB") is named there, take
+it out, or scratch the library if you do not need it any more, and start FTPD
+again. The behaviour of SMP was measured on an MVS/CE system with another
+product that is built and deployed the same way\; it has not been run with
+FTPD.
+
 *What has been measured.* The flow of this section was run on a test system
 started from the TK5 image and on one started from the MVS/CE image, each with
-its own run for the steps above and for the check that follows. The system
-carried a development build of 1.4.0 (#cmd("TFTP140")) that was installed with
-its own install job. Both systems gave the same return codes and the same
-messages in every step, except where the text says otherwise.
+its own run for the steps above and for the check that follows. Both carried a
+development build of 1.4.0 (#cmd("TFTP140")) that was installed with its own
+install job, but they did not hold the same history. On the MVS/CE system there
+was no earlier FTPD in the inventory, and the #cmd("APPLY") of the development
+build ended with return code 00. On the TK5 system the image held an SMP
+installation of 1.2.0 (#cmd("TFTP120")) and the development build was
+installed over it: its #cmd("APPLY") ended with return code 04 and one
+#cmd("HMA2461 SYSMOD TFTP120 NOT FOUND ON SMPSCDS LIBRARY"). Both systems gave
+the same return codes and the same messages in every step of this section, with
+one difference in a report that this book does not quote: the status report of
+the #cmd("APPLY") in the second step lists #cmd("TFTP110") as
+#cmd("PREVIOUSLY DELETED") on the TK5 system and as
+#cmd("NOT PREVIOUSLY INSTALLED") on the MVS/CE system.
 
-*The development id keeps the module.* The check was to install release 1.3.2
-over the development build without this section. #cmd("RECEIVE"),
+Where this section speaks of release 1.3.2, the runs used the package of its
+release candidate. It carries the same FMID, #cmd("TFTP132"), and the source of
+the module did not change between the candidate and the release. The banner
+hash is that of the candidate, and the screen shows a placeholder for it.
+
+*The development id keeps the module.* The check was to install the 1.3.2
+package over the development build without this section. #cmd("RECEIVE"),
 #cmd("APPLY") and #cmd("ACCEPT") all end with return code 00, and the job
 prints no #cmd("HMA2380") line: SMP copies nothing. The summary of the
 #cmd("APPLY") and of the #cmd("ACCEPT") lists #cmd("MOD FTPD") as
@@ -625,9 +672,15 @@ prints no #cmd("HMA2380") line: SMP copies nothing. The summary of the
 announces itself as 1.4.0-DEV. Only the member lists, the #cmd("LIST") and the
 banner show this. The return codes do not.
 
-*What has not been measured.* A system with an older history, for example one
-that holds ids from earlier releases that SMP lost track of, or one on which a
-second development build was installed over the first.
+*What has not been measured.* A system with a longer history than the TK5
+system, for example one that holds ids from earlier releases that SMP lost
+track of. A second development build installed over the first has not been
+measured with FTPD either. A test with another product that is built the same
+way showed that installing the same development id again ends with return code
+0, and that a second, different development id deletes the first with one
+#cmd("HMA2461") for it. If your development build carries another id than
+#cmd("TFTP140"), put that id in the #cmd("DELETE") operand of the dummy
+function and in the lists of the step that frees the ids.
 
 == What Is Not Removed <ug-remove-left>
 
@@ -637,6 +690,10 @@ SMP never owned these, so you have to take care of them:
   procedure library and the parameter library of the system
   (@ug-install-proc);
 - the entry for #cmd("FTPD.LINKLIB") in the APF list, if you made one;
+- #cmd("FTPD.DEV.LINKLIB"), the library that #cmd("mbt deploy") writes a
+  development build to, and its entry in the APF list, if you made one. SMP
+  does not own it. Neither the steps above nor the install of a release clears
+  it (@ug-remove-dev-install);
 - your RAKF definitions: the #cmd("FTPAUTH") profile, and any identity that you
   mapped the started task #cmd("FTPD") to (@ug-security-stc). Releases before
   1.3.0 switched to an #cmd("FTPD") user at startup.
