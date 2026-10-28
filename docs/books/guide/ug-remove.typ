@@ -252,7 +252,7 @@ The step #cmd("UCLACDS") gives the same. Any other message is not expected.
 
 *This job depends on step 2.* For an id that is not in the zone,
 #cmd("DEL SYSMOD") ends the step with return code 08 (@ug-remove-uclin). Only
-the marks of the dummy function make all six ids exist, so run this job after
+the marks of the dummy function make all seven ids exist, so run this job after
 step 2 and not instead of it.
 
 == Step 4: Read the LIST <ug-remove-list>
