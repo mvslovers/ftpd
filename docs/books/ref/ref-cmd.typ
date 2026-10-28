@@ -445,8 +445,9 @@ with the resolved name in upper case. A member that FTPD accepts can still be
 answered by the command with its own reply, such as #cmd("550") for a member
 that does not exist. FTPD 1.3.1 and earlier read a name only up to the first
 parenthesis. A character that a member name cannot hold reached the security
-check and the system, and #cmd("RMD 'DSN(MEMBER)'") deleted the member and
-answered #cmd("250"). The _FTPD User's Guide_, "Working with
+check and the system. On some systems #cmd("RMD 'DSN(MEMBER)'") deleted the
+member and answered #cmd("250")\; on others it was answered with #cmd("550")
+and deleted nothing. The _FTPD User's Guide_, "Working with
 Data Sets", has a session.
 
 == The JES View <ref-cmd-jes>
