@@ -103,7 +103,7 @@ Before the tag:
    libc370 level and the FMID. `docs/uninstall.md` holds the FMID table, the
    `DELETE` list of the dummy function `TFTPDEL` and the `UCLIN` jobs: add the
    new id to the `DELETE` list, to both `UCLIN` jobs and to their `LIST`
-   statements. The book chapters `ug-install` and `ug-remove` repeat the same
+   statements. When a new id makes the `++VER(Z038) DELETE(...)` control card exceed column 71, wrap the operand after a comma and continue it on the next card line (as in the development-build example in `docs/uninstall.md`); keep every line within column 71 in both `docs/uninstall.md` and `ug-remove.typ`. On the release candidate, run the removal job and confirm `RECEIVE` completes with RC 04, not RC 08, before proceeding to `UCLIN`. The book chapters `ug-install` and `ug-remove` repeat the same
    jobs: change them in the same commit, together with the FMID table, the
    file names (`ftpd-X.Y.Z-*`) and the captures under `docs/books/ex/ug-install/`
    and `docs/books/ex/ug-remove/`. The jobs and captures were measured on
