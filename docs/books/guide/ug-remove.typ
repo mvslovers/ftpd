@@ -13,6 +13,10 @@ in the wrong chapter: a release deletes its predecessor when it is installed
 (@ug-install-upgrade), and the last step below would scratch the libraries
 that the new release installs into.
 
+#note[*Did you install a development build of #cmd("main")?* Its FMID is
+#cmd("TFTP140"), which none of the steps below names. Start with
+@ug-remove-dev.]
+
 #note[*The removal instructions in older archives are wrong.* The file
 #cmd("README.md") in #cmd("ftpd-1.0.?-dist.zip") says to run #cmd("RESTORE")
 and then #cmd("REJECT"). Both are refused once the FMID has been accepted,
@@ -396,6 +400,234 @@ Then read the #cmd("LIST") as in step 4, here fourteen statements without
 good, scratch the libraries as in step 5. #cmd("UCLIN") changes only the
 inventory: until you scratch them, the load module is still in the target
 library, and the copy that SMP accepted is in the distribution library.
+
+== You Installed a Development Build <ug-remove-dev>
+
+#idx("development build")
+#idx("TFTP140")
+A development build of #cmd("main") is packaged under the FMID of the release
+that #cmd("main") is heading for. A build of 1.4.0-dev carries
+#cmd("TFTP140"), although 1.4.0 is not released. If you installed such a
+package by SMP, the system holds an id that no step above names. Neither the
+dummy function of step 2 nor the lists of step 3 know it, so it stays in both
+zones, and it still owns the load module. Install a release only after you
+have cleaned the system up as described here.
+
+Ask SMP which id the system carries:
+
+#screen(```
+ LIST CDS MOD(FTPD) .
+```)
+
+#cmd("FMID = TFTP140"), or any other id that is not in @ug-remove-what, means
+that you are in the right section. The steps are those of the main way, with
+three differences: the release package is on the system before FTPD stops,
+#cmd("TFTP140") is named in every list, and the libraries stay.
+
+=== Upload the Release Package First <ug-remove-dev-upload>
+
+FTPD is the way the package gets onto the system, and you stop it in the next
+step. Upload both #cmd(".xmit") files of the release now, in binary, as
+described in @ug-install-upload, and edit the install job of the package for
+your data set names. Do not run it yet.
+
+=== Stop the Server, Then Delete the Development Build <ug-remove-dev-dummy>
+
+Stop FTPD with #cmd("/P FTPD"). Then submit the job of step 2 with one change:
+#cmd("TFTP140") is added to the #cmd("DELETE") operand. Everything else stays
+as it is there: the #cmd("HMASMP.LINKLIB") and #cmd("HMASMP.AFTPDLOD")
+statements, the #cmd("COND") on the later steps and the member lists at the
+end.
+
+*Continue the #cmd("++VER") card on a second line.* With #cmd("TFTP140") the
+card is 77 characters long. SMP rejects it: the #cmd("RECEIVE") ends with
+return code 08 and prints #cmd("HMA2032 ** SYNTAX ERROR IN CONTROL STATEMENT AT COL 68"),
+which is the start of the last id, and the job ends with 12. The job below
+breaks the card after #cmd("TFTP132,") and continues it on the next line, which
+SMP accepts. Do not type the card on one line.
+
+#screen(```
+//FTPDDEL  JOB (SYS),'FTPD DELETE',
+//             CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),
+//             REGION=4096K
+//RECV    EXEC SMPREC
+//SMPPTFIN DD  *
+++FUNCTION(TFTPDEL) .
+++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132,
+            TFTP140) .
+/*
+//SMPCNTL  DD  *
+ RESETRC .
+ RECEIVE SELECT(TFTPDEL) .
+/*
+//APPLY   EXEC SMPAPP,COND=(4,LT,RECV.HMASMP)
+//HMASMP.LINKLIB  DD  DISP=SHR,DSN=FTPD.LINKLIB
+//HMASMP.AFTPDLOD DD  DISP=SHR,DSN=FTPD.AFTPDLOD
+//SMPCNTL  DD  *
+ APPLY S(TFTPDEL) DIS(WRITE) .
+/*
+//ACCEPT  EXEC SMPAPP,COND=(4,LT,APPLY.HMASMP)
+//HMASMP.LINKLIB  DD  DISP=SHR,DSN=FTPD.LINKLIB
+//HMASMP.AFTPDLOD DD  DISP=SHR,DSN=FTPD.AFTPDLOD
+//SMPCNTL  DD  *
+ ACCEPT S(TFTPDEL) DIS(WRITE) .
+/*
+//MEMBERS EXEC PGM=IKJEFT01
+//SYSTSPRT DD  SYSOUT=*
+//SYSTSIN  DD  *
+ LISTDS 'FTPD.LINKLIB' MEMBERS
+ LISTDS 'FTPD.AFTPDLOD' MEMBERS
+/*
+//
+```)
+
+The receive and the apply end with return code 04, the accept with 00, as in
+step 2. The #cmd("APPLY") prints exactly one #cmd("HMA2461"), and it names the
+development id:
+
+#screen(raw(read("../ex/ug-remove/dev-recv.txt")))
+
+#screen(raw(read("../ex/ug-remove/dev-apply.txt")))
+
+#screen(raw(read("../ex/ug-remove/dev-accept.txt")))
+
+The member lists are empty, as in step 2. Read them as there: both libraries
+must list no member.
+
+*Check this step before you go on.* If the #cmd("RECEIVE") ended with 08, as
+it does with the one-line card, the job removed nothing: the member lists of its
+last step still name #cmd("FTPD") in both libraries. Do not run the next step
+then, because #cmd("UCLIN") changes only the inventory and leaves the load
+module where it is. Fix the card and run this step again. Go on when the
+#cmd("APPLY") and the #cmd("ACCEPT") have printed their #cmd("HMA2240") lines
+and both member lists are empty.
+
+=== Free the Ids, With TFTP140 in the Lists <ug-remove-dev-free>
+
+Submit the job of step 3 with #cmd("TFTP140") added to the #cmd("DEL")
+statements of both #cmd("UCLIN") blocks and to the #cmd("LIST") statements.
+#cmd("TFTP140") comes first, ahead of #cmd("TFTPDEL"):
+
+#screen(```
+//FTPDUCL  JOB (SYS),'FTPD UNINSTALL',
+//             CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),
+//             REGION=4096K
+//UCLCDS  EXEC SMPAPP
+//SMPCNTL  DD  *
+ UCLIN CDS .
+  DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP140) .
+  DEL SYSMOD(TFTP132) .
+  DEL SYSMOD(TFTP131) .
+  DEL SYSMOD(TFTP130) .
+  DEL SYSMOD(TFTP120) .
+  DEL SYSMOD(TFTP110) .
+  DEL SYSMOD(TFTP100) .
+ ENDUCL .
+/*
+//UCLACDS EXEC SMPAPP
+//SMPCNTL  DD  *
+ UCLIN ACDS .
+  DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP140) .
+  DEL SYSMOD(TFTP132) .
+  DEL SYSMOD(TFTP131) .
+  DEL SYSMOD(TFTP130) .
+  DEL SYSMOD(TFTP120) .
+  DEL SYSMOD(TFTP110) .
+  DEL SYSMOD(TFTP100) .
+ ENDUCL .
+/*
+//LIST    EXEC SMPAPP
+//SMPCNTL  DD  *
+ RESETRC .
+ LIST CDS  SYSMOD(TFTPDEL) .
+ LIST ACDS SYSMOD(TFTPDEL) .
+ LIST CDS  SYSMOD(TFTP140) .
+ LIST ACDS SYSMOD(TFTP140) .
+ LIST CDS  SYSMOD(TFTP132) .
+ LIST ACDS SYSMOD(TFTP132) .
+ LIST CDS  SYSMOD(TFTP131) .
+ LIST ACDS SYSMOD(TFTP131) .
+ LIST CDS  SYSMOD(TFTP130) .
+ LIST ACDS SYSMOD(TFTP130) .
+ LIST CDS  SYSMOD(TFTP120) .
+ LIST ACDS SYSMOD(TFTP120) .
+ LIST CDS  SYSMOD(TFTP110) .
+ LIST ACDS SYSMOD(TFTP110) .
+ LIST CDS  SYSMOD(TFTP100) .
+ LIST ACDS SYSMOD(TFTP100) .
+/*
+//
+```)
+
+Both #cmd("UCLIN") steps end with return code 00. Each zone reports eight
+#cmd("HMA2550 UPDATE COMPLETE"), one per id, #cmd("TFTP140") among them. This
+is the step #cmd("UCLCDS"):
+
+#screen(raw(read("../ex/ug-remove/dev-uclcds.txt")))
+
+The step #cmd("UCLACDS") prints the same lines. On the test systems this job
+was enough: no #cmd("HMA2532") or #cmd("HMA2560") appeared in either zone, and
+the ACDS needed no statement beyond these.
+
+Read the #cmd("LIST") as in step 4: sixteen statements, and every one must show
+its id as not found. On the test systems every statement did, and the step ended
+with return code 04. A stanza with #cmd("TYPE = FUNCTION") for #cmd("TFTP140")
+is an entry that is still there, in whichever zone it shows.
+
+Do not scratch the libraries. The release installs into #cmd("FTPD.LINKLIB")
+and #cmd("FTPD.AFTPDLOD"), which are empty now.
+
+=== Install the Release and Check the Result <ug-remove-dev-install>
+
+Run the install job of the release package that you prepared in the first
+step. *Do not run the allocation job.* It allocates both libraries #cmd("NEW")
+and fails on libraries that exist. The steps and the checks are those of the
+upgrade (@ug-install-upgrade).
+
+#cmd("RECEIVE"), #cmd("APPLY CHECK"), #cmd("APPLY") and #cmd("ACCEPT") all end
+with return code 00. The #cmd("APPLY") prints no #cmd("HMA2461"). Both steps
+copy the module, and that is the line to look for:
+
+#screen(raw(read("../ex/ug-remove/dev-apply-rc.txt")))
+
+Then list the members of #cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD"):
+#cmd("FTPD") must be in both.
+
+#screen(raw(read("../ex/ug-remove/dev-members.txt")))
+
+#cmd("LIST CDS MOD(FTPD) .") and #cmd("LIST ACDS MOD(FTPD) .") must each answer
+with the release as #cmd("FMID") and #cmd("RMID"), and not #cmd("TFTP140").
+This is the answer of the CDS:
+
+#screen(raw(read("../ex/ug-remove/dev-listmod.txt")))
+
+Start FTPD and read the banner. It must name the release (the line
+#cmd("FTPD062W") depends on your parameter file):
+
+#screen(raw(read("../ex/ug-remove/dev-banner.txt")))
+
+*What has been measured.* The flow of this section was run on a test system
+started from the TK5 image and on one started from the MVS/CE image, each with
+its own run for the steps above and for the check that follows. The system
+carried a development build of 1.4.0 (#cmd("TFTP140")) that was installed with
+its own install job. Both systems gave the same return codes and the same
+messages in every step, except where the text says otherwise.
+
+*The development id keeps the module.* The check was to install release 1.3.2
+over the development build without this section. #cmd("RECEIVE"),
+#cmd("APPLY") and #cmd("ACCEPT") all end with return code 00, and the job
+prints no #cmd("HMA2380") line: SMP copies nothing. The summary of the
+#cmd("APPLY") and of the #cmd("ACCEPT") lists #cmd("MOD FTPD") as
+#cmd("NOT SEL"). #cmd("LIST CDS MOD(FTPD)") still names #cmd("TFTP140") as
+#cmd("FMID") and #cmd("RMID") in both zones, and the server that you start
+announces itself as 1.4.0-DEV. Only the member lists, the #cmd("LIST") and the
+banner show this. The return codes do not.
+
+*What has not been measured.* A system with an older history, for example one
+that holds ids from earlier releases that SMP lost track of, or one on which a
+second development build was installed over the first.
 
 == What Is Not Removed <ug-remove-left>
 
