@@ -1,7 +1,7 @@
- LIST CDS  SYSMOD(TFTP131) .
+ LIST CDS  SYSMOD(TFTP132) .
 SMPCDS   SYSMOD ENTRIES
   NAME
-TFTP131   TYPE            = FUNCTION
+TFTP132   TYPE            = FUNCTION
           DELBY           = TFTPDEL
 
  LIST CDS  SYSMOD(TFTPDEL) .
@@ -10,7 +10,7 @@ SMPCDS   SYSMOD ENTRIES
 TFTPDEL   TYPE            = FUNCTION
           STATUS          = REC  APP  ACC
           FMID            = TFTPDEL
-          DATE/TIME REC   = 26.300  09:35:20
-                    APP   = 26.300  09:35:39
-                    ACC   = 26.300  09:35:53
-          DELETE VER(001) = TFTP100   TFTP110   TFTP120   TFTP130   TFTP131
+          DATE/TIME REC   = 26.301  12:42:08
+                    APP   = 26.301  12:42:23
+                    ACC   = 26.301  12:42:37
+          DELETE VER(001) = TFTP100   TFTP110   TFTP120   TFTP130   TFTP131   TFTP132
