@@ -11,7 +11,7 @@ the last, as in #cmd("250-It is known to JES as JOB00042") followed by
 line.
 
 The text of a reply is meant for people. A client should act on the code. The
-texts that this book quotes are the ones of FTPD 1.3.1.
+texts that this book quotes are the ones of FTPD 1.3.2.
 
 == Codes That FTPD Sends <ref-reply-list>
 
@@ -133,8 +133,8 @@ causes are:
 - #cmd("501 Invalid data set name \"NAME\".  Use MVS Dsname conventions."): the
   name holds a character that a data set name cannot hold, or a member in
   parentheses that is not exactly #cmd("(NAME)") at the end of the name
-  (@ref-cmd-member), or #cmd("CWD") got a name with a parenthesis
-  (@ref-cmd-cwd-mvs).
+  (@ref-cmd-member), or #cmd("CWD"), #cmd("MKD") or #cmd("RMD") got a name with a parenthesis
+  (@ref-cmd-cwd-mvs, @ref-cmd-file).
 - #cmd("501 A qualifier in \"NAME\" contains an invalid character"): a wildcard
   in a command that does not take one.
 - #cmd("501 ** must be preceded and followed by a period or blank"): in a

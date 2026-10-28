@@ -119,11 +119,13 @@ below it. Which part of the catalog FTPD reads depends on the name
   [#cmd("*")], [a whole qualifier, or the rest of a qualifier. #cmd("OLD*")
     keeps #cmd("OLDREP") but not #cmd("OLD.DATA"). A #cmd("*") may not stand
     in front of letters: #cmd("*REP") does not match #cmd("OLDREP").],
-  [#cmd("**")], [any number of qualifiers, also none. A #cmd("**") is a
+  [#cmd("**")], [any number of qualifiers. A #cmd("**") is a
     qualifier of its own: it stands at the start of the name or behind a
     period, and at the end of the name or in front of a period, as in
     #cmd("**"), #cmd("SYS2.**"), #cmd("**.PROCLIB") and
-    #cmd("SYS2.**.PROCLIB").],
+    #cmd("SYS2.**.PROCLIB"). At the start or in the middle it may stand for no
+    qualifier: #cmd("**.PROCLIB") fits #cmd("PROCLIB"). At the end it needs at
+    least one: #cmd("SYS2.**") does not fit the data set #cmd("SYS2").],
   [#cmd("%")], [one character.],
 )
 
@@ -135,6 +137,12 @@ and #cmd("SYS2.**LIB"). So is a run of three or more #cmd("*"), such as
 #cmd("*"), so that #cmd("**ASM") listed the data set #cmd("ASM") and
 #cmd("DYNABLDL.ASM"). A single #cmd("*") may stand inside a qualifier, as in
 #cmd("OLD*"). @ug-data-list-none shows the replies.
+
+FTPD matches a pattern against one data set name in at most 10000 steps. A
+#cmd("**") between literals, as in #cmd("SYS2.**.PROCLIB"), makes FTPD try the
+rest of the pattern at every qualifier boundary, and several of them against a
+name of many qualifiers can use up the steps. FTPD then counts that name as not
+fitting and goes on with the next one. FTPD 1.3.1 and earlier had no such limit.
 
 A name of the form #cmd("'DSN(pattern)'") is not a data set filter. #cmd("LIST")
 and #cmd("NLST") answer it with the members of that partitioned data set that
@@ -189,7 +197,7 @@ refused.
 
 Some clients ask for an absolute name or pattern without a #cmd("CWD") before
 it. Clients like the Zowe FTP plugin do so when they list data sets
-(#cmd("zowe zftp ls ds")). FTPD 1.4.0 and later answer such a request as the
+(#cmd("zowe zftp ls ds")). FTPD 1.3.2 and later answer such a request as the
 session shows. Earlier releases read only the working directory, and the list
 stayed empty unless the working directory was the high-level qualifier of the
 name.
@@ -505,11 +513,13 @@ decide whether FTPD takes it:
 A name that breaks a rule is answered with
 #cmd("501 Invalid data set name ... Use MVS Dsname conventions."), and FTPD does
 nothing else. That holds for every command that names one member: #cmd("get"),
-#cmd("put"), #cmd("delete") and #cmd("rename"). A listing checks only the form
-of the name: a member that is not closed, or text after the closing
-parenthesis, is refused. The text between the parentheses is a filter that FTPD
-does not check character by character, so a character that no member name can
-hold finds no member, and the reply is #cmd("550 No data sets found.").
+#cmd("put"), #cmd("delete") and #cmd("rename"). #cmd("mkdir") and #cmd("rmdir")
+take no member at all and answer #cmd("501") for a well-formed one too. A
+listing checks only the form of the name: a member that is not closed, or text
+after the closing parenthesis, is refused. The text between the parentheses is
+a filter that FTPD does not check character by character, so a character that
+no member name can hold finds no member, and the reply is
+#cmd("550 No data sets found.").
 The session shows the cases that matter, from the working directory
 #cmd("IBMUSER.") first and then from inside the partitioned data set:
 
@@ -523,6 +533,13 @@ Notes on the session:
   partitioned data set, #cmd("cd ALPHA") without quotes is a member form too,
   and is refused in the same way. #cmd("cd 'IBMUSER.MYLIB'") with quotes and
   #cmd("cd ..") work there as before.
+- *#cmd("mkdir") and #cmd("rmdir") take no member either.* They act on a whole
+  data set. A name with a member, such as
+  #cmd("rmdir 'IBMUSER.MYLIB(ALPHA)'"), is answered with #cmd("501") before
+  FTPD asks the security system, the catalog or IDCAMS anything, and the member
+  stays. Inside the partitioned data set, #cmd("rmdir ALPHA") without quotes is
+  a member form and is refused in the same way. To delete a member, use
+  #cmd("delete") (@ug-data-manage).
 - *A listing of a member that is not closed is refused.* The same holds for
   #cmd("'DSN(A)(B)'") and #cmd("'DSN(A)X'"). A pattern in the parentheses, as in
   #cmd("'IBMUSER.MYLIB(AL*)'"), lists the members that fit. #cmd("nlist 'DSN()'") and
@@ -536,22 +553,23 @@ Notes on the session:
 - *A name that no member can have is refused at once.* Inside the partitioned
   data set, #cmd("delete AL_PHA") is a member form, and the underscore cannot
   be in a member name. FTPD answers with the member name it built,
-  #cmd("IBMUSER.MYLIB(AL_PHA)"). Before FTPD 1.4.0 FTPD did not check such a
-  name, and the command failed later, with the error of the system or of
-  IDCAMS.
+  #cmd("IBMUSER.MYLIB(AL_PHA)"). FTPD 1.3.1 and earlier did not check such a
+  name, and it went on to the security check and to the system as it was.
 
-#note[*Empty members and #cmd("DELE").* Before FTPD 1.4.0 FTPD cut the
+#note[*Empty members and #cmd("DELE").* FTPD 1.3.1 and earlier cut the
 extension off first and did not look at what was left. With
 #cmd("delete 'IBMUSER.MYLIB(.X)'") no member name was left, FTPD took the name
-for the data set itself, and deleted the whole partitioned data set. FTPD
-1.4.0 and later answer #cmd("501"). A script that built member names from file
-names and deleted them has been exposed to this.]
+for the data set itself, and deleted the whole partitioned data set. Later
+versions answer #cmd("501"). A script that built member names from file names
+and deleted them has been exposed to this.]
 
-Before FTPD 1.4.0, FTPD read a name only up to the first parenthesis and did
+FTPD 1.3.1 and earlier read a name only up to the first parenthesis and did
 not look at the rest. #cmd("cd 'IBMUSER.MYLIB(ALPHA)'") was answered with
-#cmd("250") and kept the parenthesis in the working directory prefix. Only
-arguments that FTPD handled wrongly before change their answer. The _FTPD
-Reference_, "Member Names", has the forms in a table.
+#cmd("250") and kept the parenthesis in the working directory prefix.
+#cmd("rmdir 'IBMUSER.MYLIB(ALPHA)'") deleted the member on some systems\; on
+others it was answered with #cmd("550") and deleted nothing. Only arguments
+that FTPD handled wrongly before change their answer. The _FTPD Reference_,
+"Member Names", has the forms in a table.
 
 === When the Directory Is Full <ug-data-dirfull>
 
@@ -693,7 +711,8 @@ name is a member, so quote the name to delete a data set. The reply for a data s
 #cmd("550 DELE fails: NAME does not exist."), as the second #cmd("delete
 NEWAPP") shows, after the first one, with the full name in quotes, had deleted
 it. #cmd("rmdir MYLIB") deleted the partitioned data set with all its members.
-These commands need the authority to alter the data set (@ug-security-dsn).
+#cmd("rmdir") and #cmd("mkdir") take the name of a data set, never a member
+(@ug-data-parens). These commands need the authority to alter the data set (@ug-security-dsn).
 The reply to a #cmd("delete"), a #cmd("rmdir") or the rename of a whole data set
 that fails names the reason and the return code of IDCAMS.
 
