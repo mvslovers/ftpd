@@ -566,8 +566,9 @@ and deleted them has been exposed to this.]
 FTPD 1.3.1 and earlier read a name only up to the first parenthesis and did
 not look at the rest. #cmd("cd 'IBMUSER.MYLIB(ALPHA)'") was answered with
 #cmd("250") and kept the parenthesis in the working directory prefix.
-#cmd("rmdir 'IBMUSER.MYLIB(ALPHA)'") deleted the member. Only arguments that
-FTPD handled wrongly before change their answer. The _FTPD Reference_,
+#cmd("rmdir 'IBMUSER.MYLIB(ALPHA)'") deleted the member on some systems\; on
+others it was answered with #cmd("550") and deleted nothing. Only arguments
+that FTPD handled wrongly before change their answer. The _FTPD Reference_,
 "Member Names", has the forms in a table.
 
 === When the Directory Is Full <ug-data-dirfull>

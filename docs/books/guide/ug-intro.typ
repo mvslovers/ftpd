@@ -133,8 +133,9 @@ adds no function. Each is described where the book explains the subject:
       in the arguments of #cmd("LIST") and #cmd("NLST") and in the member of
       #cmd("DELE"), #cmd("RNFR"), #cmd("RNTO") and the transfers.
       #cmd("CWD"), #cmd("MKD") and #cmd("RMD") act on a whole data set and
-      refuse a name with a member with #cmd("501"). Before,
-      #cmd("rmdir 'DSN(MEMBER)'") deleted the member.],
+      refuse a name with a member with #cmd("501"). Before, on some systems,
+      #cmd("rmdir 'DSN(MEMBER)'") deleted the member\; on others it was
+      answered with #cmd("550") and deleted nothing.],
       [@ug-data-parens, _FTPD Reference_, "Member Names"],
   )
 ] <ug-intro-new-132-tab>
