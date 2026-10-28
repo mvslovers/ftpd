@@ -481,13 +481,19 @@ And before that, check the new library really holds the module:
 ```
 //LIST    EXEC PGM=IEHLIST
 //SYSPRINT DD  SYSOUT=*
-//DD1      DD  UNIT=SYSALLDA,VOL=SER=your-volume,DISP=SHR
+//DD1      DD  UNIT=SYSDA,VOL=SER=your-volume,DISP=SHR
 //SYSIN    DD  *
- LISTPDS DSNAME=FTPD.LINKLIB,VOL=SYSALLDA=your-volume
+ LISTPDS DSNAME=FTPD.LINKLIB,VOL=SYSDA=your-volume
 /*
 ```
 
-One member, `FTPD`, with `AUTH REQ = YES`. `AMBLIST LISTLOAD OUTPUT=MODLIST`
+`SYSDA` runs on TK5 and on MVS/CE. `SYSALLDA` runs on MVS/CE only: on TK5 the
+step ends in `IEH106I UNAVAILABLE DEVICE TYPE OR VOLUME I.D. SPECIFIED`. The
+device type of the volume also works, in both places, as long as the system has
+that type: `3390` for volume `TSO001` on TK5, `3350` for volume `WORK01` on
+MVS/CE. `3390` on MVS/CE is a JCL error.
+
+The directory lists one member, `FTPD`. `AMBLIST LISTLOAD OUTPUT=MODLIST`
 on it reports `APFCODE 00000001` with `RENT`/`REUS` intact: `AC(1)` survives
 SMP's `COPY`, so the library only needs to be APF-authorised.
 
