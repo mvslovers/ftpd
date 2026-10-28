@@ -21,16 +21,29 @@ delete = ["TFTP110"]
 a second digit. At patch 9 cut the next minor, at minor 9 the next major;
 ftpd 1.2.10 cannot be expressed and must not be released.
 
-Current: 1.3.0 is released (`TFTP130`, deleting `TFTP120`). The patch release
-1.3.1 on the branch `release-1.3.x` is **`TFTP131`**, deleting `TFTP130` only; mbt
-derives the id from the minor version only, so `mbt.toml` needs an explicit
-`fmid = "TFTP131"` and `delete = ["TFTP130"]` in `[smp]` when it is cut (see
-the comment there). Not yet checked on any stand. `TFTP111` was assigned to a 1.1.1 that
-was never cut (the libc370 2.0 port made the next release 1.2.0) and is unspent
-and unassigned. Burned: `TFTP100` (1.0.0–1.0.2), `TFTP110` (1.1.0, released
-2026-09-14), `TFTP120` (1.2.0, released 2026-10-13; free on the maintainer's
-word, no `LIST` was run on any stand before it shipped) and `TFTP130` (1.3.0).
-`docs/uninstall.md` names every spent id and carries `TFTP131`; add each later
+Current: 1.3.0 (`TFTP130`, deleting `TFTP120`) and the patch release 1.3.1
+(`TFTP131`, deleting `TFTP130` only) are released. The patch release 1.3.2 on
+the branch `release-1.3.x` is **`TFTP132`**, deleting `TFTP131` only; mbt
+derives the id from the minor version only, so `mbt.toml` carries an explicit
+`fmid = "TFTP132"` and `delete = ["TFTP131"]` in `[smp]` on that branch (see
+the comment there; `main` does not). Not yet checked on any stand. Because
+`delete` names `TFTP131` only, a system that skipped 1.3.1 and still carries
+`TFTP130` must install 1.3.1 first (the same rule 1.3.1 had for `TFTP120`);
+`docs/installation.md` has to say so for 1.3.2.
+
+`main` is 1.4.0-dev, so mbt 3 derives `TFTP140`. `TFTP132` owns the modules
+after an install of 1.3.2, so the derived `delete` of 1.4.0 (`TFTP130`) is not
+enough: when 1.4.0 is cut, `[smp]` needs an explicit `delete` that names
+`TFTP132` (and `TFTP131` and `TFTP130` for a system that skipped a patch).
+
+`TFTP111` was assigned to a 1.1.1 that was never cut (the libc370 2.0 port made
+the next release 1.2.0) and is unspent and unassigned. Burned: `TFTP100`
+(1.0.0–1.0.2), `TFTP110` (1.1.0, released 2026-09-14), `TFTP120` (1.2.0,
+released 2026-10-13), `TFTP130` (1.3.0, released 2026-10-22) and `TFTP131`
+(1.3.1, released 2026-10-27); `TFTP120` and `TFTP130` were free on the
+maintainer's word, no `LIST` was run on any stand before they shipped.
+`TFTP132` is assigned to 1.3.2 and is spent once that release is tagged.
+`docs/uninstall.md` names every spent id and carries `TFTP132`; add each later
 id there.
 
 Never re-spend an id, and never install a test package under the real one: a
