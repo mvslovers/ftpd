@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "ftpd#dsn.h"
 #include "ftpd#lvl.h"
 
 /* The recursion consumes one '**' of the pattern per level, so its depth is
@@ -22,6 +23,14 @@ ftpd_dsn_match(const char *pattern, const char *name)
             p += 2;
             if (*p == '.')
                 p++;  /* skip dot after ** */
+            /* "**.**" is "**": n '**' in a row would cost every way of
+            ** splitting the name n ways. */
+            while (p[0] == '*' && p[1] == '*' &&
+                   (p[2] == '.' || p[2] == '\0')) {
+                p += 2;
+                if (*p == '.')
+                    p++;
+            }
             if (*p == '\0')
                 return 1;  /* ** at end matches everything */
 
@@ -77,9 +86,15 @@ ftpd_lvl_of(const char *pattern, char *level, int levelsz)
 {
     const char *wild;
     const char *cut;
+    char tmp[48];
     int len;
 
     if (!pattern || !pattern[0])
+        return 0;
+
+    /* A '(' makes this a member form that ftpd_lmp_split() did not accept,
+    ** and what follows it was never checked. */
+    if (strchr(pattern, '(') != NULL)
         return 0;
 
     wild = strpbrk(pattern, "*%");
@@ -96,7 +111,13 @@ ftpd_lvl_of(const char *pattern, char *level, int levelsz)
         len = cut ? (int)(cut - pattern) : (int)strlen(pattern);
     }
 
-    if (len <= 0 || len >= levelsz)
+    if (len <= 0 || len >= levelsz || len >= (int)sizeof(tmp))
+        return 0;
+
+    /* The level goes into LISTC LEVEL('...'): only a plain name gets there. */
+    memcpy(tmp, pattern, len);
+    tmp[len] = '\0';
+    if (!ftpd_dsn_valid(tmp, 0))
         return 0;
 
     memcpy(level, pattern, len);

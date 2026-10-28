@@ -77,6 +77,19 @@ main(void)
     CHECK(no_level(""), "an empty name has no level");
     CHECK(no_level(NULL), "no name has no level");
 
+    /* --- no level: what LISTC LEVEL('%s') must never be given ---------- */
+    CHECK(no_level("A.B(x"), "an open '(' is no level");
+    CHECK(no_level("A.B(x).C"), "a member in front of a qualifier is no level");
+    CHECK(no_level("A.B(x).*"), "a member in front of a wildcard qualifier");
+    CHECK(no_level("A.(x.*"), "a '(' in a literal qualifier of a pattern");
+    CHECK(no_level("A.B'C.D"), "a quote would end the LEVEL() early");
+    CHECK(no_level("A.B C.D"), "a blank is no data set name character");
+    CHECK(no_level("A..B"), "an empty qualifier is no level");
+    CHECK(no_level("A.B?.C"), "a '?' is not a character of a level");
+    CHECK(no_level("A.B(x).C*"), "a '(' stays out of the level");
+    CHECK(level_is("A#.B@.$C-1.*", "A#.B@.$C-1"),
+          "the national characters and the hyphen are allowed");
+
     /* --- a level that does not fit ------------------------------------ */
     CHECK(ftpd_lvl_of("SYS2.PROCLIB", lvl, 5) == 1 && strcmp(lvl, "SYS2") == 0,
           "a level of exactly levelsz-1 characters fits");
@@ -110,6 +123,14 @@ main(void)
           ftpd_dsn_match("A.**.Z", "A.Z") == 1 &&
           ftpd_dsn_match("A.**.Z", "A.B.C") == 0,
           "** between literals takes any number of qualifiers, also none");
+
+    /* --- consecutive '**' are one '**' -------------------------------- */
+    CHECK(ftpd_dsn_match("**.**.**.**.**.**.**.**.**.**.**.**.**.**.X",
+                         "A.B.C.D.E.F.G.H.I.J.K.L.M.N.O.P.Q.R.S.T.Y") == 0,
+          "14 '**' in a row take no time to fail");
+    CHECK(ftpd_dsn_match("A.**.**.Z", "A.B.C.Z") == 1 &&
+          ftpd_dsn_match("A.**.**.Z", "A.Z") == 1,
+          "A.**.**.Z is A.**.Z");
 
     return mbt_test_summary("TSTLVL");
 }

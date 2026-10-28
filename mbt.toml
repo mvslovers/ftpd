@@ -96,7 +96,7 @@ sources = ["test/tstlmp.c", "src/ftpd#lmp.c", "src/ftpd#dsn.c"]
 # name or pattern, and the filter over what it returns (#331).  ftpd#lvl.c is
 # free of project and MVS headers, so this is DUAL like TSTLMP.
 [test.TSTLVL]
-sources = ["test/tstlvl.c", "src/ftpd#lvl.c"]
+sources = ["test/tstlvl.c", "src/ftpd#lvl.c", "src/ftpd#dsn.c"]
 
 [test.TSTRET]
 sources = ["test/tstret.c", "src/ftpd#ret.c"]

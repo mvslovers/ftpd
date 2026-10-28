@@ -49,8 +49,10 @@ int ftpd_dsn_match(const char *pattern, const char *name)    asm("FTPLVMAT");
 ** Returns:
 **    1  level is filled in
 **    0  there is no level: the first qualifier holds a wildcard ('**',
-**       '*.PROCLIB'), or the level does not fit in levelsz.  level is
-**       untouched; the caller keeps the level it had.
+**       '*.PROCLIB'), the pattern holds a '(' or the level is not a plain
+**       data set name (ftpd_dsn_valid()), or it does not fit in levelsz.
+**       level is untouched; the caller keeps the level it had.  The level
+**       ends up in LISTC LEVEL('...'), so only a checked name gets there.
 */
 int ftpd_lvl_of(const char *pattern, char *level, int levelsz)   asm("FTPLVLOF");
 

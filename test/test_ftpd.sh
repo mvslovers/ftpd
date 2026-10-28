@@ -3707,6 +3707,17 @@ else
 fi
 lvl_expect "ls 'SYS1.NOSUCH'" "" "ls of a name that is not there: an empty list"
 
+# A '(' that is not a DSN(pattern) form never reaches the catalog.
+for lvl_arg in "SYS1.PROCLIB(X" "SYS1.PROCLIB(X).C" "SYS1.PRO(X'.*"; do
+    ftp_run "type ascii
+ls '$lvl_arg'" "$LVL_OUT"
+    if grep -q '^501 ' "$LVL_OUT" && ! grep -q '^226 ' "$LVL_OUT"; then
+        pass "ls '$lvl_arg': 501, no catalog read"
+    else
+        fail "ls '$lvl_arg'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+    fi
+done
+
 ftp_run "delete '$LVL_ONE'
 delete '$LVL_DEEP'" /dev/null
 
