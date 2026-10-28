@@ -70,4 +70,25 @@ int ftpd_dsn_match_limit(const char *pattern, const char *name, int limit,
 */
 int ftpd_lvl_of(const char *pattern, char *level, int levelsz)   asm("FTPLVLOF");
 
+/*
+** Does LIST/NLST show this data set of the catalog level it read?
+**
+** The one decision both passes over the level share -- the count that tells
+** an empty result from a listing, and the listing itself.  An empty result is
+** answered 550 before the data connection is opened, since a 226 behind an
+** empty list leaves a client that expects a line (the Zowe FTP plugin)
+** waiting for it (#344).
+**
+** filter       -- the resolved name or pattern the client asked for, or
+**                 NULL when it asked for the whole level.
+** has_wildcard -- nonzero when filter holds '*' or '%'.
+** dsn          -- a data set name of the level.
+**
+** Returns 1 when dsn is shown: no filter; a pattern that ftpd_dsn_match()
+** accepts; or, for a name without a wildcard, the data set of that name and
+** every data set below it.
+*/
+int ftpd_lvl_keep(const char *filter, int has_wildcard, const char *dsn)
+                                                            asm("FTPLVKEP");
+
 #endif /* FTPD_LVL_H */

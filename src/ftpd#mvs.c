@@ -100,6 +100,7 @@ sanitize_member(const char *in, char *out, int outsz)
 **   -1  the name is too long
 **   -2  the name holds a wildcard and the caller resolves one name
 **   -3  the name holds a character a data set name may not hold
+**   -4  a '**' of a pattern is not a qualifier of its own (#344)
 ** ----------------------------------------------------------------- */
 static int
 resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
@@ -185,6 +186,11 @@ resolve_dsn(ftpd_session_t *sess, const char *arg, char *buf, int bufsz,
     ** never allocatable (#95). */
     if (!ftpd_dsn_valid(buf, allow_wildcards))
         return -3;
+
+    /* Only a pattern can hold a '*': the other commands were sent back with
+    ** -2 above. */
+    if (allow_wildcards && !ftpd_dsn_stars_ok(buf))
+        return -4;
 
     return 0;
 }
@@ -294,6 +300,12 @@ dsn_error(ftpd_session_t *sess, const char *arg, const char *dsn, int rc)
 {
     if (rc == -2) {
         wildcard_error(sess, arg);
+        return;
+    }
+
+    if (rc == -4) {
+        ftpd_session_reply(sess, FTP_501,
+            "** must be preceded and followed by a period or blank");
         return;
     }
 
@@ -891,7 +903,11 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
 ** - 'DSN(pattern)' lists the members of DSN from any CWD; a DSN that is
 **   not a PDS answers 550 "No data sets found." (#302)
 ** - In dataset context, arg with wildcards filters the listing
-** - Empty dataset result → empty listing with header (z/OS compat)
+** - A data set listing that shows nothing -- no match for the name or
+**   pattern, or an empty level -- answers 550 "No data sets found." before
+**   the data connection is opened, as z/OS does; a 226 behind an empty list
+**   leaves a client that waits for a line (Zowe zftp) hanging (#344)
+** - A '**' that is not a qualifier of its own ("**ASM") answers 501 (#344)
 ** ----------------------------------------------------------------- */
 int
 ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
@@ -1103,13 +1119,15 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         char level[FTPD_MAX_DSN_LEN + 2];
         int has_filter;
         int has_wildcard;
+        int shown;
         int i;
         int list_errno;
 
         /* Determine if we need to filter results.
         ** "ls *" was normalized to no-arg above (prefix == cwd).
         ** Any other arg means we filter:
-        **   - with wildcards: ftpd_dsn_match() for pattern matching
+        **   - with wildcards: ftpd_dsn_match() for pattern matching, through
+        **     ftpd_lvl_keep()
         **   - without wildcards: prefix match on resolved name
         */
         has_filter = (arg && arg[0] && strcmp(arg, "*") != 0);
@@ -1172,29 +1190,33 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
             return 0;
         }
 
-        /* __listds() returns NULL both for "prefix not cataloged" and
-        ** "prefix exists but has no children".  Use __locate() to tell
-        ** them apart: if the prefix itself is cataloged, the level is
-        ** valid → return empty listing with header (z/OS behavior).
-        ** If __locate() also fails → prefix doesn't exist → 550.
-        */
-        if (!dsl || !dsl[0]) {
-            LOCWORK lw;
-            if (dsl) __freeds(&dsl);
-            memset(&lw, 0, sizeof(lw));
-            if (__locate(level, &lw) != 0) {
-                ftpd_session_reply(sess, FTP_550,
-                                   "No data sets found.");
-                return 0;
+        /* An empty level, and a level that holds nothing the filter lets
+        ** through, both come to the same answer.  It is given before the
+        ** data connection exists: a client that got 150 and then 226 for an
+        ** empty list was left waiting for a line (#344).  This also
+        ** replaces the __locate() second opinion that used to tell a level
+        ** that is cataloged and empty (an empty listing, 226) from one that
+        ** is not (550): neither shows a data set, and 550 is what z/OS FTP
+        ** says for both. */
+        shown = 0;
+        if (dsl) {
+            for (i = 0; dsl[i]; i++) {
+                if (ftpd_lvl_keep(has_filter ? prefix : NULL, has_wildcard,
+                                  dsl[i]->dsn))
+                    shown++;
             }
-            dsl = NULL;  /* valid prefix, empty result */
+        }
+        if (shown == 0) {
+            if (dsl) __freeds(&dsl);
+            ftpd_session_reply(sess, FTP_550, "No data sets found.");
+            return 0;
         }
 
         /* Open data connection */
         ftpd_session_reply(sess, FTP_150,
                            "Opening data connection for file list");
         if (ftpd_data_open(sess) != 0) {
-            if (dsl) __freeds(&dsl);
+            __freeds(&dsl);
             ftpd_session_reply(sess, FTP_425,
                                "Cannot open data connection");
             return 0;
@@ -1207,24 +1229,13 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
                 "Lrecl BlkSz Dsorg Dsname\r\n");
         }
 
-        if (dsl) {
-            for (i = 0; dsl[i]; i++) {
-                if (has_filter) {
-                    if (has_wildcard) {
-                        if (!ftpd_dsn_match(prefix, dsl[i]->dsn))
-                            continue;
-                    } else {
-                        if (strcmp(prefix, dsl[i]->dsn) != 0 &&
-                            !(strncmp(prefix, dsl[i]->dsn,
-                                      strlen(prefix)) == 0 &&
-                              dsl[i]->dsn[strlen(prefix)] == '.'))
-                            continue;
-                    }
-                }
-                send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
-            }
-            __freeds(&dsl);
+        for (i = 0; dsl[i]; i++) {
+            if (!ftpd_lvl_keep(has_filter ? prefix : NULL, has_wildcard,
+                               dsl[i]->dsn))
+                continue;
+            send_ds_entry(sess, dsl[i], nlst, sess->mvs_cwd);
         }
+        __freeds(&dsl);
     }
 
     ftpd_data_close(sess);

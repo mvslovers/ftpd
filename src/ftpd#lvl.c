@@ -152,3 +152,18 @@ ftpd_lvl_of(const char *pattern, char *level, int levelsz)
     level[len] = '\0';
     return 1;
 }
+
+int
+ftpd_lvl_keep(const char *filter, int has_wildcard, const char *dsn)
+{
+    size_t len;
+
+    if (!filter)
+        return 1;
+    if (has_wildcard)
+        return ftpd_dsn_match(filter, dsn);
+
+    len = strlen(filter);
+    return strcmp(filter, dsn) == 0 ||
+           (strncmp(filter, dsn, len) == 0 && dsn[len] == '.');
+}

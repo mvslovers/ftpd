@@ -168,5 +168,49 @@ main(void)
               "a limit of 1 call lets no '**' recurse");
     }
 
+    /* --- which names of the level LIST shows (#344) ------------------- */
+    CHECK(ftpd_lvl_keep(NULL, 0, "SYS1.PROCLIB") == 1,
+          "no filter: every name of the level is shown");
+    CHECK(ftpd_lvl_keep("SYS1.**.NOTHERE", 1, "SYS1.PROCLIB") == 0 &&
+          ftpd_lvl_keep("SYS1.**.NOTHERE", 1, "SYS1.A.B") == 0,
+          "a pattern that matches nothing keeps nothing");
+    CHECK(ftpd_lvl_keep("SYS1.**.PROCLIB", 1, "SYS1.PROCLIB") == 1 &&
+          ftpd_lvl_keep("SYS1.**.PROCLIB", 1, "SYS1.A.PROCLIB") == 1,
+          "a pattern keeps what it matches");
+    CHECK(ftpd_lvl_keep("**.NOTHERE", 1, "SYS1.PROCLIB") == 0,
+          "**.NOTHERE keeps nothing");
+    CHECK(ftpd_lvl_keep("SYS1.PROCLIB", 0, "SYS1.PROCLIB") == 1 &&
+          ftpd_lvl_keep("SYS1.PROCLIB", 0, "SYS1.PROCLIB.OLD") == 1,
+          "a name keeps the data set and the ones below it");
+    CHECK(ftpd_lvl_keep("SYS1.NOSUCH", 0, "SYS1.PROCLIB") == 0 &&
+          ftpd_lvl_keep("SYS1.PROC", 0, "SYS1.PROCLIB") == 0,
+          "a name is no prefix of a qualifier: SYS1.PROC is not SYS1.PROCLIB");
+    CHECK(ftpd_lvl_keep("SYS1.PROCLIB", 0, "SYS1.PROCLIBX") == 0,
+          "a longer last qualifier is another data set");
+    {
+        /* The count the empty-result decision is made on: it is zero for
+        ** each listing that used to be a 226 behind an empty list. */
+        static const char *level[] = { "SYS1.PROCLIB", "SYS1.MACLIB",
+                                       "SYS1.A.B", NULL };
+        struct { const char *filter; int wild; int want; } cases[] = {
+            { "SYS1.**.NOTHERE", 1, 0 },
+            { "SYS1.NOSUCH",     0, 0 },
+            { "SYS1.NOSUCH.*",   1, 0 },
+            { "SYS1.PROC*",      1, 1 },
+            { "SYS1.**",         1, 3 },
+            { "SYS1.*",          1, 2 },
+            { NULL,              0, 3 },
+        };
+        int c, i, n;
+
+        for (c = 0; c < (int)(sizeof(cases) / sizeof(cases[0])); c++) {
+            n = 0;
+            for (i = 0; level[i]; i++)
+                n += ftpd_lvl_keep(cases[c].filter, cases[c].wild, level[i]);
+            CHECK(n == cases[c].want,
+                  cases[c].filter ? cases[c].filter : "(no filter)");
+        }
+    }
+
     return mbt_test_summary("TSTLVL");
 }

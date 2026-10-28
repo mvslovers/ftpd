@@ -3705,7 +3705,38 @@ if grep -q '^550 No data sets found\.' "$LVL_OUT" && ! grep -q '^226 ' "$LVL_OUT
 else
     fail "ls 'SYS1.NOSUCH.X'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
 fi
-lvl_expect "ls 'SYS1.NOSUCH'" "" "ls of a name that is not there: an empty list"
+# A name or pattern that finds no data set is 550 with no 150 and no data
+# connection, whether or not its level exists (#344): a 226 behind an empty
+# list leaves the Zowe FTP plugin waiting for a line.
+for lvl_arg in "SYS1.NOSUCH" "SYS1.**.NOTHERE" "**.NOTHERE" "SYS1.NOSU*"; do
+    for lvl_cmd in ls dir; do
+        ftp_run "type ascii
+$lvl_cmd '$lvl_arg'" "$LVL_OUT"
+        if grep -q '^550 No data sets found\.' "$LVL_OUT" \
+           && ! grep -q '^150 \|^226 ' "$LVL_OUT"; then
+            pass "$lvl_cmd '$lvl_arg': 550 No data sets found., no 150"
+        else
+            fail "$lvl_cmd '$lvl_arg'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+        fi
+    done
+done
+
+# A '**' that is not a qualifier of its own is 501, as on z/OS (#344); **.ASM,
+# SYS1.**.ONE are patterns.
+for lvl_arg in "**ASM" "SYS1.**NOTHERE" "SYS1.A**" "SYS1.A**.B" "***" "SYS1.***"; do
+    for lvl_cmd in ls dir; do
+        ftp_run "type ascii
+$lvl_cmd '$lvl_arg'" "$LVL_OUT"
+        if grep -q '^501 .*\*\* must be preceded and followed by a period or blank' "$LVL_OUT" \
+           && ! grep -q '^150 \|^226 ' "$LVL_OUT"; then
+            pass "$lvl_cmd '$lvl_arg': 501, no catalog read"
+        else
+            fail "$lvl_cmd '$lvl_arg'"; tail -4 "$LVL_OUT" | sed 's/^/    /'
+        fi
+    done
+done
+lvl_expect "ls '${HLQ}.**.ONE'" "F331.ONE" "a ** between periods is a pattern"
+lvl_expect "ls '**.F331.ONE'" "F331.ONE" "a ** in front, a period behind"
 
 # A '(' that is not a DSN(pattern) form never reaches the catalog.
 for lvl_arg in "SYS1.PROCLIB(X" "SYS1.PROCLIB(X).C" "SYS1.PRO(X'.*"; do
