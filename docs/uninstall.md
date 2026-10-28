@@ -25,7 +25,7 @@ uses `UCLIN` alone stays as the [fallback](#the-fallback-uclin-alone).
 
 | | |
 |---|---|
-| FMID | `TFTP131` |
+| FMID | `TFTP132` |
 | Load module | `FTPD` |
 | Target library | `FTPD.LINKLIB` |
 | Distribution library | `FTPD.AFTPDLOD` |
@@ -42,8 +42,8 @@ step of the install job scratched it.
 
 **Earlier releases left their FMIDs behind.** Since 1.1.0 there is one FMID per
 *release*: `TFTP110` is 1.1.0 and nothing else, `TFTP120` is 1.2.0,
-`TFTP130` is 1.3.0 and `TFTP131` is 1.3.1. `TFTP100` is the exception, from the policy that came
-before it: it covered 1.0.0, 1.0.1 and 1.0.2 alike. Each upgrade deletes the
+`TFTP130` is 1.3.0, `TFTP131` is 1.3.1 and `TFTP132` is 1.3.2. `TFTP100` is the exception, from the
+policy that came before it: it covered 1.0.0, 1.0.1 and 1.0.2 alike. Each upgrade deletes the
 release before it and leaves its id in the inventory as a mark, in both zones:
 
 ```
@@ -51,12 +51,12 @@ TFTP130   TYPE            = FUNCTION
           DELBY           = TFTP131
 ```
 
-A system that went from 1.0.x through 1.1.0, 1.2.0 and 1.3.0 to 1.3.1 carries
+A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0 and 1.3.1 to 1.3.2 carries
 one such mark for every step. Deleting the id of the current release and of its
 predecessor clears only the newest of them. Both ways below therefore name
 **every id FTPD has ever used** (`TFTP100`, `TFTP110`, `TFTP120`,
-`TFTP130` and `TFTP131`), and you need not know which releases the system has
-seen. The jobs are written for releases up to 1.3.1. If a later release adds an
+`TFTP130`, `TFTP131` and `TFTP132`), and you need not know which releases the
+system has seen. The jobs are written for releases up to 1.3.2. If a later release adds an
 id, it is added to every list here.
 
 ---
@@ -72,7 +72,7 @@ id, it is added to every list here.
 SMP deletes a function when a later function names it in a `DELETE` operand,
 and it removes the load module of the deleted function from the libraries on
 the way. The job below receives, applies and accepts such a function.
-`TFTPDEL` has no elements. It deletes all FTPD ids up to 1.3.1 in one `DELETE`
+`TFTPDEL` has no elements. It deletes all FTPD ids up to 1.3.2 in one `DELETE`
 statement.
 
 **`TFTPDEL` is not a release FMID.** No release of FTPD ships it, the job
@@ -103,7 +103,7 @@ Submit this job:
 //RECV    EXEC SMPREC
 //SMPPTFIN DD  *
 ++FUNCTION(TFTPDEL) .
-++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131) .
+++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132) .
 /*
 //SMPCNTL  DD  *
  RESETRC .
@@ -201,11 +201,16 @@ level in their names, and a dummy function with a `++MAC` element instead of
 none, have not been measured. Whatever the system, the `LIST` in step 4 is the
 proof.
 
+The captured outputs in this document were taken with the 1.3.1 package and the
+id list of that release, so they show `TFTP131` where the jobs above now also
+name `TFTP132`, and they count one id fewer. They have not been re-measured
+with the 1.3.2 package yet.
+
 ## 3. Free the ids
 
 The dummy function has not made the ids free. It has left `TFTPDEL` itself in
 both zones, with the status `REC APP ACC`, and a mark `DELBY = TFTPDEL` on every
-id it deleted. This job removes the six entries from the CDS (what is applied)
+id it deleted. This job removes the seven entries from the CDS (what is applied)
 and the ACDS (what is accepted). It changes the two SMP data bases and no
 library:
 
@@ -217,6 +222,7 @@ library:
 //SMPCNTL  DD  *
  UCLIN CDS .
   DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
   DEL SYSMOD(TFTP120) .
@@ -228,6 +234,7 @@ library:
 //SMPCNTL  DD  *
  UCLIN ACDS .
   DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
   DEL SYSMOD(TFTP120) .
@@ -240,6 +247,8 @@ library:
  RESETRC .
  LIST CDS  SYSMOD(TFTPDEL) .
  LIST ACDS SYSMOD(TFTPDEL) .
+ LIST CDS  SYSMOD(TFTP132) .
+ LIST ACDS SYSMOD(TFTP132) .
  LIST CDS  SYSMOD(TFTP131) .
  LIST ACDS SYSMOD(TFTP131) .
  LIST CDS  SYSMOD(TFTP130) .
@@ -281,13 +290,13 @@ Step `UCLACDS` gives the same. Any other message is not expected.
 
 **This job depends on step 2.** For an id that is not in the zone, `DEL SYSMOD`
 ends the step with return code 08 (see the fallback). Only the marks of the
-dummy function make all six ids exist, so run this job after step 2 and not
+dummy function make all seven ids exist, so run this job after step 2 and not
 instead of it.
 
 ## 4. Read the LIST — this is the actual result
 
 The last step of the job is the result. For every id, in both zones, it must
-answer that the entry was not found. These are the first two of the twelve
+answer that the entry was not found. These are the first two of the fourteen
 statements, as the step printed them:
 
 ```
@@ -310,8 +319,8 @@ zones count: an id gone from one and still in the other is not free.
 
 **Read the stanzas, not the return code of the step.** A mark that is still
 there answers with return code 00, so it does not raise the return code of the
-step above the 04 that you expect. The job has twelve `LIST` statements, and all
-twelve must show the id as not found. A stanza that names `TYPE = FUNCTION` is an
+step above the 04 that you expect. The job has fourteen `LIST` statements, and all
+fourteen must show the id as not found. A stanza that names `TYPE = FUNCTION` is an
 entry that is still there, whether it shows the status `REC APP ACC` or only a
 `DELBY` of its successor. This is what the statements
 `LIST CDS SYSMOD(TFTP131)` and `LIST CDS SYSMOD(TFTPDEL)` print after step 2,
@@ -366,7 +375,7 @@ stay. The install job scratches it itself the next time.
 Use this way when the dummy function cannot be used. After step 1, submit this
 job instead of steps 2 and 3. It changes the two SMP data bases and no library.
 In the first line of each block, name the FMID that the system carries
-(`LIST CDS MOD(FTPD) .` shows it as `FMID`); the job names `TFTP131`:
+(`LIST CDS MOD(FTPD) .` shows it as `FMID`); the job names `TFTP132`:
 
 ```
 //FTPDUCL  JOB (SYS),'FTPD UNINSTALL',
@@ -375,9 +384,10 @@ In the first line of each block, name the FMID that the system carries
 //UCLCDS  EXEC SMPAPP
 //SMPCNTL  DD  *
  UCLIN CDS .
-  DEL SYSMOD(TFTP131) MOD(FTPD) .
+  DEL SYSMOD(TFTP132) MOD(FTPD) .
   DEL MOD(FTPD) .
   DEL LMOD(FTPD) .
+  DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
   DEL SYSMOD(TFTP120) .
@@ -388,9 +398,9 @@ In the first line of each block, name the FMID that the system carries
 //UCLACDS EXEC SMPAPP
 //SMPCNTL  DD  *
  UCLIN ACDS .
-  DEL SYSMOD(TFTP131) MOD(FTPD) .
+  DEL SYSMOD(TFTP132) MOD(FTPD) .
   DEL MOD(FTPD) .
-  DEL SYSMOD(TFTP131) .
+  DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP130) .
   DEL SYSMOD(TFTP120) .
   DEL SYSMOD(TFTP110) .
@@ -400,6 +410,8 @@ In the first line of each block, name the FMID that the system carries
 //LIST    EXEC SMPAPP
 //SMPCNTL  DD  *
  RESETRC .
+ LIST CDS  SYSMOD(TFTP132) .
+ LIST ACDS SYSMOD(TFTP132) .
  LIST CDS  SYSMOD(TFTP131) .
  LIST ACDS SYSMOD(TFTP131) .
  LIST CDS  SYSMOD(TFTP130) .
@@ -464,7 +476,7 @@ ended with return code 08 at `DEL SYSMOD(TFTP120)`, the `UCLIN ACDS` block that
 followed was ignored, the step ended with return code 12, and
 `LIST ACDS SYSMOD(TFTP131)` still showed the entry.
 
-Then read the `LIST` as in step 4, here twelve statements without `TFTPDEL` and
+Then read the `LIST` as in step 4, here fourteen statements without `TFTPDEL` and
 with the two module entries, and, if you remove FTPD for good, scratch the
 libraries as in step 5. `UCLIN` changes only the inventory: until you scratch
 them, the load module is still in the target library, and the copy that SMP
