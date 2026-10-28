@@ -69,7 +69,8 @@ texts that this book quotes are the ones of FTPD 1.3.1.
     [#cmd("530")], [Not logged in, or the login failed (@ref-reply-530).],
     [#cmd("550")], [The action did not happen: the name does not exist, access
       is denied, the name exists already, the data set is under retention
-      (@ref-site-retained), or the view does not fit.],
+      (@ref-site-retained), a data set listing shows nothing
+      (#cmd("550 No data sets found.")), or the view does not fit.],
     [#cmd("552")], [The storage or the directory is used up and a retry gives the same answer:
       @ref-reply-552.],
     [#cmd("553")], [UFS only: the path name is too long.],
@@ -136,6 +137,15 @@ causes are:
   (@ref-cmd-cwd-mvs, @ref-cmd-file).
 - #cmd("501 A qualifier in \"NAME\" contains an invalid character"): a wildcard
   in a command that does not take one.
+- #cmd("501 ** must be preceded and followed by a period or blank"): in a
+  data set listing (#cmd("LIST"), #cmd("NLST")), a #cmd("**") of the pattern is
+  not a qualifier of its own. A #cmd("**") stands at the start of the name or
+  behind a period, and at the end of the name or in front of a period.
+  #cmd("**ASM"), #cmd("OLD**"), #cmd("SYS2.A**") and #cmd("SYS2.**LIB") are
+  refused, and so is a run of three or more #cmd("*"), as in #cmd("***").
+  #cmd("**"), #cmd("**.ASM"), #cmd("SYS2.**.ASM"), #cmd("SYS2.**") and
+  #cmd("**.**") pass. FTPD reads no catalog for a refused pattern. FTPD 1.3.1
+  and earlier did not refuse it.
 - #cmd("501 Missing job ID"): in the JES view, #cmd("RETR") or #cmd("DELE")
   without an argument.
 - #cmd("501 Invalid job ID"): in the JES view, #cmd("RETR") or #cmd("DELE")

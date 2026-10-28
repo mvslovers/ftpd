@@ -5,12 +5,10 @@ local: big.txt remote: BIG
 229 Entering Extended Passive Mode (|||22000|)
 125 Storing data set IBMUSER.BIG
 552 Requested file action aborted: out of space on the data set. Allocate more space with SITE PRIMARY/SECONDARY and CYLINDERS, or ask the administrator to raise DEFPRIMARY.
-307594 bytes sent in 00:00 (1.14 MiB/s)
+307594 bytes sent in 00:00 (1.23 MiB/s)
 ftp> dir BIG
 229 Entering Extended Passive Mode (|||22000|)
-150 Opening data connection for file list
-Volume Unit    Referred Ext Used Recfm Lrecl BlkSz Dsorg Dsname
-226 List completed successfully.
+550 No data sets found.
 ftp> site primary=2 secondary=0 cylinders
 200 SITE command was accepted
 ftp> put big.txt BIG
@@ -18,12 +16,12 @@ local: big.txt remote: BIG
 229 Entering Extended Passive Mode (|||22000|)
 125 Storing data set IBMUSER.BIG
 250 Transfer completed successfully.
-307594 bytes sent in 00:00 (384.01 KiB/s)
+307594 bytes sent in 00:00 (300.41 KiB/s)
 ftp> dir BIG
 229 Entering Extended Passive Mode (|||22000|)
 150 Opening data connection for file list
 Volume Unit    Referred Ext Used Recfm Lrecl BlkSz Dsorg Dsname
-PUB001 3390 2026/10/21  1    7  FB       80  3120  PS   BIG
+PUB001 3390 2026/10/28  1    7  FB       80  3120  PS   BIG
 226 List completed successfully.
 ftp> delete BIG
 250 IBMUSER.BIG deleted.
