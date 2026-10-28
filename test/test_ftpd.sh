@@ -36,6 +36,8 @@
 #   19. LIST and NLST of 'DSN(pattern)' (#302)
 #   20. LIST and NLST of an absolute name or pattern, outside the working
 #       directory: 'SYS1.PROCLIB', 'SYS1.**' (#331)
+#   21. Parentheses in names: CWD, LIST, DELE, RMD and MKD refuse a malformed
+#       or misplaced member with 501 and leave the data set alone (#335, #339)
 #
 # Test 13 reads the operator command F FTPD,STATS, which an FTP client cannot
 # reach.  Set FTPD_CONSOLE to a command that sends one operator command and
@@ -3770,12 +3772,14 @@ type ascii
 put $LMP_TEXT '$PAR_PDS(ALPHA)'" "$PAR_OUT"
 
 # One command that has to be refused with 501 and has to leave the working
-# directory where the previous cd put it.
+# directory where the previous cd put it.  The directory is read with
+# "quote PWD": tnftp answers "pwd" from its own cache ("Remote directory:")
+# and prints no 257 line.
 par_refused() {
     local cmd="$1" label="$2"
     ftp_run "cd '${PAR_PDS}.'
 $cmd
-pwd" "$PAR_OUT"
+quote PWD" "$PAR_OUT"
     if grep -q '^501 ' "$PAR_OUT" && ! grep -q '^226 ' "$PAR_OUT" \
        && grep -q "^257 .*${PAR_PDS}\." "$PAR_OUT"; then
         pass "$label: 501, working directory unchanged"
@@ -3814,7 +3818,7 @@ fi
 # The member the refused commands were aimed at is still there, and so is the PDS.
 ftp_run "type ascii
 get '$PAR_PDS(ALPHA)' $TMPDIR/par_alpha0.txt" "$PAR_OUT"
-if [ -s "$TMPDIR/par_alpha0.txt" ] && grep -q '^226 ' "$PAR_OUT"; then
+if [ -s "$TMPDIR/par_alpha0.txt" ] && grep -q '^226 \|^250 ' "$PAR_OUT"; then
     pass "the member RMD 'DSN(MEMBER)' was aimed at is still there"
 else
     fail "the member RMD 'DSN(MEMBER)' was aimed at is still there"; tail -8 "$PAR_OUT" | sed 's/^/    /'
