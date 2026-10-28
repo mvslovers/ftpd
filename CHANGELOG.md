@@ -10,6 +10,37 @@ replacement for 1.3.1. SMP FMID `TFTP132`, which deletes `TFTP131`.
 
 ### Fixed
 
+- **`LIST` and `NLST` read the catalog at the level of the name you give.**
+  `LIST 'SYS2.PROCLIB'` or `NLST 'SYS2.**'` returned nothing unless the working
+  directory was `SYS2`: the catalog was read at the level of the working
+  directory and the name only filtered that result, so a data set outside the
+  working directory could never be in it. A client that sends absolute names
+  without a `CWD` first now gets them listed. The level is the qualifiers in
+  front of the first wildcard qualifier, or the parent level for a name without
+  a wildcard; a pattern that starts with a wildcard keeps the working
+  directory. A level that is not a plain data set name (one with a `(` or a
+  quote in it) is not used. (#331)
+- **The run time of the data set name match is bounded.** A pattern with
+  several `**` between literal qualifiers tried the rest of the pattern at
+  every qualifier boundary, and the number of tries was not limited, so such a
+  pattern against a name with many qualifiers could keep a session busy for a
+  long time (millions of tries for a 22-qualifier name). The match now
+  gives up with "no match" after 10000 tries. Results are the same wherever the
+  old matcher finished within that limit, and consecutive `**` in a pattern
+  count as one. (#337)
+- **A listing that shows nothing answers `550`.** `LIST` and `NLST` of a name
+  or pattern that matched no data set sent `150`, an empty list and `226`, and
+  a client that waits for at least one line hung. The matches are now counted
+  before the data connection is opened, and none is answered
+  `550 No data sets found.`, for a pattern, a name and an empty level alike.
+  (#344)
+- **A `**` that is not a qualifier of its own is refused.** `**ASM`,
+  `SYS1.**NOTHERE` and `SYS1.A**` are answered with
+  `501 ** must be preceded and followed by a period or blank`, the text z/OS
+  FTP gives; a run of three or more `*` is refused the same way. They used to
+  match like a single `*` with a wider reach, so `**ASM` found the data set
+  `ASM`. `**`, `**.ASM`, `SYS1.**.ASM` and `**.**` are accepted as before.
+  (#344)
 - **A parenthesis in a data set name is checked to the end of the name.** The
   check stopped reading at the first `(`, so what followed was never looked at
   in `CWD`, in the arguments of `LIST` and `NLST`, or in the member of `DELE`,
