@@ -92,6 +92,12 @@ sources = ["test/tstdsn.c", "src/ftpd#dsn.c"]
 [test.TSTLMP]
 sources = ["test/tstlmp.c", "src/ftpd#lmp.c", "src/ftpd#dsn.c"]
 
+# ftpd_lvl_of() and ftpd_dsn_match() -- the catalog level LIST/NLST read for a
+# name or pattern, and the filter over what it returns (#331).  ftpd#lvl.c is
+# free of project and MVS headers, so this is DUAL like TSTLMP.
+[test.TSTLVL]
+sources = ["test/tstlvl.c", "src/ftpd#lvl.c", "src/ftpd#dsn.c"]
+
 [test.TSTRET]
 sources = ["test/tstret.c", "src/ftpd#ret.c"]
 
@@ -217,8 +223,8 @@ sources = ["test/tstdcb.c", "src/ftpd#*.c"]
 [test.TSTRCL]
 host = false
 sources = ["test/tstrcl.c", "src/ftpd#log.c",
-           "src/ftpd#dsn.c", "src/ftpd#lmp.c", "src/ftpd#lse.c", "src/ftpd#rec.c",
-           "src/ftpd#ret.c", "src/ftpd#xlt.c"]
+           "src/ftpd#dsn.c", "src/ftpd#lmp.c", "src/ftpd#lvl.c",
+           "src/ftpd#lse.c", "src/ftpd#rec.c", "src/ftpd#ret.c", "src/ftpd#xlt.c"]
 
 # ── Dependencies ─────────────────────────────────────────
 # Only ufsd is a declared dependency: libufs.h / libufs.a are ufsd-specific.

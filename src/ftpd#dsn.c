@@ -95,3 +95,38 @@ ftpd_dsn_has_member(const char *dsn)
 {
     return dsn != NULL && strchr(dsn, '(') != NULL;
 }
+
+/* --------------------------------------------------------------------
+** Is every '**' a qualifier of its own?  See ftpd#dsn.h for the contract.
+** ----------------------------------------------------------------- */
+int
+ftpd_dsn_stars_ok(const char *pattern)
+{
+    const char *p;
+    const char *run;
+
+    if (!pattern)
+        return 1;
+
+    for (p = pattern; *p; ) {
+        if (*p != '*') {
+            p++;
+            continue;
+        }
+
+        run = p;
+        while (*p == '*')
+            p++;
+
+        if (p - run == 1)
+            continue;
+        if (p - run > 2)
+            return 0;
+        if (run != pattern && run[-1] != '.')
+            return 0;
+        if (*p != '\0' && *p != '.')
+            return 0;
+    }
+
+    return 1;
+}
