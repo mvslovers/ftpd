@@ -16,6 +16,11 @@ uses `UCLIN` alone stays as the [fallback](#the-fallback-uclin-alone).
 > never carried `TFTP100` the step ended early and left the ACDS untouched (see
 > [the fallback](#the-fallback-uclin-alone)). Use this document instead.
 
+> **Did you install a development build of `main`?** Its FMID is `TFTP140`, which
+> none of the jobs below names. Go to
+> [the section on development builds](#you-installed-a-development-build-with-a-later-fmid)
+> first.
+
 > **If you are upgrading rather than removing, you are in the wrong document.**
 > A release deletes its predecessor as part of its own install, and the
 > scratch step below would delete the libraries the new release installs into.
@@ -482,6 +487,188 @@ with the two module entries, and, if you remove FTPD for good, scratch the
 libraries as in step 5. `UCLIN` changes only the inventory: until you scratch
 them, the load module is still in the target library, and the copy that SMP
 accepted is in the distribution library.
+
+## You installed a development build with a later FMID
+
+A development build of `main` is packaged under the FMID of the release that
+`main` is heading for. A build of 1.4.0-dev carries `TFTP140`, although 1.4.0 is
+not released. If you installed such a package by SMP, the system holds an id
+that no release of this document knows. Neither the dummy function of step 2 nor
+the lists of step 3 name it, so it stays in both zones, and it still owns the
+load module. Install a release only after you have cleaned it up as described
+here.
+
+Ask SMP which id the system carries:
+
+```
+ LIST CDS MOD(FTPD) .
+```
+
+`FMID = TFTP140` (or any other id that is not in the table above) means that
+you are in the right section.
+
+The steps are those of the main way, with three differences. The release package
+is on the system before FTPD stops, `TFTP140` is named in every list, and the
+libraries stay.
+
+### 1. Upload the release package first
+
+FTPD is the way the package gets onto the system, and you stop it in the next
+step. Upload both `.xmit` files of the release now, in binary, as described in
+step 3 of [installation.md](installation.md), and edit the install job of the
+package for your data set names. Do not run it yet.
+
+### 2. Stop the server
+
+```
+/P FTPD
+```
+
+### 3. Delete the development build with the dummy function
+
+Submit the job of [step 2](#2-delete-the-release-with-the-dummy-function) with
+one change: `TFTP140` is added to the `DELETE` operand. Everything else, the
+`HMASMP.LINKLIB` and `HMASMP.AFTPDLOD` statements, the `COND` on the later steps and the
+member list at the end, stays as it is there.
+
+```
+//FTPDDEL  JOB (SYS),'FTPD DELETE',
+//             CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),
+//             REGION=4096K
+//RECV    EXEC SMPREC
+//SMPPTFIN DD  *
+++FUNCTION(TFTPDEL) .
+++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132,TFTP140) .
+/*
+//SMPCNTL  DD  *
+ RESETRC .
+ RECEIVE SELECT(TFTPDEL) .
+/*
+//APPLY   EXEC SMPAPP,COND=(4,LT,RECV.HMASMP)
+//HMASMP.LINKLIB  DD  DISP=SHR,DSN=FTPD.LINKLIB
+//HMASMP.AFTPDLOD DD  DISP=SHR,DSN=FTPD.AFTPDLOD
+//SMPCNTL  DD  *
+ APPLY S(TFTPDEL) DIS(WRITE) .
+/*
+//ACCEPT  EXEC SMPAPP,COND=(4,LT,APPLY.HMASMP)
+//HMASMP.LINKLIB  DD  DISP=SHR,DSN=FTPD.LINKLIB
+//HMASMP.AFTPDLOD DD  DISP=SHR,DSN=FTPD.AFTPDLOD
+//SMPCNTL  DD  *
+ ACCEPT S(TFTPDEL) DIS(WRITE) .
+/*
+//MEMBERS EXEC PGM=IKJEFT01
+//SYSTSPRT DD  SYSOUT=*
+//SYSTSIN  DD  *
+ LISTDS 'FTPD.LINKLIB' MEMBERS
+ LISTDS 'FTPD.AFTPDLOD' MEMBERS
+/*
+//
+```
+
+<!-- MEASURE (QA): output of RECEIVE, APPLY, ACCEPT and the member lists on a
+system that carries TFTP140 from a dev package of main. State which HMA2461
+lines the APPLY prints. -->
+
+Read the member lists as in step 2: both libraries must list no member.
+
+### 4. Free the ids, with `TFTP140` in the lists
+
+Submit the job of [step 3](#3-free-the-ids) with `TFTP140` added to the `DEL`
+statements of both `UCLIN` blocks and to the `LIST` statements. `TFTP140` comes
+first, ahead of `TFTPDEL`:
+
+```
+//FTPDUCL  JOB (SYS),'FTPD UNINSTALL',
+//             CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),
+//             REGION=4096K
+//UCLCDS  EXEC SMPAPP
+//SMPCNTL  DD  *
+ UCLIN CDS .
+  DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP140) .
+  DEL SYSMOD(TFTP132) .
+  DEL SYSMOD(TFTP131) .
+  DEL SYSMOD(TFTP130) .
+  DEL SYSMOD(TFTP120) .
+  DEL SYSMOD(TFTP110) .
+  DEL SYSMOD(TFTP100) .
+ ENDUCL .
+/*
+//UCLACDS EXEC SMPAPP
+//SMPCNTL  DD  *
+ UCLIN ACDS .
+  DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP140) .
+  DEL SYSMOD(TFTP132) .
+  DEL SYSMOD(TFTP131) .
+  DEL SYSMOD(TFTP130) .
+  DEL SYSMOD(TFTP120) .
+  DEL SYSMOD(TFTP110) .
+  DEL SYSMOD(TFTP100) .
+ ENDUCL .
+/*
+//LIST    EXEC SMPAPP
+//SMPCNTL  DD  *
+ RESETRC .
+ LIST CDS  SYSMOD(TFTPDEL) .
+ LIST ACDS SYSMOD(TFTPDEL) .
+ LIST CDS  SYSMOD(TFTP140) .
+ LIST ACDS SYSMOD(TFTP140) .
+ LIST CDS  SYSMOD(TFTP132) .
+ LIST ACDS SYSMOD(TFTP132) .
+ LIST CDS  SYSMOD(TFTP131) .
+ LIST ACDS SYSMOD(TFTP131) .
+ LIST CDS  SYSMOD(TFTP130) .
+ LIST ACDS SYSMOD(TFTP130) .
+ LIST CDS  SYSMOD(TFTP120) .
+ LIST ACDS SYSMOD(TFTP120) .
+ LIST CDS  SYSMOD(TFTP110) .
+ LIST ACDS SYSMOD(TFTP110) .
+ LIST CDS  SYSMOD(TFTP100) .
+ LIST ACDS SYSMOD(TFTP100) .
+/*
+//
+```
+
+<!-- MEASURE (QA): output of both UCLIN steps on a system that carried TFTP140.
+Include the statements on the ACCEPT side (ACDS) that the first report needed
+beyond these, with the HMA messages that made them necessary, or show that this
+job is enough. -->
+
+Read the `LIST` as in [step 4](#4-read-the-list--this-is-the-actual-result):
+sixteen statements, and every one must show its id as not found. A stanza with
+`TYPE = FUNCTION` for `TFTP140` is an entry that is still there, in whichever
+zone it shows.
+
+### 5. Do not scratch the libraries
+
+Leave out step 5. The release installs into `FTPD.LINKLIB` and `FTPD.AFTPDLOD`,
+which are empty now.
+
+### 6. Install the release
+
+Run the install job of the release package that you prepared in section 1.
+**Do not run the allocation job.** It allocates both libraries `NEW` and fails
+on libraries that exist. The steps and the checks are those of the upgrade in
+[installation.md](installation.md).
+
+<!-- MEASURE (QA): RECEIVE/APPLY/ACCEPT output of the 1.3.2 install after this
+cleanup, with the return code of the APPLY and the HMA2461 line if there is one. -->
+
+### 7. Check the result
+
+List the members of `FTPD.LINKLIB` and `FTPD.AFTPDLOD`: `FTPD` must be in both.
+Then `LIST CDS MOD(FTPD) .` must show the `FMID` of the release you installed,
+and not `TFTP140`. Start FTPD and read the banner; it must name the release:
+
+```
+FTPD000I FTPD 1.3.2 (xxxxxxx) STARTING
+```
+
+<!-- MEASURE (QA): LIST output and banner from the same run. -->
+
+**What has not been measured.** A system on which a second development build
+was installed over the first.
 
 ## What is not removed, because SMP never owned it
 
