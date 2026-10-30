@@ -15,7 +15,8 @@
 #   5b. UFS file ops: TYPE A + TYPE I roundtrip, LIST, SIZE, DELE, MKD/RMD
 #   6.  Cleanup (DELE/RMD)
 #   7.  Out of space (x37): permanent 552, no hang, data set scratched
-#   8.  Failed member STOR into a full PDS: 552, directory untouched
+#   8.  Failed member STOR into a full PDS: 552, directory untouched, and
+#       no DCB, DD or ENQ left: rename, MKD of the old name, STOR and RMD work
 #   16. Text STOR/RETR in RECFM=VB, VBA and U: one record per line (#185, #245)
 #   9.  APPE: appends to a sequential data set, creates what is missing,
 #       refuses an existing PDS member (550, unchanged), 502 for UFS
@@ -1105,7 +1106,15 @@ ftp_run "delete '$DSN_X37'" "$TMPDIR/ftp_x37_post.log"
 #
 #   - the STOR that failed answered 552, not 250;
 #   - the member it was storing is not in the directory;
-#   - a failed overwrite of an existing member leaves its old content.
+#   - a failed overwrite of an existing member leaves its old content;
+#   - the failed STORs left no DCB, DD or ENQ behind (#265, #282): the full
+#     PDS can be renamed, its old name created again and deleted, a STOR into
+#     a new data set allocates, and the renamed PDS can be deleted.
+#
+# An x37 does not reach FTPD as an ABEND: libc370 returns it as a failed write
+# or close with errno ENOSPC, so this test passes with and without the
+# cur_file ordering of #223.  What that ordering decides is an ABEND inside
+# CLOSE, and Test 11 (SB14) is the test that fails without it.
 #
 # The first needs FTPD to check fclose(); the other two need libc370
 # 2.10.3, whose CLOSE of a failed member skips the STOW (libc370#524).
@@ -1117,6 +1126,9 @@ ftp_run "delete '$DSN_X37'" "$TMPDIR/ftp_x37_post.log"
 section "Test 8: Failed member STOR into a full PDS"
 
 DSN_FULL="${HLQ}.TEST.FULLPDS"
+DSN_FULL_OLD="${HLQ}.TEST.FULLPOLD"
+DSN_FULL_SEQ="${HLQ}.TEST.FULLSEQ"
+DSN_FULL_NOW="$DSN_FULL"     # the full PDS, under whichever name it has now
 MEMRECS=47
 
 # xfer_reply <log>: the reply that ended the transfer -- not the 221 of QUIT
@@ -1133,7 +1145,9 @@ mkmem() {
 info "MKD '$DSN_FULL' (FB 80, BLKSIZE 19040, TRK(2,0), 5 directory blocks)"
 FTP_OUT="$TMPDIR/ftp_full_mkd.log"
 ftp_run "$(cat <<CMDS
+rmdir '$DSN_FULL_OLD'
 rmdir '$DSN_FULL'
+delete '$DSN_FULL_SEQ'
 site recfm=fb
 site lrecl=80
 site blksize=19040
@@ -1220,10 +1234,79 @@ get '$DSN_FULL(M1)' $TMPDIR/full_m1back.txt" "$FTP_OUT"
         else
             fail "The failed overwrite left M1 with $OLD old and $NEW new records (libc370#524: is the sysroot older than 2.10.3?)"
         fi
+
+        # The failed STORs left nothing behind (#265, #282).  A DCB still
+        # open, a DD still allocated or an ENQ still held shows in the next
+        # service that wants the data set: RNFR/RNTO and the MKD of the old
+        # name need the name free (SVC 99 0448 otherwise), the RMDs need the
+        # data set not in use, and a STOR into a new data set needs a
+        # working dynamic allocation.  Its own sessions, after the 552s above.
+        FTP_OUT="$TMPDIR/ftp_full_ren.log"
+        ftp_run "rename '$DSN_FULL' '$DSN_FULL_OLD'" "$FTP_OUT"
+        if grep -q "^250" "$FTP_OUT"; then
+            pass "RNFR/RNTO of the full PDS after the failed STORs answers 250"
+            DSN_FULL_NOW="$DSN_FULL_OLD"
+
+            FTP_OUT="$TMPDIR/ftp_full_mkd2.log"
+            ftp_run "$(cat <<CMDS
+site recfm=fb
+site lrecl=80
+site blksize=19040
+site tracks
+site primary=2
+site secondary=0
+site directory=5
+mkdir '$DSN_FULL'
+CMDS
+)" "$FTP_OUT"
+            if grep -q "^257" "$FTP_OUT"; then
+                pass "MKD of the old name after the rename answers 257"
+                FTP_OUT="$TMPDIR/ftp_full_rmd2.log"
+                ftp_run "rmdir '$DSN_FULL'" "$FTP_OUT"
+                if grep -q "^250" "$FTP_OUT"; then
+                    pass "The PDS created under the old name can be deleted"
+                else
+                    fail "RMD of the new PDS: $(grep -E '^[45][0-9][0-9] ' "$FTP_OUT" | tail -1)"
+                fi
+            else
+                fail "MKD of the old name after the rename: $(grep -E '^[45][0-9][0-9] ' "$FTP_OUT" | tail -1)"
+            fi
+        else
+            fail "RNFR/RNTO of the full PDS: $(grep -E '^[45][0-9][0-9] ' "$FTP_OUT" | tail -1)"
+        fi
+
+        mkmem "$TMPDIR/full_seq.txt" "SEQ-"
+        FTP_OUT="$TMPDIR/ftp_full_seq.log"
+        ftp_run "type ascii
+site recfm=fb
+site lrecl=80
+site blksize=19040
+site tracks
+site primary=1
+site secondary=0
+put $TMPDIR/full_seq.txt '$DSN_FULL_SEQ'" "$FTP_OUT"
+        if grep -q "^226\|^250" "$FTP_OUT"; then
+            pass "A STOR into a new data set after the failed STORs allocates and answers 2xx"
+        else
+            fail "STOR into a new data set after the failed STORs: $(xfer_reply "$FTP_OUT")"
+        fi
+        FTP_OUT="$TMPDIR/ftp_full_seqdel.log"
+        ftp_run "delete '$DSN_FULL_SEQ'" "$FTP_OUT"
+        if grep -q "^250" "$FTP_OUT"; then
+            pass "The data set stored after the failure can be deleted"
+        else
+            fail "DELE of the data set stored after the failure: $(grep -E '^[45][0-9][0-9] ' "$FTP_OUT" | tail -1)"
+        fi
     fi
 fi
 
-ftp_run "rmdir '$DSN_FULL'" "$TMPDIR/ftp_full_post.log"
+FTP_OUT="$TMPDIR/ftp_full_post.log"
+ftp_run "rmdir '$DSN_FULL_NOW'" "$FTP_OUT"
+if grep -q "^250" "$FTP_OUT"; then
+    pass "The full PDS can be deleted after the failed STORs (no DD or ENQ left)"
+else
+    fail "RMD of the full PDS after the failed STORs: $(grep -E '^[45][0-9][0-9] ' "$FTP_OUT" | tail -1)"
+fi
 
 # ============================================================
 # TEST 9: APPE
