@@ -103,6 +103,52 @@ of UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
 authorize them and how to upgrade from an earlier release is the subject of
 @ug-install.
 
+== What Is New in FTPD 1.3.3 <ug-intro-new-133>
+
+#idx("FTPD 1.3.3", "changes")
+FTPD 1.3.3 is a patch release. It changes these behaviours against 1.3.2 and
+adds no function. Each is described where the book explains the subject:
+
+#tab(caption: [Changes in FTPD 1.3.3])[
+  #table(columns: (2.3in, 1fr),
+    [Change], [Where],
+    [A job that you submit in the JES view gets #cmd("USER") and
+      #cmd("PASSWORD") on its JOB statement, and FTPD finds that statement only
+      as #cmd("//name JOB"): two slashes, a name of one to eight characters,
+      blanks and the operation. Before, any card with the word JOB between
+      blanks counted, a comment card too. The cards went behind it, the real
+      JOB statement had none, and the job ran without an owner.],
+      [@ug-jes-submit],
+    [A #cmd("get") from the UFS view that cannot read the file to the end is
+      answered with
+      #cmd("451 Read error on the server after N bytes: transfer is incomplete."),
+      and one whose data connection breaks with
+      #cmd("426 Connection closed; transfer aborted after N bytes."). Before,
+      both got #cmd("226 Transfer complete"), and a client kept a part of the
+      file as if it were the whole.],
+      [@ug-ufs-read-errors, @ug-errors, _FTPD Reference_, "The 451 Reply"],
+    [The list of the spool files of a job (#cmd("dir JOB00036")) has the layout
+      of z/OS: the job line, a table with an ID for each file, and the last
+      line #cmd("N spool files"). The ID is the number of
+      #cmd("get JOB00036.n"). The input files of the job are not listed.
+      Before, the list had a layout of its own, and a client that reads the
+      layout of z/OS, such as the job commands of the Zowe CLI plug-in for
+      z/OS FTP, found no table in it.],
+      [@ug-jes-output, _FTPD Reference_, "The JES View"],
+    [When two sessions ask for a passive port at the same moment, FTPD takes
+      the next free port of #cmd("PASVPORTS") for the second one. Before,
+      #cmd("PASV") and #cmd("EPSV") of that session were answered
+      #cmd("425 Cannot open passive connection") although the range had free
+      ports.],
+      [_FTPD Reference_, "The 425 Reply"],
+    [FTPD asks the host for room for 128 waiting connections, where it asked
+      for 10. Before, a burst of more clients than that lost some of them: the
+      connect of the client worked, and the #cmd("220") came late or not at
+      all.],
+      [@ug-ops-ses, _FTPD Reference_, "The Threads"],
+  )
+] <ug-intro-new-133-tab>
+
 == What Is New in FTPD 1.3.2 <ug-intro-new-132>
 
 #idx("FTPD 1.3.2", "changes")

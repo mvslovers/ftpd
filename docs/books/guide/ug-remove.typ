@@ -9,9 +9,9 @@ it can be installed again. The main way lets SMP do the work: a dummy
 function, #cmd("TFTPDEL"), deletes every release of FTPD, and the load module
 leaves both libraries with it. A way that uses UCLIN alone stays as the
 fallback (@ug-remove-uclin). If you want to move to a newer release, you are
-in the wrong chapter: a release deletes its predecessor when it is installed
-(@ug-install-upgrade), and the last step below would scratch the libraries
-that the new release installs into.
+in the wrong chapter: a release deletes the releases it replaces when it is
+installed (@ug-install-upgrade), and the last step below would scratch the
+libraries that the new release installs into.
 
 #note[*Did you install a development build of #cmd("main")?* A build of
 1.4.0-dev carries #cmd("TFTP140"), which none of the steps below names. A build
@@ -53,26 +53,26 @@ cleanup step of the install job scratched it.
 *Earlier releases left their FMIDs behind.* Since 1.1.0 there is one FMID for
 each release: #cmd("TFTP110") is 1.1.0 and nothing else, #cmd("TFTP120") is
 1.2.0, #cmd("TFTP130") is 1.3.0, #cmd("TFTP131") is 1.3.1, #cmd("TFTP132")
-is 1.3.2 and #cmd("TFTP133") is 1.3.3. #cmd("TFTP100") is the exception, from the
-policy that came before it: it covered 1.0.0, 1.0.1 and 1.0.2 alike. Each
-upgrade deletes the release before it and leaves its id in the inventory as a
-mark, in both zones:
+is 1.3.2 and #cmd("TFTP133") is 1.3.3. #cmd("TFTP100") is the exception, from
+the policy that came before it: it covered 1.0.0, 1.0.1 and 1.0.2 alike. Each
+upgrade deletes the release before it (1.3.3 the three before it) and leaves
+its id in the inventory as a mark, in both zones:
 
 #screen(```
 TFTP131   TYPE            = FUNCTION
           DELBY           = TFTP132
 ```)
 
-A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.3.2 to 1.3.3
-carries one such mark for every step. (The 1.3.3 install deletes #cmd("TFTP132"),
-#cmd("TFTP131") and #cmd("TFTP130") at once, so after it all three read
-#cmd("DELBY = TFTP133"), also on a system that never had one of them.) Deleting the id of the current release and of its
-predecessor clears only the newest of them. Both ways below therefore name
-every id that FTPD has ever used (#cmd("TFTP100"), #cmd("TFTP110"),
-#cmd("TFTP120"), #cmd("TFTP130"), #cmd("TFTP131"), #cmd("TFTP132") and #cmd("TFTP133")), and you
-need not know which releases the system has seen. The jobs are written for
-releases up to 1.3.3. A later
-release adds its own id to every list in this chapter.
+A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.3.2 to
+1.3.3 carries one such mark for every step. (The 1.3.3 install deletes
+#cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130") at once, so after it all
+three read #cmd("DELBY = TFTP133"), also on a system that never had one of
+them.) Deleting the id of the current release and of its predecessor clears
+only the newest of them. Both ways below therefore name every id that FTPD has
+ever used (#cmd("TFTP100"), #cmd("TFTP110"), #cmd("TFTP120"), #cmd("TFTP130"),
+#cmd("TFTP131"), #cmd("TFTP132") and #cmd("TFTP133")), and you need not know
+which releases the system has seen. The jobs are written for releases up to
+1.3.3. A later release adds its own id to every list in this chapter.
 
 == Step 1: Stop the Server <ug-remove-stop>
 

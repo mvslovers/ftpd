@@ -751,24 +751,27 @@ which FMID owns the module. Run this under the SMP procedure:
   )
 ]
 
-For an upgrade from 1.3.0, 1.3.1 or 1.3.2, the steps are the ones of a new installation without
-the allocation: stop FTPD (@ug-install-stop), run the install job
-(@ug-install-job) and start FTPD (@ug-install-start). The #cmd("APPLY") ends
-with #cmd("COND CODE 0004") (@ug-install-good). The banner must name the new
-release; #cmd("FTPD000I FTPD 1.3.0"), #cmd("1.3.1") or #cmd("1.3.2") on the first
-line means that the started task still runs the old load module. Check the member list and look for
-#cmd("HMA2380") in the job log, not the condition codes. This was measured for
-the upgrade from 1.3.1 to 1.3.2 on a test system that carried 1.3.1, installed
-through SMP. The #cmd("APPLY") ended with #cmd("COND CODE 0004") and
-#cmd("HMA2461 SYSMOD TFTP131 NOT FOUND"), and the #cmd("ACCEPT") with 0000. The
-started task then printed the banner of 1.3.2. The upgrade to 1.3.3 gives the
-same picture, with #cmd("HMA2461") naming the id that was installed
-(#cmd("TFTP130"), #cmd("TFTP131") or #cmd("TFTP132")). That was measured with a
-candidate package of 1.3.3 on three test systems, one on each of the three
-releases; the released package has not been measured. If the
-configuration member of 1.2.0 still has a line for #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a
-volume, the start also prints #cmd("FTPD062W"); the lines have no effect and
-can go.
+For an upgrade from 1.3.0, 1.3.1 or 1.3.2, the steps are those of a new
+installation without the allocation: stop FTPD (@ug-install-stop), run the
+install job (@ug-install-job) and start FTPD (@ug-install-start). The
+#cmd("APPLY") ends with #cmd("COND CODE 0004") (@ug-install-good). Do not trust
+the condition codes alone: check the member list and look for #cmd("HMA2380")
+in the job log. The banner must name the new release;
+#cmd("FTPD000I FTPD 1.3.0"), #cmd("1.3.1") or #cmd("1.3.2") on the first line
+means that the started task still runs the old load module.
+
+The upgrade from 1.3.1 to 1.3.2 was measured on a test system that carried
+1.3.1, installed through SMP. The #cmd("APPLY") ended with
+#cmd("COND CODE 0004") and #cmd("HMA2461 SYSMOD TFTP131 NOT FOUND"), and the
+#cmd("ACCEPT") with 0000. The started task then printed the banner of 1.3.2.
+The upgrade to 1.3.3 gives the same picture, with #cmd("HMA2461") naming the id
+that was installed (#cmd("TFTP130"), #cmd("TFTP131") or #cmd("TFTP132")). That
+was measured with a candidate package of 1.3.3 on three test systems, one on
+each of the three releases; the released package has not been measured.
+
+If the configuration member of 1.2.0 still has a line for
+#cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a volume, the start also prints
+#cmd("FTPD062W"); the lines have no effect and can go.
 
 === From 1.0.x <ug-install-from10>
 

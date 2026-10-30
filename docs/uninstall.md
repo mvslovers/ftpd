@@ -24,8 +24,9 @@ uses `UCLIN` alone stays as the [fallback](#the-fallback-uclin-alone).
 > first.
 
 > **If you are upgrading rather than removing, you are in the wrong document.**
-> A release deletes its predecessor as part of its own install, and the
-> scratch step below would delete the libraries the new release installs into.
+> A release deletes the releases it replaces as part of its own install, and
+> the scratch step below would delete the libraries the new release installs
+> into.
 > See the upgrade sections of [installation.md](installation.md).
 
 ## What this release put on the system
@@ -49,24 +50,27 @@ step of the install job scratched it.
 
 **Earlier releases left their FMIDs behind.** Since 1.1.0 there is one FMID per
 *release*: `TFTP110` is 1.1.0 and nothing else, `TFTP120` is 1.2.0,
-`TFTP130` is 1.3.0, `TFTP131` is 1.3.1, `TFTP132` is 1.3.2 and `TFTP133` is 1.3.3. `TFTP100` is the exception, from the
-policy that came before it: it covered 1.0.0, 1.0.1 and 1.0.2 alike. Each upgrade deletes the
-release before it and leaves its id in the inventory as a mark, in both zones:
+`TFTP130` is 1.3.0, `TFTP131` is 1.3.1, `TFTP132` is 1.3.2 and `TFTP133` is
+1.3.3. `TFTP100` is the exception, from the policy that came before it: it
+covered 1.0.0, 1.0.1 and 1.0.2 alike. Each upgrade deletes the release before
+it (1.3.3 the three before it) and leaves its id in the inventory as a mark, in
+both zones:
 
 ```
 TFTP130   TYPE            = FUNCTION
           DELBY           = TFTP131
 ```
 
-A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.3.2 to 1.3.3 carries
-one such mark for every step. (The 1.3.3 install deletes `TFTP132`, `TFTP131`
-and `TFTP130` at once, so after it all three read `DELBY = TFTP133`, also on a
-system that never had one of them.) Deleting the id of the current release and of its
-predecessor clears only the newest of them. Both ways below therefore name
-**every id FTPD has ever used** (`TFTP100`, `TFTP110`, `TFTP120`,
-`TFTP130`, `TFTP131`, `TFTP132` and `TFTP133`), and you need not know which releases
-the system has seen. The jobs are written for releases up to 1.3.3. If a later release adds an
-id, it is added to every list here.
+A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.3.2 to
+1.3.3 carries one such mark for every step. (The 1.3.3 install deletes
+`TFTP132`, `TFTP131` and `TFTP130` at once, so after it all three read
+`DELBY = TFTP133`, also on a system that never had one of them.) Deleting the
+id of the current release and of its predecessor clears only the newest of
+them. Both ways below therefore name **every id FTPD has ever used**
+(`TFTP100`, `TFTP110`, `TFTP120`, `TFTP130`, `TFTP131`, `TFTP132` and
+`TFTP133`), and you need not know which releases the system has seen. The jobs
+are written for releases up to 1.3.3. If a later release adds an id, it is
+added to every list here.
 
 ---
 
