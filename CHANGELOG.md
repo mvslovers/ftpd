@@ -10,7 +10,65 @@ SMP FMID `TFTP133`, which deletes `TFTP132`, `TFTP131` and `TFTP130`: a system
 on 1.3.0, 1.3.1 or 1.3.2 installs it directly. A system on 1.2.0 or earlier
 installs 1.3.0 first.
 
+**Read this first: the layout of `LIST JOBnnnnn` changes.** In the JES view, the
+list of the spool files of a job now has the layout of z/OS. A script that reads
+the old layout must be changed (see the first entry under "Fixed"). The list of
+the jobs, `LIST` without a job ID, is unchanged.
+
 ### Fixed
+
+- **`LIST JOBnnnnn` answers in the layout of z/OS.** In the JES view, `LIST`
+  with a job ID answered with a table of its own: no job line, no line of
+  dashes, no ID column and no count, and every line began with the job name and
+  the job ID. A client that reads the layout of z/OS found no table in it, so
+  the Zowe CLI plug-in for z/OS FTP reported `No spool file.` for a job that
+  had four. The list now has the job line, a line of dashes, the table with an
+  ID column and, as its last line, the number of files:
+
+  ```
+  JOBNAME  JOBID    OWNER    STATUS CLASS
+  PAYROLL  JOB00038 ALICE    OUTPUT  A   RC=0000
+  --------
+          ID  STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
+          001 JES2              H JESMSGLG        931
+          002 JES2              H JESJCL          810
+          003 JES2              H JESYSMSG       3192
+          004 STEP1             H SYSPRINT        484
+          005 STEP1             H SYSUT2           80
+  5 spool files
+  ```
+
+  The ID is the number that `RETR` takes after the point
+  (`RETR JOB00038.3`), counted from 1 and printed with three digits. The list
+  shows the files that `RETR` can send and no others, so the input files of the
+  job (`JESJCLIN`, `JESINTXT` and the `SYSIN` data) are gone from it and it has
+  fewer lines than before. The files that JES2 wrote itself have the step
+  `JES2`. A job without such a file (still in the input queue, or its output
+  purged) gets the header and the job line alone. The last line says `files`
+  also for one file. `RETR` is unchanged. (#370)
+
+- **A comment card is no longer taken for the JOB statement.** When a job is
+  submitted in the JES view, FTPD adds `NOTIFY`, `USER` and `PASSWORD` behind
+  the JOB statement. It found the statement as the first card with the word JOB
+  between blanks, so a comment card such as `//* RUN THE JOB NOW` before the
+  real JOB statement was taken for it. The three operands went behind the
+  comment, the real JOB statement got none, and the job ran without an owner
+  instead of under the identity of the user. FTPD now takes a card for the JOB
+  statement only if it starts with `//`, has a name of one to eight characters
+  (letters, digits, `@`, `#`, `$`), blanks, and the operation `JOB`. Comment
+  cards and any other card before it are skipped. (#277)
+
+- **`PASV` and `EPSV` go on with the next port when a session lost the race for
+  one.** FTPD walks the range of `PASVPORTS` and takes the first port that
+  `bind()` accepts, and calls `listen()` on it afterwards. When several
+  sessions asked for a passive port at the same moment, two of them could be
+  handed the same port; the second `listen()` failed with `EADDRINUSE`, and the
+  session was answered `425 Cannot open passive connection` although the range
+  had free ports. FTPD wrote `ftpd_data_pasv: listen() failed, errno=48` to the
+  log for each. A `listen()` that fails with `EADDRINUSE` now counts as a port
+  that is taken, like a failed `bind()`: FTPD closes the socket and tries the
+  next port. `425` comes only when the whole range is in use, and any other
+  `listen()` error still ends the walk at once. (#315)
 
 - **`RETR` from UFS no longer answers `226` for a file that was not sent to the
   end.** The server loop ended at the first read that returned no data, and
