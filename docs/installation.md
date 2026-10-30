@@ -1049,12 +1049,45 @@ FTPD000I FTPD <version> (A3F2C91) STARTING
 FTPD005I LIBC370 2.25.1 (FCDE4E8)
 FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)
 FTPD004I STC RUNS AS <user>/<group>
+RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
 FTPD054I LISTENING ON ANY PORT 2121
 FTPD001I FTPD <version> READY
 ```
 
 `FTPD004I` names the identity RAKF gave the started task: the one you mapped
 the name `FTPD` to, or `STC`/`STCGROUP` where RAKF has no mapping (step 8).
+
+**The `RAKF0004` line is expected, and it is not an error.** It does not come
+from FTPD but from RAKF. Since FTPD 1.3.3 an authorized FTPD checks once at
+every start that RAKF really verifies a user ID: it tries to log in the user ID
+`?FTPDPRB` with a password that cannot be valid. The `?` is not a character of
+a user ID, so RAKF must refuse the login, and it reports the refusal with this
+line. The refusal is the answer FTPD expects. RAKF may print one more character
+behind the eight characters of the name (`?FTPDPRBO` above), so a rule that
+looks for the line has to match the prefix `?FTPDPRB`. An automation that
+reacts to `RAKF0004` has to leave this user ID out. An FTPD that is not
+authorized (`FTPD003W`) makes no check and leaves no `RAKF0004` line.
+
+**`FTPD004E` means that the check failed.** If RAKF accepts the login of
+`?FTPDPRB`, it accepts any user ID and password, and FTPD does not trust it. It
+writes two lines to the console, instead of the `RAKF0004` line:
+
+```
+FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD
+FTPD004E ALL LOGINS ARE REFUSED: CORRECT THE SECURITY TABLES, THEN RESTART FTPD
+```
+
+FTPD goes on and ends the start with `FTPD001I … READY`, but every `PASS` is
+answered with `530 Login not possible: the security check of this server is not
+working. Ask the administrator to check the FTPD004E console message.` In the
+measured case RAKF reported its tables as invalid or missing: it wrote
+`RAKF0001 USERID TABLE INVALID OR MISSING` and
+`RAKF0002 STC ACCESS ALLOWED: USER: ?FTPDPRBO` for the check user ID. Correct
+the tables (step 8, and
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/docs/FTPD_RAKF_SETUP.md),
+section 6), then stop and start FTPD (`/P FTPD`, `/S FTPD`). The check is made
+only at the start. Correcting the tables alone changes nothing, and no console
+command repeats the check.
 
 The two build stamps identify exactly what is running: `FTPD000I` gives the
 version and the commit it was built from, `FTPD005I` the libc370 it was linked
@@ -1151,6 +1184,8 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 | `FTPD003W APF SETUP FAILED`; every `PASS` answers `530 Login not possible: FTPD is not APF authorized` | No RAKF (so no SVC 244) and no APF entry — step 2. Nobody can log in until this is fixed |
 | `FTPD004I STC RUNS AS STC/STCGROUP` | RAKF assigned the default started-task account, which has Operations authority — step 8 |
 | `FTPD004W NO SECURITY ENVIRONMENT FOR THE STC` | The address space has no ACEE, and RAKF permits any access without one — step 8 |
+| `RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRB…` right after `FTPD004I` | Not an error. It is the refusal of the check login that FTPD makes at every start — step 9 |
+| `FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD`; every `PASS` answers `530 Login not possible: the security check of this server is not working` | RAKF accepted the check login, so its tables do not work (not loaded, or invalid). Correct them (step 8), then stop and start FTPD: the check is made only at the start — step 9 |
 | `FTPD002E FTPD IS ALREADY ACTIVE ON PORT n` | An older instance is still up. `/P FTPD` first |
 | `FTPD009E PARMLIB (DD:FTPDPRM) READ FAILED` | An I/O error on the parmlib data set, not a syntax error. FTPD refuses to start on a half-read configuration -- the member is unreadable where it stopped, so copy it in again |
 | `530 Login incorrect` for a valid user | RAKF user or password wrong — step 8 |

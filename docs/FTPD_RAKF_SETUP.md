@@ -467,13 +467,58 @@ so nothing FTPD does outside a user's session is checked.
 1. `S RAKF` — expect `RAKFUIDS4  USER TABLE UPDATED`.
 2. `/S FTPD` — expect `FTPD004I STC RUNS AS` followed by the identity you
    configured for the started task. `STC/STCGROUP` there means no mapping
-   applies (section 5).
+   applies (section 5). One line `RAKF0004 … USER:?FTPDPRB` follows it. That is
+   expected (below); `FTPD004E` is not.
 3. Log in over FTP with an ordinary userid that is in the permitted group, and
    with one that is not. The second must be refused with `530`.
 
 Step 3 is the one worth doing. Steps 1 and 2 only prove the tables loaded and
 which identity the started task has; they say nothing about whether `FTPAUTH` is actually
 gating anything.
+
+### The check at start: `RAKF0004` and `FTPD004E`
+
+Since FTPD 1.3.3 an authorized FTPD checks once at every start that RAKF
+verifies a user ID. It tries to log in the user ID `?FTPDPRB` with a password
+that cannot be valid. The `?` is not a character of a user ID, so a working
+RAKF refuses the login. Two things can show on the console.
+
+**A normal start leaves one line of RAKF**, right after `FTPD004I`:
+
+```
+FTPD004I STC RUNS AS FTPD/STARTED
+RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
+```
+
+The line comes from RAKF, not from FTPD, and it is the expected answer. Nothing
+is wrong and nothing has to be done. RAKF may print one more character behind
+the eight characters of the name (`?FTPDPRBO` above), so a rule that looks for
+the line has to match the prefix `?FTPDPRB`. An automation that reacts to
+`RAKF0004` has to leave this user ID out. An FTPD that is not authorized
+(`FTPD003W`) makes no check and leaves no such line.
+
+**`FTPD004E` means that RAKF accepted the login.** A RAKF that accepts a user
+ID that cannot exist accepts any user ID and password, so FTPD does not trust
+it. FTPD writes two lines, and no `RAKF0004` line comes before them:
+
+```
+FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD
+FTPD004E ALL LOGINS ARE REFUSED: CORRECT THE SECURITY TABLES, THEN RESTART FTPD
+```
+
+FTPD stays up and ends the start with `FTPD001I … READY`, but every `PASS` is
+answered with `530 Login not possible: the security check of this server is not
+working. Ask the administrator to check the FTPD004E console message.` The
+refused `PASS` does not count as a failed attempt. In the measured case RAKF
+reported its tables as invalid or missing and wrote
+`RAKF0001 USERID TABLE INVALID OR MISSING` and
+`RAKF0002 STC ACCESS ALLOWED: USER: ?FTPDPRBO` for the check user ID.
+
+What to do: correct the cause (sections 1 and 2: the tables must be loaded
+and valid, `S RAKF`), then **stop and start FTPD** (`/P FTPD`, `/S FTPD`). The
+check is made only at the start. Correcting the tables alone changes nothing,
+there is no console command that repeats the check, and no setting turns it
+off. After the restart the `RAKF0004` line is back and the logins work.
 
 ---
 
@@ -872,6 +917,8 @@ after `S RAKFPROF`.
 | Reload rejected and the echoed card looks fine | Most likely a blank password. RAKF 1.2.x requires columns 19–26 to be filled — section 2 |
 | `RAKF008W illegal operation -- access denied` | The `RAKFADM` FACILITY profile denies the table-update utility |
 | `FTPD004I STC RUNS AS STC/STCGROUP` | No mapping of the STC name `FTPD` applies — the RAKF release has none, or the name is not in its configuration (on RAKF 2.0.0: no userid `FTPD` in `USERS`). FTPD is running with Operations authority |
+| `RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRB…` after `FTPD004I` | Not an error: the refusal of the check login FTPD makes at every start — section 6 |
+| `FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD`; every `PASS` answers `530 Login not possible: the security check of this server is not working` | RAKF accepted the check login, so its tables do not work. Correct them (sections 1 and 2), then stop and start FTPD — section 6 |
 | `FTPD004W NO SECURITY ENVIRONMENT` | The address space has no ACEE. RAKF permits any access without one |
 | `FTPD003W APF SETUP FAILED RC=n` | No APF authorisation and no SVC 244. Nobody can log in: every `PASS` answers `530 Login not possible: FTPD is not APF authorized`. On RAKF 2.0.0 the group of the `FTPD` user may lack READ on `FACILITY` `SVC244` — section 2 |
 | `ADDUSER`, `PERMIT` and the other RAKF commands refuse to run | The user lacks the SPECIAL authority (column 30 of `USERS`, RAKF 2.0.0) — section 1 |
