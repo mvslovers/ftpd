@@ -30,6 +30,12 @@
 **
 ** The manager state is set directly: the struct is public in <mvs/thread.h>
 ** and the test must not depend on winning a race against a real shutdown.
+** The manager task writes mgr->state every time it wakes (WAITING before its
+** wait, RUNNING after it) and does not look at QUIESCE, so the store and the
+** ftpd_session_queue() call in round 2 are made under lock(mgr, 0), the lock
+** the manager takes around each of those writes.  Without it, the wake the
+** worker causes when it returns to cthread_worker_wait() after round 1 can
+** land in between and reset the state (ftpd#411).
 **
 ** MVS-only: thread manager, SVC 75 sockets.
 ** PARM='<port>' is the loopback listen port (default 21771).
@@ -47,6 +53,7 @@
 #include <mvs/socket.h>
 #include <mvs/thread.h>
 #include <mvs/ecb.h>
+#include <mvs/lock.h>
 #include <mbtcheck.h>
 
 #include "ftpd.h"
@@ -125,7 +132,7 @@ main(int argc, char **argv)
     CTHDMGR           *mgr;
     ftpd_session_t    *sess;
     int                lsn, cli, srv;
-    int                rc, n, i;
+    int                rc, n, i, locked;
     char               buf[128];
 
     if (argc > 1 && argv[1] && argv[1][0])
@@ -195,13 +202,16 @@ main(int argc, char **argv)
 
     /* ---- round 2: a quiescing pool refuses it ----------------------- */
 
-    mgr->state = CTHDMGR_STATE_QUIESCE;
-
     if (connected_pair(lsn, port, &cli, &srv) == 0) {
         sess = ftpd_session_new(server, srv);
         CHECK(sess != NULL, "round 2: session allocated");
         if (sess) {
+            /* cthread_queue_add() sees the lock held and leaves it alone */
+            locked = lock(mgr, 0);
+            mgr->state = CTHDMGR_STATE_QUIESCE;
             rc = ftpd_session_queue(server, sess);
+            if (locked == 0)
+                unlock(mgr, 0);
             CHECK_EQ(rc, -1, "round 2: a quiescing pool refuses the session");
             CHECK_EQ(ctx.got, 1, "round 2: the worker received nothing");
 
