@@ -140,6 +140,9 @@ FTPD has three kinds of tasks:
   connection that waits. Once the main task has read a stop request, the
   socket thread ends its wait at once and takes no further connection after
   the one in hand. Before FTPD 1.3.0, it accepted one connection at each look.
+  The connections that wait between two looks are held by the host. The
+  socket thread asks it for room for 128 of them (FTPD 1.3.2 and earlier: 10).
+  The host may limit that number.
 - The worker threads run the sessions. FTPD creates the pool with
   #cmd("MAXSESSIONS") as its size. One worker serves one session until the
   client quits or the connection closes.

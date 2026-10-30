@@ -26,6 +26,14 @@ installs 1.3.0 first.
   `RETR: read failed on PATH after N bytes sent (rc=N)` or
   `RETR: data connection failed on PATH after N bytes`. (#313)
 
+- **A burst of connections is greeted.** The listener takes the waiting
+  connections once each second, and it asked the host for a queue of 10 for
+  them. A burst of more clients than that lost some of them: the client's
+  connect succeeded, and the `220` came late or not at all. FTPD now asks for
+  128. Above `MAXSESSIONS`, the rest is still closed at once without a reply.
+  The 128 is a request: the host limits the queue with a limit of its own.
+  (#327)
+
 ## 1.3.2 — 2026-10-28
 
 A patch release for 1.3.x: fixes only, no new function. It is a drop-in
