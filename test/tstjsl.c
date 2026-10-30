@@ -79,6 +79,11 @@ main(void)
     classcol = word_at(head, proccol + 8);
     ddcol = word_at(head, classcol + 1);
     bytecol = word_at(head, ddcol + 6);
+    if (stepcol < 0 || proccol < 0 || classcol < 0 || ddcol < 0 ||
+        bytecol < 0) {
+        CHECK(0, "all five header words are found");
+        return mbt_test_summary("TSTJSL");
+    }
     CHECK(strncmp(head + stepcol, "STEPNAME", 8) == 0, "STEPNAME column");
     CHECK(strncmp(head + proccol, "PROCSTEP", 8) == 0, "PROCSTEP column");
     CHECK(head[classcol] == 'C', "C column");
