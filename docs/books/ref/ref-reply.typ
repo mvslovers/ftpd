@@ -11,7 +11,7 @@ the last, as in #cmd("250-It is known to JES as JOB00042") followed by
 line.
 
 The text of a reply is meant for people. A client should act on the code. The
-texts that this book quotes are the ones of FTPD 1.3.2.
+texts that this book quotes are the ones of FTPD 1.3.3.
 
 == Codes That FTPD Sends <ref-reply-list>
 
@@ -95,6 +95,12 @@ serves one transfer: the client sends a new #cmd("PORT"), #cmd("PASV") or
 no port in #cmd("PASVPORTS") is free, that #cmd("PASVBIND") is not an address of
 the host, and a failure of the socket calls. The log in #cmd("STDOUT") says
 which.
+
+Two sessions that ask for a passive port at the same moment can be handed the
+same port by the host. FTPD then goes on with the next port of
+#cmd("PASVPORTS") for the second session. FTPD 1.3.2 and earlier answered
+#cmd("425 Cannot open passive connection") although the range had free ports;
+FTPD 1.3.3 answers it when the range is used up.
 
 == The 451 Reply <ref-reply-451>
 

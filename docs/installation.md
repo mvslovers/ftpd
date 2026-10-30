@@ -280,14 +280,20 @@ before you install.
 | RAKF | 1.2.x or 2.0.0 | unchanged |
 
 1.3.3 is a patch release and adds no function. What changes in behaviour is in
-the tables *What Is New in FTPD 1.3.2*, and for a system that comes from 1.3.0
-or 1.3.1 also *1.3.1* and *1.3.0*, in the User's Guide (the book that comes
-with the release). Of 1.3.2, in short: `LIST` and `NLST` with a name in quotes or a
-pattern such as `'SYS2.**'` read the catalog at the level of that name from
-any working directory; a listing with nothing to show is answered
-`550 No data sets found.`; a `**` that is not a qualifier of its own is refused
-with `501`; and `CWD`, `MKD` and `RMD` refuse a name with a member in
-parentheses with `501`.
+the table *What Is New in FTPD 1.3.3* in the User's Guide (the book that comes
+with the release). For a system that comes from 1.3.0 or 1.3.1, the tables for
+1.3.2, 1.3.1 and 1.3.0 in the same chapter apply as well. Of 1.3.3, in short:
+
+- `LIST JOBnnnnn` answers in the layout of z/OS, with an ID for each spool file
+  and the last line `N spool files`; the input files of the job are no longer
+  listed. A script that reads the old layout must be changed.
+- A `RETR` from the UFS view that cannot read the file to the end, or whose
+  data connection breaks, is answered with `451` or `426` instead of `226`.
+- A job that is submitted in the JES view gets `USER` and `PASSWORD` on its
+  `JOB` statement; a comment card that holds the word JOB no longer takes them.
+- `PASV` and `EPSV` go on with the next port of `PASVPORTS` when two sessions
+  were handed the same one.
+- The listener asks the host for room for 128 waiting connections, not 10.
 
 **If you use the UFS view, you need UFSD 1.5.2 or later.** On 1.3.0 that is
 a change, because 1.3.0 carried the `libufs` of UFSD 1.4.0. UFSD 1.5.1
@@ -519,9 +525,8 @@ HMA2050 APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 
 The excerpt was measured on the upgrade from 1.3.1 to 1.3.2. The upgrade to
 1.3.3 gives the same picture and names the id that was installed: `TFTP130`,
-`TFTP131` or `TFTP132`. That was measured with a candidate package of 1.3.3, one
-system on each of the three, on 2026-10-30; the released package has not been
-measured.
+`TFTP131` or `TFTP132`. That was measured with a candidate package of 1.3.3,
+one system on each of the three; the released package has not been measured.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
 never will, because it was deleted rather than superseded. The `APPLY` itself
