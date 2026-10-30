@@ -17,6 +17,7 @@
 #include "ftpd#jcd.h"
 #include "ftpd#jfl.h"
 #include "ftpd#jid.h"
+#include "ftpd#jsl.h"
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
 #include "ftpd#dat.h"
@@ -387,6 +388,62 @@ job_retcode(JESJOB *job, char *buf, int bufsz)
 }
 
 /* --------------------------------------------------------------------
+** The job line of the JES listings: LIST of the jobs and LIST JOBnnnnn
+** show the same line for a job (no line end).
+**
+** z/OS format:
+**   JOBNAME  JOBID    OWNER    STATUS CLASS
+**   TESTJOB  JOB00042 IBMUSER  OUTPUT A        RC=0000
+** ----------------------------------------------------------------- */
+static void
+job_line(JESJOB *job, char *buf, int bufsz)
+{
+    char rcbuf[16];
+    char class_buf[FTPD_JWN_PRTSZ];
+    char jname[FTPD_JWN_PRTSZ];
+    char jid[FTPD_JWN_PRTSZ];
+    char jown[FTPD_JWN_PRTSZ];
+    const char *class_str;
+
+    ftpd_jwn_printable(jname, sizeof(jname), (const char *)job->jobname);
+    ftpd_jwn_printable(jid, sizeof(jid), (const char *)job->jobid);
+    ftpd_jwn_printable(jown, sizeof(jown), (const char *)job->owner);
+
+    /* z/OS CLASS column: for STCs/TSO use first 3 chars of jobid,
+    ** for normal jobs use the execution class character */
+    if (strncmp(jid, "STC", 3) == 0) {
+        class_str = "STC";
+    } else if (strncmp(jid, "TSU", 3) == 0) {
+        class_str = "TSU";
+    } else if (job->eclass && job->eclass != ' ') {
+        char ec[2];
+
+        ec[0] = (char)job->eclass;
+        ec[1] = '\0';
+        ftpd_jwn_printable(class_buf, sizeof(class_buf), ec);
+        class_str = class_buf;
+    } else {
+        class_str = "";
+    }
+
+    snprintf(buf, bufsz, "%-8.8s %-8.8s %-8.8s %-6s  %-3s %s",
+             jname, jid, jown, job_status(job->q_type), class_str,
+             job_retcode(job, rcbuf, sizeof(rcbuf)));
+}
+
+/* --------------------------------------------------------------------
+** Is this DD one of the spool files the JES view numbers?  The number after
+** the point in RETR JOBnnnnn.n and the ID column of LIST JOBnnnnn count
+** these, from 1, in the order of the job's DD list.  The input of the job
+** (JESJCLIN, JESINTXT, the SYSIN data) is not one of them.
+** ----------------------------------------------------------------- */
+static int
+dd_is_spool_file(const JESDD *dd)
+{
+    return !(dd->flag & FLAG_SYSIN);
+}
+
+/* --------------------------------------------------------------------
 ** The one question FTPD asks RACF about the spool: may this session's ACEE
 ** have READ (or UPDATE) on a JESSPOOL entity?  The answer is racf_auth()'s
 ** return code, unmodified; ftpd_jwn_level() reads it.  This is the only
@@ -585,8 +642,19 @@ job_by_id(JESJOB **joblist, const char *jobid)
 
 /* --------------------------------------------------------------------
 ** List spool files for a specific job (LIST JOBnnnnn).
-** z/OS format:
-**   JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
+**
+** z/OS format: the job line, a line of dashes, the table of the spool files
+** (ftpd#jsl.h) and their count.  Clients find the table by its ID column
+** (#370).  The ID of a file is the number RETR takes after the point, so only
+** the files RETR can send are listed (dd_is_spool_file()).  A job without
+** such a file (still in the input queue, or its output purged) gets the job
+** line alone.
+**   JOBNAME  JOBID    OWNER    STATUS CLASS
+**   TESTJOB  JOB00042 IBMUSER  OUTPUT A        RC=0000
+**   --------
+**           ID  STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
+**           001 JES2              H JESMSGLG       1064
+**   1 spool files
 ** ----------------------------------------------------------------- */
 static int
 list_job_files(ftpd_session_t *sess, const char *jobid_arg)
@@ -596,10 +664,11 @@ list_job_files(ftpd_session_t *sess, const char *jobid_arg)
     JESJOB *job;
     ftpd_jwn_tally_t tally;
     char jobid[16];
-    char jname[FTPD_JWN_PRTSZ];
-    char jid[FTPD_JWN_PRTSZ];
+    char line[128];
     int visible;
     int aborted = 0;
+    int nfiles;
+    int id;
     int i;
 
     for (i = 0; jobid_arg[i] && i < (int)sizeof(jobid) - 1; i++)
@@ -641,16 +710,32 @@ list_job_files(ftpd_session_t *sess, const char *jobid_arg)
         return 0;
     }
 
-    ftpd_jwn_printable(jname, sizeof(jname), (const char *)job->jobname);
-    ftpd_jwn_printable(jid, sizeof(jid), (const char *)job->jobid);
-
-    /* Header */
+    /* Job header and job line, the same as in the list of the jobs */
+    job_line(job, line, sizeof(line));
     if (ftpd_data_printf(sess,
-        "JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT\r\n") < 0)
+        "JOBNAME  JOBID    OWNER    STATUS CLASS\r\n%s\r\n", line) < 0)
         aborted = 1;
 
-    /* Iterate spool files */
-    if (!aborted && job->jesdd) {
+    /* The files RETR can send, numbered the way RETR numbers them */
+    nfiles = 0;
+    if (job->jesdd) {
+        for (i = 0; job->jesdd[i]; i++) {
+            if (dd_is_spool_file(job->jesdd[i]) && nfiles < FTPD_JSL_MAXID)
+                nfiles++;
+        }
+    }
+
+    if (!aborted && nfiles > 0) {
+        ftpd_jsl_rule(line, sizeof(line));
+        if (ftpd_data_printf(sess, "%s\r\n", line) < 0)
+            aborted = 1;
+        ftpd_jsl_head(line, sizeof(line));
+        if (!aborted && ftpd_data_printf(sess, "%s\r\n", line) < 0)
+            aborted = 1;
+    }
+
+    id = 0;
+    if (!aborted && nfiles > 0) {
         for (i = 0; job->jesdd[i]; i++) {
             JESDD *dd = job->jesdd[i];
             long bytecount = (long)dd->records * (dd->lrecl > 0 ? dd->lrecl : 80);
@@ -659,7 +744,12 @@ list_job_files(ftpd_session_t *sess, const char *jobid_arg)
             char ddn[FTPD_JWN_PRTSZ];
             char cls[2];
             char clsout[FTPD_JWN_PRTSZ];
-            char clsc;
+
+            if (!dd_is_spool_file(dd))
+                continue;
+            if (id >= nfiles)
+                break;
+            id++;
 
             ftpd_jwn_printable(step, sizeof(step), (const char *)dd->stepname);
             ftpd_jwn_printable(proc, sizeof(proc), (const char *)dd->procstep);
@@ -668,15 +758,19 @@ list_job_files(ftpd_session_t *sess, const char *jobid_arg)
             cls[1] = '\0';
             ftpd_jwn_printable(clsout, sizeof(clsout),
                                dd->oclass && dd->oclass != ' ' ? cls : "");
-            clsc = clsout[0] ? clsout[0] : ' ';
 
-            if (ftpd_data_printf(sess,
-                    "%-8.8s %-8.8s %-8.8s %-8.8s %c %-8.8s %10ld\r\n",
-                    jname, jid, step, proc,
-                    clsc, ddn, bytecount) < 0) {
+            if (ftpd_jsl_row(line, sizeof(line), id, step, proc,
+                             clsout[0] ? clsout[0] : ' ', ddn, bytecount,
+                             (dd->flag & FLAG_JES2) != 0) < 0 ||
+                ftpd_data_printf(sess, "%s\r\n", line) < 0) {
                 aborted = 1;
                 break;
             }
+        }
+        if (!aborted) {
+            ftpd_jsl_tail(line, sizeof(line), nfiles);
+            if (ftpd_data_printf(sess, "%s\r\n", line) < 0)
+                aborted = 1;
         }
     }
 
@@ -721,7 +815,6 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
     int i;
     int count;
     int aborted = 0;
-    char rcbuf[16];
 
     /* If arg looks like a job ID (JOBnnnnn), list spool files */
     if (arg && arg[0] &&
@@ -781,13 +874,7 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
     if (joblist && !aborted) {
         for (i = 0; joblist[i]; i++) {
             JESJOB *job = joblist[i];
-            const char *status;
-            const char *rc_str;
-            const char *class_str;
-            char class_buf[FTPD_JWN_PRTSZ];
-            char jname[FTPD_JWN_PRTSZ];
-            char jid[FTPD_JWN_PRTSZ];
-            char jown[FTPD_JWN_PRTSZ];
+            char line[128];
 
             if (!ftpd_jwn_match(owner, (const char *)job->owner))
                 continue;
@@ -804,34 +891,8 @@ ftpd_jes_list(ftpd_session_t *sess, const char *arg)
                 break;
             }
 
-            status = job_status(job->q_type);
-            rc_str = job_retcode(job, rcbuf, sizeof(rcbuf));
-
-            ftpd_jwn_printable(jname, sizeof(jname),
-                               (const char *)job->jobname);
-            ftpd_jwn_printable(jid, sizeof(jid), (const char *)job->jobid);
-            ftpd_jwn_printable(jown, sizeof(jown), (const char *)job->owner);
-
-            /* z/OS CLASS column: for STCs/TSO use first 3 chars of jobid,
-            ** for normal jobs use the execution class character */
-            if (strncmp(jid, "STC", 3) == 0) {
-                class_str = "STC";
-            } else if (strncmp(jid, "TSU", 3) == 0) {
-                class_str = "TSU";
-            } else if (job->eclass && job->eclass != ' ') {
-                char ec[2];
-
-                ec[0] = (char)job->eclass;
-                ec[1] = '\0';
-                ftpd_jwn_printable(class_buf, sizeof(class_buf), ec);
-                class_str = class_buf;
-            } else {
-                class_str = "";
-            }
-
-            if (ftpd_data_printf(sess,
-                    "%-8.8s %-8.8s %-8.8s %-6s  %-3s %s\r\n",
-                    jname, jid, jown, status, class_str, rc_str) < 0) {
+            job_line(job, line, sizeof(line));
+            if (ftpd_data_printf(sess, "%s\r\n", line) < 0) {
                 aborted = 1;
                 break;
             }
@@ -1039,7 +1100,7 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
         if (job->jesdd) {
             int j;
             for (j = 0; job->jesdd[j]; j++) {
-                if (job->jesdd[j]->flag & FLAG_SYSIN) continue;
+                if (!dd_is_spool_file(job->jesdd[j])) continue;
                 idx++;
                 if (idx == dsid_req) {
                     target_dd = job->jesdd[j];
@@ -1097,7 +1158,7 @@ ftpd_jes_retrieve(ftpd_session_t *sess, const char *arg)
             JESDD *dd = job->jesdd[i];
 
             /* Skip SYSIN entries (don't count in index) */
-            if (dd->flag & FLAG_SYSIN)
+            if (!dd_is_spool_file(dd))
                 continue;
 
             dd_index++;     /* 1-based index of visible spool files */
