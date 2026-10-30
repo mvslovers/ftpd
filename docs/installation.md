@@ -232,11 +232,12 @@ that is not finished.
 
 ---
 
-## 2a. Upgrading from 1.3.2 (and from earlier releases through 1.3.2)
+## 2a. Upgrading from 1.3.0, 1.3.1 and 1.3.2
 
-A fresh install can skip this section. Each release deletes only the release
-just before it: 1.3.3 deletes `TFTP132`. Ask SMP first which FMID owns the load
-module, under the SMP procedure of your system:
+A fresh install can skip this section. 1.3.3 deletes `TFTP132`, `TFTP131` and
+`TFTP130`, so a system on any of 1.3.0, 1.3.1 and 1.3.2 upgrades in one step.
+Ask SMP first which FMID owns the load module, under the SMP procedure of your
+system:
 
 ```
 //LIST    EXEC SMPAPP
@@ -248,42 +249,48 @@ module, under the SMP procedure of your system:
 
 | Owner of `MOD(FTPD)` | What to do |
 |---|---|
-| `TFTP132` | 1.3.2. Upgrade with this package, as described below. |
-| `TFTP131` | 1.3.1. Install 1.3.2 first, with the [1.3.2 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.2), then come back. |
-| `TFTP130` | 1.3.0. Install 1.3.1 first, with the [1.3.1 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.1), then 1.3.2, then come back. If you use the UFS view, read the note on UFSD 1.5.2 below before that install. |
-| `TFTP120` | 1.2.0. Install 1.3.0 first, with the [1.3.0 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.0), then 1.3.1 and 1.3.2, then come back. The changes of 1.3.0 that need a decision are listed at the end of this section. |
+| `TFTP132`, `TFTP131` or `TFTP130` | 1.3.2, 1.3.1 or 1.3.0. Upgrade with this package, as described below. If you use the UFS view, read the note on UFSD 1.5.2 below. |
+| `TFTP120` | 1.2.0. Install 1.3.0 first, with the [1.3.0 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.0), then come back. The changes of 1.3.0 that need a decision are listed at the end of this section. |
 | `TFTP110`, `TFTP100` | Upgrade release by release, see the end of this section. |
 | none | FTPD is not installed through SMP on this system. This is a fresh install; on MVS/CE too (see step 5). |
 
-On a system where an older id owns the load module, the 1.3.3 install copies
-**nothing** and still ends `RC 00`: it deletes `TFTP132` and no other id, and
-SMP keys the ownership of the load module on the module name.
+On a system where an older id owns the load module (`TFTP120` and earlier), the
+1.3.3 install copies **nothing** and still ends `RC 00`: it deletes `TFTP132`,
+`TFTP131` and `TFTP130` and no other id, and SMP keys the ownership of the load
+module on the module name.
 
-### From 1.3.2
+`TFTP130`, `TFTP131` and `TFTP132` stay in the SMP zones after the install as
+entries that only say `DELBY = TFTP133`, also the ones your system never had.
+That is how SMP records a deleted id; they are not an install, and nothing needs
+to be done about them.
+
+### From 1.3.0, 1.3.1 or 1.3.2
 
 The upgrade is a **drop-in** as far as SMP and the data sets go: 1.3.3
 installs into the same data sets, under the same started task procedure and
 APF entry, and reads the same `FTPDPRM0`. Nothing needs a decision from you
 before you install.
 
-| | 1.3.2 | 1.3.3 |
+| | 1.3.0, 1.3.1, 1.3.2 | 1.3.3 |
 |---|---|---|
-| FMID | `TFTP132` | `TFTP133`, deletes `TFTP132` |
+| FMID | `TFTP130`, `TFTP131`, `TFTP132` | `TFTP133`, deletes `TFTP132`, `TFTP131` and `TFTP130` |
 | Libraries | `FTPD.LINKLIB`, … | unchanged |
 | C library | LIBC/370 2.25.1 | unchanged |
-| `libufs` | UFSD 1.5.2 | unchanged |
+| `libufs` | UFSD 1.4.0 (1.3.0), UFSD 1.5.2 (1.3.1, 1.3.2) | UFSD 1.5.2 |
 | RAKF | 1.2.x or 2.0.0 | unchanged |
 
-1.3.2 is a patch release and adds no function. What changes in behaviour is in
-the table *What Is New in FTPD 1.3.2* in the User's Guide (the book that comes
-with the release). In short: `LIST` and `NLST` with a name in quotes or a
+1.3.3 is a patch release and adds no function. What changes in behaviour is in
+the tables *What Is New in FTPD 1.3.2*, and for a system that comes from 1.3.0
+or 1.3.1 also *1.3.1* and *1.3.0*, in the User's Guide (the book that comes
+with the release). Of 1.3.2, in short: `LIST` and `NLST` with a name in quotes or a
 pattern such as `'SYS2.**'` read the catalog at the level of that name from
 any working directory; a listing with nothing to show is answered
 `550 No data sets found.`; a `**` that is not a qualifier of its own is refused
 with `501`; and `CWD`, `MKD` and `RMD` refuse a name with a member in
 parentheses with `501`.
 
-**If you use the UFS view, you need UFSD 1.5.2 or later.** UFSD 1.5.1
+**If you use the UFS view, you need UFSD 1.5.2 or later.** On 1.3.0 that is
+a change, because 1.3.0 carried the `libufs` of UFSD 1.4.0. UFSD 1.5.1
 and earlier can give one disk block to two files while writing, without an
 error, and a written file then holds foreign data. UFSD 1.5.2 stops this, but
 does not repair files that are already damaged. How to install and upgrade UFSD
@@ -295,13 +302,13 @@ FTPD without UFSD is not affected.
 
 1. **Stop FTPD** (`/P FTPD`, step 5).
 2. **Skip the allocation job** (step 4) — if `FTPD.LINKLIB` and
-   `FTPD.AFTPDLOD` exist, which they do after an SMP install of 1.3.2. The job
+   `FTPD.AFTPDLOD` exist, which they do after an SMP install of 1.3.0, 1.3.1 or 1.3.2. The job
    allocates them `NEW`, so on an existing pair it would fail. `LISTCAT
    LEVEL(FTPD)` (or ISPF 3.4 on `FTPD.*`) tells which case you are in.
 3. **Run the install job** (step 6). The `APPLY` ends `COND CODE 0004` on
-   `HMA2461 SYSMOD TFTP132 NOT FOUND ON SMPSCDS LIBRARY`. That is the expected
-   result of a replacement (the message was measured on the upgrade to 1.3.2,
-   where it named `TFTP131`; the upgrade to 1.3.3 has not been measured yet); see *One return code that looks wrong and is not*
+   `HMA2461 SYSMOD TFTP13x NOT FOUND ON SMPSCDS LIBRARY`, where `TFTP13x` is the
+   id that was installed (`TFTP130`, `TFTP131` or `TFTP132`). That is the expected
+   result of a replacement; see *One return code that looks wrong and is not*
    in section 2b.
 4. **Start FTPD** (`/S FTPD`) and read the banner. It must name the new
    release:
@@ -311,15 +318,15 @@ FTPD without UFSD is not affected.
    FTPD005I LIBC370 2.25.1 (xxxxxxx)
    ```
 
-   `FTPD 1.3.2` on the first line means the started task still runs the old
-   load module. Check the member list of `FTPD.LINKLIB` and the job log for
+   `FTPD 1.3.0`, `1.3.1` or `1.3.2` on the first line means the started task
+   still runs the old load module. Check the member list of `FTPD.LINKLIB` and the job log for
    `HMA2380 COPY SUCCESSFUL` — not the condition codes.
 
 ### From 1.2.0: install 1.3.0 first
 
-1.3.3 deletes `TFTP132` only, so a system on `TFTP120` installs the 1.3.0
-package first, then the 1.3.1 and the 1.3.2 package (the README of each package
-describes the steps), and then this one. Two changes of 1.3.0 need a decision from you **before** that install:
+1.3.3 deletes `TFTP132`, `TFTP131` and `TFTP130`, not `TFTP120`, so a system on
+`TFTP120` installs the 1.3.0 package first (the README of the package describes
+the steps; it deletes `TFTP120`), and then this one. Two changes of 1.3.0 need a decision from you **before** that install:
 
 1. **Create the `JESSPOOL` profiles you need.** In 1.2.0 every user could
    list, read and cancel the jobs of everybody through the JES view
@@ -359,8 +366,8 @@ either; delete them.
 
 Upgrade release by release. A 1.1.0 system installs the
 [1.2.0 package](https://github.com/mvslovers/ftpd/releases/tag/v1.2.0)
-(`TFTP120` deletes `TFTP110`, banner `LIBC370 2.10.3`), then the 1.3.0, the
-1.3.1 and the 1.3.2 package, then this one. A 1.0.x system goes to 1.1.0 first, following section 2b with the
+(`TFTP120` deletes `TFTP110`, banner `LIBC370 2.10.3`), then the 1.3.0
+package, then this one. A 1.0.x system goes to 1.1.0 first, following section 2b with the
 1.1.0 package from the
 [releases page](https://github.com/mvslovers/ftpd/releases/tag/v1.1.0).
 
@@ -511,7 +518,10 @@ HMA2050 APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
 The excerpt was measured on the upgrade from 1.3.1 to 1.3.2. The upgrade to
-1.3.3 deletes `TFTP132` instead, and has not been measured yet.
+1.3.3 gives the same picture and names the id that was installed: `TFTP130`,
+`TFTP131` or `TFTP132`. That was measured with a candidate package of 1.3.3, one
+system on each of the three, on 2026-10-30; the released package has not been
+measured.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
 never will, because it was deleted rather than superseded. The `APPLY` itself

@@ -64,7 +64,9 @@ TFTP131   TYPE            = FUNCTION
 ```)
 
 A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.3.2 to 1.3.3
-carries one such mark for every step. Deleting the id of the current release and of its
+carries one such mark for every step. (The 1.3.3 install deletes #cmd("TFTP132"),
+#cmd("TFTP131") and #cmd("TFTP130") at once, so after it all three read
+#cmd("DELBY = TFTP133"), also on a system that never had one of them.) Deleting the id of the current release and of its
 predecessor clears only the newest of them. Both ways below therefore name
 every id that FTPD has ever used (#cmd("TFTP100"), #cmd("TFTP110"),
 #cmd("TFTP120"), #cmd("TFTP130"), #cmd("TFTP131"), #cmd("TFTP132") and #cmd("TFTP133")), and you

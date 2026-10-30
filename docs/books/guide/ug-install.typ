@@ -334,7 +334,8 @@ On a new installation, every step ends with #cmd("COND CODE 0000"). The
 screens below are the SMP output of a new installation of release 1.3.2,
 measured on a test system. The SYSMOD of that release is #cmd("TFTP132") and
 it deletes #cmd("TFTP131"). The SYSMOD of release 1.3.3 is #cmd("TFTP133") and
-it deletes #cmd("TFTP132"); the screens show no line for it. The #cmd("RECV")
+it deletes #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"); the screens
+show no line for it. The #cmd("RECV")
 step receives the SYSMOD:
 
 #screen(raw(read("../ex/ug-install/receive.txt")))
@@ -405,9 +406,10 @@ The member #cmd("FTPD") must be there, and #cmd("FTPD.SAMPLIB") must list
 
 If the list is empty although the job said success, the #cmd("APPLY") did not
 print #cmd("HMA2380"). Another SYSMOD owns the module name in the SMP
-inventory. Each release deletes only the release just before it, so the owner
-goes away with the installation only if you come from that release. The usual
-cause is a skipped release (@ug-install-upgrade). The command
+inventory. FTPD 1.3.3 deletes #cmd("TFTP132"), #cmd("TFTP131") and
+#cmd("TFTP130"), so the owner goes away with the installation only if you come
+from 1.3.0, 1.3.1 or 1.3.2. The usual cause is an older release that was not
+installed first (@ug-install-upgrade). The command
 #cmd("LIST CDS MOD(FTPD) .") names the owner.
 
 === MVS/CE: When the Allocation Job Was Skipped <ug-install-ce-skip>
@@ -711,8 +713,9 @@ fell back to a default shows there and nowhere else (@ug-ops-con).
 == Upgrading from an Earlier Release <ug-install-upgrade>
 
 #idx("upgrade")
-Each release deletes only the release just before it. Ask SMP first which
-FMID owns the module. Run this under the SMP procedure:
+FTPD 1.3.3 deletes #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"), so a
+system on any of 1.3.0, 1.3.1 and 1.3.2 upgrades in one step. Ask SMP first
+which FMID owns the module. Run this under the SMP procedure:
 
 #screen(```
 //LIST    EXEC SMPAPP
@@ -725,45 +728,44 @@ FMID owns the module. Run this under the SMP procedure:
 #tab(caption: [What the owner of MOD(FTPD) tells you])[
   #table(columns: (1in, 1fr),
     [Owner], [What to do],
-    [#cmd("TFTP132")], [An upgrade from 1.3.2. Stop FTPD, skip the allocation
-      job (the data sets exist), run the install job and start FTPD. The data
-      sets, the procedure, the APF entry and the member of the configuration
-      stay.],
-    [#cmd("TFTP131")], [1.3.1. Upgrade to 1.3.2 first, with the 1.3.2 package
-      from the releases page, then come back here. FTPD 1.3.3 deletes only
-      #cmd("TFTP132"), so on a system where #cmd("TFTP131") owns the module the
+    [#cmd("TFTP132"), #cmd("TFTP131") or #cmd("TFTP130")], [An upgrade from
+      1.3.2, 1.3.1 or 1.3.0. Stop FTPD, skip the allocation job (the data sets
+      exist), run the install job and start FTPD. The data sets, the procedure,
+      the APF entry and the member of the configuration stay. On 1.3.0 note
+      that the client library of UFSD changes (UFSD 1.5.2 or later is needed
+      for the UFS view).],
+    [#cmd("TFTP120")], [1.2.0. Upgrade to 1.3.0 first, with the 1.3.0 package
+      from the releases page, then come back here. FTPD 1.3.3 does not delete
+      #cmd("TFTP120"), so on a system where #cmd("TFTP120") owns the module the
       install copies nothing and still ends with RC 00: the #cmd("APPLY")
       prints no #cmd("HMA2380"), and its report lists the module as
       #cmd("NOT SEL"). This was measured with #cmd("TFTP120") as the owner of
-      the module and the SYSMOD of 1.3.2; the SYSMOD of 1.3.3 deletes one id
-      in the same way.],
-    [#cmd("TFTP130")], [1.3.0. Upgrade to 1.3.1 first, then to 1.3.2, each with
+      the module and the SYSMOD of 1.3.1, of 1.3.2 and of a 1.3.3 candidate.],
+    [#cmd("TFTP110")], [1.1.0. Upgrade to 1.2.0 first, then to 1.3.0, each with
       its package from the releases page, then come back here.],
-    [#cmd("TFTP120")], [1.2.0. Upgrade to 1.3.0 first, then to 1.3.1 and to
-      1.3.2, each with its package from the releases page, then come back
-      here.],
-    [#cmd("TFTP110")], [1.1.0. Upgrade to 1.2.0 first, then to 1.3.0, 1.3.1
-      and 1.3.2, each with its package from the releases page, then come back
-      here.],
     [#cmd("TFTP100")], [1.0.x. Upgrade to 1.1.0 first (@ug-install-from10),
-      then to 1.2.0, 1.3.0, 1.3.1 and 1.3.2, then come back here.],
+      then to 1.2.0 and 1.3.0, then come back here.],
     [none], [FTPD is not installed through SMP on this system. This chapter is
       a new installation, allocation job included. This is the case on MVS/CE,
       whose FTPD 1.2.0 comes with the image.],
   )
 ]
 
-For an upgrade from 1.3.2, the steps are the ones of a new installation without
+For an upgrade from 1.3.0, 1.3.1 or 1.3.2, the steps are the ones of a new installation without
 the allocation: stop FTPD (@ug-install-stop), run the install job
 (@ug-install-job) and start FTPD (@ug-install-start). The #cmd("APPLY") ends
 with #cmd("COND CODE 0004") (@ug-install-good). The banner must name the new
-release; #cmd("FTPD000I FTPD 1.3.2") on the first line means that the started
-task still runs the old load module. Check the member list and look for
+release; #cmd("FTPD000I FTPD 1.3.0"), #cmd("1.3.1") or #cmd("1.3.2") on the first
+line means that the started task still runs the old load module. Check the member list and look for
 #cmd("HMA2380") in the job log, not the condition codes. This was measured for
 the upgrade from 1.3.1 to 1.3.2 on a test system that carried 1.3.1, installed
-through SMP; the upgrade to 1.3.3 has not been measured yet. The #cmd("APPLY") ended with #cmd("COND CODE 0004") and
+through SMP. The #cmd("APPLY") ended with #cmd("COND CODE 0004") and
 #cmd("HMA2461 SYSMOD TFTP131 NOT FOUND"), and the #cmd("ACCEPT") with 0000. The
-started task then printed the banner of 1.3.2. If the
+started task then printed the banner of 1.3.2. The upgrade to 1.3.3 gives the
+same picture, with #cmd("HMA2461") naming the id that was installed
+(#cmd("TFTP130"), #cmd("TFTP131") or #cmd("TFTP132")). That was measured with a
+candidate package of 1.3.3 on three test systems, one on each of the three
+releases; the released package has not been measured. If the
 configuration member of 1.2.0 still has a line for #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a
 volume, the start also prints #cmd("FTPD062W"); the lines have no effect and
 can go.

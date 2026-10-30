@@ -306,8 +306,10 @@ readme = "docs/installation.md"
 # 1.3.2 was TFTP132 (released 2026-10-28), patch releases cut on the branch
 # release-1.3.x with an explicit fmid, each deleting its predecessor only
 # (TFTP130, then TFTP131). 1.3.3 is cut from main as a patch release the same
-# way: main is 1.3.3-dev and carries the explicit fmid TFTP133 deleting TFTP132
-# below, because mbt does not derive a patch id. TFTP140 stays reserved for
+# way: main is 1.3.3-dev and carries the explicit fmid TFTP133, because mbt
+# does not derive a patch id. It deletes all of TFTP132, TFTP131 and TFTP130,
+# so a system on any one of the three upgrades in one step (see below).
+# TFTP140 stays reserved for
 # 1.4.0, which will need an explicit delete that names TFTP133 (and TFTP132,
 # TFTP131 and TFTP130 for a system that skipped a patch), or TFTP133 keeps the
 # modules. A development build of main packaged before 1.3.3-dev carries
@@ -335,6 +337,21 @@ readme = "docs/installation.md"
 # the release after it needs an explicit `delete`, because the derivation
 # would name TFTP120 instead of the patch id it replaces. An x.0.0 needs an
 # explicit `delete` too.
+#
+# 1.3.3 names three ids because the 1.3.x patch releases were cut one after
+# the other and a system can be on any of them. `++VER(Z038)
+# DELETE(TFTP132,TFTP131,TFTP130)` was measured on 2026-10-30 (ftpd#373) on
+# TK5 (HMASMP LVL 04.48), one fresh container each, on a system carrying only
+# 1.3.0, only 1.3.1 or only 1.3.2: RECEIVE, APPLY CHECK and ACCEPT RC 0, APPLY
+# RC 4 (HMA2461 for the one installed id, the expected upgrade code), the
+# module replaced in both libraries, FMID = TFTP133 in both zones. All three
+# ids stay behind as tombstones (TYPE = FUNCTION, DELBY = TFTP133), also the
+# ones the system never had. The longest line of the install job is 71
+# columns, so the id list does not wrap. What the multi-id delete does not
+# change is element ownership: a system on TFTP120 or older still holds
+# MOD(FTPD) under that id, and TFTP133 passes it over ("MOD FTPD NOT SEL",
+# every step RC 0, module unchanged -- measured as the negative control). Such
+# a system installs 1.3.0 first, which deletes TFTP120.
 #
 # A DELETE of an id the system never had is harmless -- which matters, because
 # every 1.1.0 install carries DELETE(TFTP100), including the fresh ones. SMP4
@@ -399,7 +416,7 @@ readme = "docs/installation.md"
 # in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
 prefix = "TFTP"  # FMID and delete follow from the version
 fmid = "TFTP133"       # a patch release: mbt does not derive it, and refuses to respend TFTP130
-delete = ["TFTP132"]   # the patch id it replaces; the derivation would name TFTP120
+delete = ["TFTP132", "TFTP131", "TFTP130"]   # every earlier 1.3.x; the derivation would name TFTP120
 
 # Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
 # libufs is linked statically, so nothing of ufsd has to be installed for FTPD

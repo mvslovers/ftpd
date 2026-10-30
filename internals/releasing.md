@@ -29,13 +29,18 @@ explicit `fmid` and `delete` in `[smp]` on that branch. From 1.3.3 on, releases
 are cut from `main`: the branch `release-1.3.x` is contained in `main` and is
 not used any more, and the tags `v1.3.0` to `v1.3.2` hold its history.
 Not yet checked on any stand: `TFTP132`, `TFTP133` and `TFTP140`.
-Because `delete` names `TFTP131` only, a system that skipped 1.3.1 and still
-carries `TFTP130` must install 1.3.1 first (the same rule 1.3.1 had for
-`TFTP120`); `docs/installation.md` says so for 1.3.2.
+Because 1.3.2's `delete` named `TFTP131` only, a system that skipped 1.3.1
+had to install 1.3.1 first. 1.3.3 does not have that rule: it names all three
+earlier ids (below).
 
 `main` is 1.3.3-dev and carries the explicit `fmid = "TFTP133"` and
-`delete = ["TFTP132"]` in `[smp]`; 1.3.3 is a patch release and mbt does not
-derive its id. `TFTP140` is reserved for 1.4.0. A development build of `main`
+`delete = ["TFTP132", "TFTP131", "TFTP130"]` in `[smp]`; 1.3.3 is a patch
+release and mbt does not derive its id. The multi-id delete was measured on
+2026-10-30 (ftpd#373) on a system carrying only 1.3.0, only 1.3.1 or only 1.3.2:
+all three install cleanly, the APPLY ends RC 4 (`HMA2461`) and the ids stay as
+tombstones. It does not lift the element-ownership wall: a system on `TFTP120`
+or older still installs 1.3.0 first. The released package itself has not been
+measured. `TFTP140` is reserved for 1.4.0. A development build of `main`
 packaged before this change carries `TFTP140` (`docs/uninstall.md`). When 1.4.0
 is cut, `[smp]` needs an explicit `delete` that names `TFTP133` (and `TFTP132`,
 `TFTP131` and `TFTP130` for a system that skipped a patch), and the explicit
