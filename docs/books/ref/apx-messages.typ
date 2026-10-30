@@ -36,6 +36,15 @@ sees are the reply codes in @ref-reply.
     [#cmd("FTPD004W NO SECURITY ENVIRONMENT FOR THE STC: RAKF PERMITS ANY ACCESS WITHOUT AN ACEE")], [The address space has no security environment. Do not
       run FTPD like this in production. Look at how the system starts the
       task.],
+    [#cmd("FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD")], [The
+      first of two lines. The check of the security system at the start
+      (@ref-stc-check) found that it does not verify the user ID and the
+      password. Since FTPD 1.3.3.],
+    [#cmd("FTPD004E ALL LOGINS ARE REFUSED: CORRECT THE SECURITY TABLES, THEN RESTART FTPD")], [The second line. FTPD goes on, but nobody can log in:
+      every #cmd("PASS") gets #cmd("530") (@ref-reply-530). Correct the
+      security tables ("Checking the Security System at Start" in the
+      _FTPD User's Guide_), then stop and start FTPD. The
+      check is made only at the start.],
     [#cmd("FTPD005I text")], [The version of the C library that FTPD contains.],
     [#cmd("FTPD006W BUILT FROM A MODIFIED WORKING TREE")], [The program was built
       from sources with changes that were not committed. The commit in

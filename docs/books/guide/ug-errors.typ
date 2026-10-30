@@ -54,6 +54,10 @@ last column is the section with the session.
     [#cmd("530 Not authorized for FTP access.")],
       [The password is right, but the user ID may not use FTP. Ask the
       administrator.], [@ug-first-fail],
+    [#cmd("530 Login not possible: the security check of this server is not working. Ask the administrator to check the FTPD004E console message.")],
+      [Not your user ID or password. The security check of the server at its
+      start failed, and nobody can log in. The administrator has to correct
+      the security tables and restart FTPD.], [@ug-security-check],
     [#cmd("530 Not logged in.")],
       [The command needs a login. Log in first.], [@ug-first-fail],
     [#cmd("421 Idle timeout, closing connection")],

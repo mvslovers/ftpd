@@ -45,6 +45,43 @@ network as they are. FTPD does not do TLS itself. With #cmd("SSLPROXY=YES") it
 accepts #cmd("PBSZ") and #cmd("PROT") from a client that talks to a TLS proxy
 in front of FTPD (@ug-ops-config). It does not check that a proxy exists.]
 
+FTPD also compares the user of the security environment that RAKF returns with
+the user ID of the login, in upper case and up to eight characters. If they
+differ, the login is refused with #cmd("530 Login incorrect."). It counts as a
+failed attempt, and the log has a line with the level #cmd("[WARN]") for it.
+
+== Checking the Security System at Start <ug-security-check>
+
+#idx("FTPD004E")#idx("security system", "check at start")#idx("restart")
+Since FTPD 1.3.3 an authorized FTPD checks the security system once, when it
+starts. FTPD asks RAKF to log in a user ID and a password that cannot be valid.
+RAKF refuses the login, and the start goes on. The console then has one line of
+RAKF for it, which is expected (@ug-ops-check).
+
+If RAKF accepts the login, the security tables do not work as FTPD needs them,
+and FTPD writes #cmd("FTPD004E") on the console. FTPD stays up, but nobody can
+log in. This is what a client sees:
+
+- *Every #cmd("PASS")* gets
+  #cmd("530 Login not possible: the security check of this server is not working. Ask the administrator to check the FTPD004E console message.")
+- The session stays open. The client can send #cmd("USER"), #cmd("SYST"),
+  #cmd("NOOP") and #cmd("QUIT"). The refused #cmd("PASS") does not count as a
+  failed login, so the session is not closed after three of them.
+- The log in the DD name #cmd("STDOUT") has one line with the level
+  #cmd("[ERROR]") for it per run of the server.
+
+Typing the user ID and the password again does not help. The reply is not about
+them, and it is the same for every user ID. Tell the administrator.
+
+The administrator corrects the security tables
+(`docs/FTPD_RAKF_SETUP.md` in the FTPD (ftpd) repository) and then *stops and
+starts FTPD* (@ug-ops-start). The check is made only at the start. After the
+correction the server keeps refusing until it is restarted. There is no
+parameter that turns the check off and no command that repeats it.
+
+Without the authorization (#cmd("FTPD003W")) there is no check. Every
+#cmd("PASS") is refused for the other reason (@ug-install-auth).
+
 == Allowing a User to Use FTP: FTPAUTH <ug-security-ftpauth>
 
 #idx("FTPAUTH")#idx("FACILITY class")

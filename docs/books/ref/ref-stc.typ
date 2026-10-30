@@ -81,6 +81,53 @@ that needs it. FTPD puts the identity of the started task back after each such
 operation and after each ABEND that it recovers from. The meaning for the
 security of the host is in the _FTPD User's Guide_, in "Setting Up Security".
 
+== The Check of the Security System <ref-stc-check>
+
+#idx("FTPD004E")#idx("security system", "check at start")#idx("RAKF0004")
+Since FTPD 1.3.3 FTPD checks at the start whether the security system verifies
+a user ID. The check is made once, in step 4 of the start (@ref-stc-start),
+after the identity of the started task is read.
+
+- *When:* only when FTPD is authorized (@ref-stc-apf). Without the
+  authorization there is no check. Every #cmd("PASS") is refused anyway, and
+  #cmd("FTPD003W") has said so.
+- *What:* FTPD asks RAKF to log in the user ID #cmd("?FTPDPRB") with a password
+  that cannot be valid. The character #cmd("?") is not a character of a RACF
+  user ID. RAKF refuses the login. That is the expected answer, and FTPD
+  writes nothing about it to the console.
+- *If RAKF accepts the login:* FTPD writes the two lines of #cmd("FTPD004E")
+  (@apx-messages) to the console and one line with the level #cmd("[ERROR]") to
+  the log. FTPD goes on with the start, opens the listener and accepts
+  connections. Every #cmd("PASS") gets
+  #cmd("530 Login not possible: the security check of this server is not working. Ask the administrator to check the FTPD004E console message.")
+  (@ref-reply-530). The refused #cmd("PASS") does not count as a failed
+  attempt, and the session stays open.
+- *No second check:* there is no parameter that turns the check off, no
+  console command that repeats it and no periodic check. After the security
+  tables are corrected, FTPD has to be stopped and started again. Only the next
+  start checks again.
+
+The refused login of the check is also a refused login for RAKF, and RAKF
+reports it. A normal start of an authorized FTPD therefore leaves one line on
+the console that does not come from FTPD:
+
+```
+RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRB
+```
+
+RAKF may print one more character behind the eight characters of the name
+(for example #cmd("USER:?FTPDPRBO")). A rule that looks for the line must match
+the prefix #cmd("?FTPDPRB"), not the whole name. The line is expected. It is
+not an attempt of a client to log in, and an automation that reacts to
+#cmd("RAKF0004") has to leave it out.
+
+Every login of a client has a second test. FTPD compares the user of the
+security environment that RAKF returns with the user ID of the login. The
+comparison folds both to upper case and uses at most eight characters. If the
+names differ, or if RAKF returns the security environment of the started task,
+FTPD refuses the login with #cmd("530 Login incorrect."), counts it as a failed
+attempt and writes a line with the level #cmd("[WARN]") to the log.
+
 == The Order of the Start <ref-stc-start>
 
 #tab(caption: [The start of FTPD])[
@@ -93,7 +140,10 @@ security of the host is in the _FTPD User's Guide_, in "Setting Up Security".
       the program was built from a modified tree, the warning.],
     [3], [#cmd("FTPD008I"), #cmd("FTPD003W")], [The result of the authorization
       (@ref-stc-apf).],
-    [4], [#cmd("FTPD004I"), #cmd("FTPD004W")], [The identity (@ref-stc-id).],
+    [4], [#cmd("FTPD004I"), #cmd("FTPD004W"), #cmd("FTPD004E")], [The identity
+      (@ref-stc-id). Then, if FTPD is authorized, the check of the security
+      system (@ref-stc-check). #cmd("FTPD004E") is written only when the check
+      fails.],
     [5], [#cmd("FTPD009E"), #cmd("FTPD059W"), #cmd("FTPD060W"),
       #cmd("FTPD062W")], [FTPD reads the
       configuration (@ref-prm). A read error ends the start (see below). The

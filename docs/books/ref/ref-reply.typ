@@ -192,8 +192,14 @@ causes are:
       #cmd("PASS") when FTPD has no authorization (#cmd("FTPD003W") at the
       start, @ref-stc-apf). It does not count as a failed attempt, and the
       session stays open. Since FTPD 1.3.0.],
+    [#cmd("530 Login not possible: the security check of this server is not working. Ask the administrator to check the FTPD004E console message.")], [The reply to every
+      #cmd("PASS") when the check of the security system at the start
+      (@ref-stc-check) found that it does not verify the user ID and the
+      password (#cmd("FTPD004E") at the start). It does not count as a failed
+      attempt, and the session stays open. Since FTPD 1.3.3.],
     [#cmd("530 Login incorrect.")], [RAKF refused the user ID or the
-      password. The client may try again.],
+      password, or the security environment that RAKF returned does not belong
+      to the user ID of the login (@ref-stc-check). The client may try again.],
     [#cmd("530 Login incorrect. Too many attempts, disconnecting.")],
       [The third failed attempt. FTPD closes the connection.],
     [#cmd("530 Not authorized for FTP access.")], [The password is right, but
