@@ -6,6 +6,7 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#dat.h"
+#include "ftpd#pvp.h"
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/select.h>
@@ -47,7 +48,7 @@ ftpd_data_port(ftpd_session_t *sess, const char *arg)
 ** Returns 0 on success, -1 on error.
 ** ----------------------------------------------------------------- */
 /* --------------------------------------------------------------------
-** Bind a passive listener to a free port in the configured range.
+** Open a listening socket on a free port in the configured range.
 **
 ** The bind address is PASVBIND, which is deliberately NOT PASVADR:
 ** PASVADR is the address the client is told to connect to, PASVBIND is
@@ -56,15 +57,72 @@ ftpd_data_port(ftpd_session_t *sess, const char *arg)
 ** loopback -- binding INADDR_ANY would take those ports on every address
 ** of the host and lock the proxy out.
 **
-** Returns the bound port, or -1 when the whole range is taken.
+** Two sessions asking at the same moment can both bind() the same port;
+** the second listen() then fails with EADDRINUSE.  ftpd_pvp_open() goes on
+** with the next port then (#315).
+**
+** Returns the listening socket and stores the port in *port, or -1 when
+** the whole range is taken or the stack fails.
 ** ----------------------------------------------------------------- */
 static int
-bind_pasv_port(ftpd_session_t *sess, int sock)
+pvp_sock(void *ctx)
+{
+    int sock;
+
+    (void)ctx;
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0)
+        ftpd_log(LOG_ERROR, "%s: socket() failed, errno=%d", __func__, errno);
+    return sock;
+}
+
+static int
+pvp_bind(void *ctx, int sock, int port)
 {
     struct sockaddr_in addr;
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = *(unsigned *)ctx;
+    addr.sin_port = htons(port);
+
+    return bind(sock, &addr, sizeof(addr));
+}
+
+static int
+pvp_listen(void *ctx, int sock)
+{
+    int err;
+
+    (void)ctx;
+    if (listen(sock, 1) == 0)
+        return 0;
+
+    err = errno ? errno : EIO;
+    if (err != EADDRINUSE)
+        ftpd_log(LOG_ERROR, "%s: listen() failed, errno=%d", __func__, err);
+    return err;
+}
+
+static void
+pvp_close(void *ctx, int sock)
+{
+    (void)ctx;
+    closesocket(sock);
+}
+
+static int
+open_pasv_listener(ftpd_session_t *sess, int *port)
+{
+    ftpd_pvp_ops_t ops;
     unsigned bindaddr;
     const char *pb = sess->server->config.pasv_bind;
-    int port;
+    int sock;
+
+    ops.sock = pvp_sock;
+    ops.bind = pvp_bind;
+    ops.listen = pvp_listen;
+    ops.close = pvp_close;
 
     /* ANY gives 0 = INADDR_ANY.  A value the parser rejects means the
     ** operator asked for an address FTPD cannot bind -- refuse the passive
@@ -76,23 +134,14 @@ bind_pasv_port(ftpd_session_t *sess, int sock)
     }
     bindaddr = htonl(bindaddr);
 
-    for (port = sess->server->config.pasv_lo;
-         port <= sess->server->config.pasv_hi;
-         port++) {
+    sock = ftpd_pvp_open(&ops, &bindaddr, sess->server->config.pasv_lo,
+                         sess->server->config.pasv_hi, port);
+    if (sock == FTPD_PVP_FULL)
+        ftpd_log(LOG_ERROR, "%s: no port available in range %d-%d on %s",
+                 __func__, sess->server->config.pasv_lo,
+                 sess->server->config.pasv_hi, pb);
 
-        memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = bindaddr;
-        addr.sin_port = htons(port);
-
-        if (bind(sock, &addr, sizeof(addr)) == 0)
-            return port;
-    }
-
-    ftpd_log(LOG_ERROR, "%s: no port available in range %d-%d on %s",
-             __func__, sess->server->config.pasv_lo,
-             sess->server->config.pasv_hi, pb);
-    return -1;
+    return sock < 0 ? -1 : sock;
 }
 
 int
@@ -110,23 +159,9 @@ ftpd_data_pasv(ftpd_session_t *sess)
     /* Close any existing data connection */
     ftpd_data_close(sess);
 
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        ftpd_log(LOG_ERROR, "%s: socket() failed, errno=%d", __func__, errno);
+    sock = open_pasv_listener(sess, &port);
+    if (sock < 0)
         return -1;
-    }
-
-    port = bind_pasv_port(sess, sock);
-    if (port < 0) {
-        closesocket(sock);
-        return -1;
-    }
-
-    if (listen(sock, 1) < 0) {
-        ftpd_log(LOG_ERROR, "%s: listen() failed, errno=%d", __func__, errno);
-        closesocket(sock);
-        return -1;
-    }
 
     sess->pasv_sock = sock;
     sess->data_mode = DATA_PASV;
@@ -184,23 +219,9 @@ ftpd_data_epsv(ftpd_session_t *sess)
     /* Close any existing data connection */
     ftpd_data_close(sess);
 
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        ftpd_log(LOG_ERROR, "%s: socket() failed, errno=%d", __func__, errno);
+    sock = open_pasv_listener(sess, &port);
+    if (sock < 0)
         return -1;
-    }
-
-    port = bind_pasv_port(sess, sock);
-    if (port < 0) {
-        closesocket(sock);
-        return -1;
-    }
-
-    if (listen(sock, 1) < 0) {
-        ftpd_log(LOG_ERROR, "%s: listen() failed, errno=%d", __func__, errno);
-        closesocket(sock);
-        return -1;
-    }
 
     sess->pasv_sock = sock;
     sess->data_mode = DATA_PASV;
