@@ -858,6 +858,10 @@ libraries are the way back until the banner says that the new release runs:
     [#cmd("FTPD003W APF SETUP FAILED"), and every #cmd("PASS") gets
       #cmd("530 Login not possible: FTPD is not APF authorized")], [No RAKF, so no SVC 244, and no APF
       entry (@ug-install-auth). Nobody can log in until this is fixed.],
+    [#cmd("FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD"), and
+      every #cmd("PASS") gets #cmd("530 Login not possible: the security check of this server is not working ...")], [The security tables do not work
+      as FTPD needs them (@ug-security-check). Nobody can log in. Correct the
+      tables (#cmd("docs/FTPD_RAKF_SETUP.md")), then stop and start FTPD.],
     [#cmd("FTPD002E FTPD IS ALREADY ACTIVE")], [An older instance is up.
       #cmd("P FTPD") first.],
     [#cmd("530") for a valid user], [The RAKF user or password is wrong, or the

@@ -146,6 +146,16 @@ adds no function. Each is described where the book explains the subject:
       connect of the client worked, and the #cmd("220") came late or not at
       all.],
       [@ug-ops-ses, _FTPD Reference_, "The Threads"],
+    [An authorized FTPD checks the security system once at the start. If the
+      system accepts a login that cannot be valid, FTPD writes
+      #cmd("FTPD004E") and answers every #cmd("PASS") with
+      #cmd("530 Login not possible: the security check of this server is not working ..."). After the tables are corrected, FTPD has to be restarted.
+      A normal start leaves one #cmd("RAKF0004") line for the check user
+      #cmd("?FTPDPRB") on the console. FTPD also refuses a login whose
+      security environment belongs to another user, with
+      #cmd("530 Login incorrect."). Before, there was no check.],
+      [@ug-security-check, @ug-ops-check, _FTPD Reference_, "The Check of the
+      Security System"],
   )
 ] <ug-intro-new-133-tab>
 

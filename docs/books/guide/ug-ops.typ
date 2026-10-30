@@ -93,7 +93,8 @@ messages in this order:
       authorization failed.],
     [#cmd("FTPD004I")], [The identity of the started task
       (@ug-security-stc). #cmd("FTPD004W") means that the address space has
-      no security environment.],
+      no security environment. With an authorized FTPD this is also where the
+      check of the security system runs (@ug-ops-check).],
     [#cmd("FTPD007W")], [Twice, only with #cmd("SSLPROXY=YES"). FTPD
       acknowledges #cmd("PBSZ") and #cmd("PROT") and encrypts nothing. A TLS
       proxy has to stand in front of the port.],
@@ -116,6 +117,37 @@ The message #cmd("FTPD062W n SETTING(S) IN DD:FTPDPRM HAVE NO EFFECT AND WERE IG
 comes with the configuration too. It counts the lines of the file that name
 a setting FTPD no longer has (@ug-ops-config). The log names them. FTPD is not
 affected. Remove the lines to stop the message.
+
+=== The Check of the Security System <ug-ops-check>
+
+#idx("FTPD004E")#idx("RAKF0004")
+An authorized FTPD checks the security system once at every start
+(@ug-security-check). Two things show on the console.
+
+*Every normal start leaves one line of RAKF.* The check logs in a user ID that
+cannot be valid, and RAKF refuses it and reports the refusal:
+
+```
+RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRB
+```
+
+RAKF may print one more character behind the eight characters of the name, so
+match the prefix #cmd("?FTPDPRB"). The line is expected and is not an attack. If
+you have automation that reacts to #cmd("RAKF0004"), it must leave this user ID
+out. Without the authorization there is no check and no line.
+
+*#cmd("FTPD004E") means that the check failed.* The two lines read:
+
+```
+FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND PASSWORD
+FTPD004E ALL LOGINS ARE REFUSED: CORRECT THE SECURITY TABLES, THEN RESTART FTPD
+```
+
+FTPD stays up, and every #cmd("PASS") is refused. Correct the security tables
+(`docs/FTPD_RAKF_SETUP.md` in the FTPD (ftpd) repository), then stop and start
+the started task (@ug-ops-start). FTPD makes the check only at the start. A
+correction alone changes nothing, and there is no console command and no
+parameter that checks again.
 
 == Configuring FTPD <ug-ops-config>
 
