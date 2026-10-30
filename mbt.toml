@@ -80,6 +80,12 @@ sources = ["test/tstuer.c", "src/ftpd#urc.c"]
 [test.TSTLSE]
 sources = ["test/tstlse.c", "src/ftpd#lse.c"]
 
+# ftpd_pvp_open() -- the passive listener port walk: a port refused at listen()
+# with EADDRINUSE is taken like one refused at bind() (#315).  ftpd#pvp.c is
+# free of project and MVS headers, so this is DUAL like TSTADR.
+[test.TSTPVP]
+sources = ["test/tstpvp.c", "src/ftpd#pvp.c"]
+
 # ftpd_dsn_valid() -- the data set name character check (#95).  Same shape as
 # TSTADR: ftpd#dsn.c is free of ftpd.h and of MVS services, so this is DUAL.
 [test.TSTDSN]
