@@ -22,6 +22,23 @@
 int ftpd_auth_pass(ftpd_session_t *sess, const char *password)
                                                     asm("FTPAUTPS");
 
+/*
+** Check once that the security system verifies userids.
+**
+** Logs in with a userid and password that cannot be valid.  A refusal (RC 28
+** on RAKF) is the expected answer.  If the login is accepted, the security
+** check of this server is not working, and every login is refused
+** afterwards (server->open_security).
+**
+** Does nothing when the server is not APF authorized (racf_login() would
+** ABEND S047; every PASS is refused anyway).  Called once, from
+** initialize(), before the first client is served.
+**
+** Returns 1 when the check login was accepted (and sets
+** server->open_security), 0 otherwise.
+*/
+int ftpd_auth_probe(ftpd_server_t *server)          asm("FTPAUTPB");
+
 /* racf_auth() return code: no profile covers the resource.  SAF calls this
 ** "resource not protected"; it is an ALLOW, not a denial — the same answer
 ** data set OPEN, IDCAMS and the catalog act on. */

@@ -145,6 +145,14 @@ struct ftpd_server {
                                     ** (#258)                          */
     int             unauth_logged;  /* the unauthorized PASS refusal has
                                     ** been logged, once per server     */
+    int             open_security;  /* the start check of the security
+                                    ** system failed: every PASS is
+                                    ** refused.  Set once at start-up,
+                                    ** never cleared; 0 (also the memset
+                                    ** value) when the check did not run
+                                    ** or passed                       */
+    int             open_logged;    /* the open_security PASS refusal has
+                                    ** been logged, once per server     */
     ACEE            *stc_acee;      /* identity RAKF gave the STC, read at
                                     ** init; recovery resets ASXBSENV
                                     ** to this after an ABEND          */

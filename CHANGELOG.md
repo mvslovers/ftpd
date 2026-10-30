@@ -92,6 +92,23 @@ the jobs, `LIST` without a job ID, is unchanged.
   The 128 is a request: the host limits the queue with a limit of its own.
   (#327)
 
+- **A login is refused when the ACEE does not belong to the user who logged
+  in.** After the security system had accepted a login, FTPD took the result
+  for granted. FTPD now compares the user of the returned ACEE with the user ID
+  of the login and answers `530 Login incorrect.` when they differ. The login
+  is logged as a warning and counts as a failed attempt. The ACEE of FTPD's own
+  started task is never released.
+
+- **FTPD checks the security system once at start.** An authorized FTPD (see
+  `FTPD008I`) logs in once with a user ID and a password that cannot be valid.
+  A refusal is the expected answer and changes nothing, except that the
+  security system writes one line for the refused login to the console. When
+  the login is accepted instead, FTPD writes the new message `FTPD004E` (two
+  lines) to the console and answers every login with `530 Login not possible:
+  the security check of this server is not working. Ask the administrator to
+  check the FTPD004E console message.` FTPD stays up. The check is made only at
+  start: after the cause is corrected, restart FTPD. There is no setting for it.
+
 ## 1.3.2 — 2026-10-28
 
 A patch release for 1.3.x: fixes only, no new function. It is a drop-in
