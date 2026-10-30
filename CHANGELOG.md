@@ -24,6 +24,17 @@ SMP FMID `TFTP133`, which deletes `TFTP132`.
   `RETR: read failed on PATH after N bytes sent (rc=N)` or
   `RETR: data connection failed on PATH after N bytes`. (#313)
 
+- **A burst of connections is greeted.** The listener takes the waiting
+  connections once each second, and it asked the host for a queue of 10 for
+  them. A burst of more than about ten clients that connected together lost
+  some of them: the client's connect succeeded, and the `220` came seconds late
+  or not at all. FTPD now asks for 128. In a test with 30 clients that logged
+  in at once (`MAXSESSIONS` 40), 27 of 30 runs lacked at least one greeting
+  before, and all 30 runs were complete now, with the last `220` after at
+  most 1.1 seconds. Above `MAXSESSIONS`, the rest is still closed at once
+  without a reply. The 128 is a request: the host limits the queue with a
+  limit of its own, and a limit below 128 was not measured. (#327)
+
 ## 1.3.2 — 2026-10-28
 
 A patch release for 1.3.x: fixes only, no new function. It is a drop-in

@@ -314,6 +314,20 @@ session. When more clients connect together than #cmd("MAXSESSIONS") allows,
 the first ones are greeted and FTPD closes the rest without a reply. This is
 the behaviour of FTPD 1.3.0. FTPD 1.2.0 took one connection per second.
 
+#idx("backlog")
+Between two looks, the connections wait in a queue that the host holds for the
+listener. FTPD asks the host for room for 128 waiting connections. FTPD 1.3.2
+and the releases before it asked for 10. With 10, a burst of more than about ten
+clients lost some of them: the connect of the client succeeded, and the
+#cmd("220") came seconds late or not at all. With 128, the waiting connections
+are taken at the next look and greeted within about one second, up to
+#cmd("MAXSESSIONS") sessions.
+
+#note[The 128 is a request, not a guarantee. The host limits the queue with a
+limit of its own (#cmd("somaxconn") on a Linux host). A host with a limit
+below 128 holds fewer waiting connections than FTPD asked for. FTPD does not
+know the result, and this case has not been measured.]
+
 FTPD hands each new session to a pool of worker threads. The pool has
 #cmd("MAXSESSIONS") workers, so every value from 1 up works. When the pool
 cannot take it, because it is shutting down or has no storage for the queue
