@@ -25,19 +25,22 @@ FTPD applies the words from left to right and sends one reply for the whole
 command:
 
 - *All words are known:* #cmd("200 SITE command was accepted").
-- *A value is wrong:* the setting stays as it was. The reply is a multiple
+- *A value is wrong, or a #cmd("JESOWNER") that the user may not use:* the
+  setting stays as it was. The reply is a multiple
   line #cmd("200") that names the problem on the first line and ends with
   #cmd("SITE command was accepted"). The other words of the command still
   apply. If several words are wrong, the reply names a refused word (#cmd("501")) before an
   unknown word, and an unknown word before a wrong value.
 - *#cmd("RETPD") is above the limit of the server, the word is #cmd("RDW"),
-  a #cmd("SBSENDEOL") that FTPD does not handle, or a #cmd("DCBDSN") whose model
-  FTPD refuses, or a #cmd("JESOWNER") that the user may not use:* the reply is
+  a #cmd("SBSENDEOL") that FTPD does not handle, a #cmd("DCBDSN") whose model
+  FTPD refuses, or a #cmd("JESOWNER") that is a pattern, has more than eight
+  characters or has a character that is not allowed:* the reply is
   a #cmd("501") with the reason, such as
   #cmd("501 RETPD=n exceeds the server limit of N days; keeping the current value")
   or
   #cmd("501 DCBDSN: NAME is not cataloged; keeping the current values"),
-  or #cmd("501 JESOWNER is not permitted"), and the setting stays as it was. For #cmd("DCBDSN") see the _FTPD Reference_,
+  or #cmd("501 JESOWNER is not permitted"), and the setting stays as it was.
+  For #cmd("DCBDSN") see the _FTPD Reference_,
   "DCBDSN". If the command has
   more words, FTPD applies them, and the reply has two lines: the text above
   with #cmd("501-"), and #cmd("501 Other parameters on this command were applied.")
@@ -135,8 +138,10 @@ the allocation, and a combination that the system rejects shows when
       again. A session starts with the blanks dropped.],
     [#cmd("JESJOBNAME=n"), #cmd("JESOWNER=n")], [the filters of the JES job
       list (@ug-jes). #cmd("JESOWNER") with another user ID or #cmd("*") needs
-      the right to read those jobs, and answers #cmd("501 JESOWNER is not
-      permitted") without it (@ug-jes-others).],
+      the right to read those jobs. Without it the reply is the notice
+      #cmd("200-User X is not authorized to filter on JESOWNER, JESOWNER remains
+      X") with #cmd("200 SITE command was accepted"), and the owner stays the
+      user ID of the session (@ug-jes-others).],
     [#cmd("JESSTATUS=s")], [the status filter of the JES view: #cmd("ALL"),
       #cmd("INPUT"), #cmd("ACTIVE") or #cmd("OUTPUT"), in any case. It applies
       to #cmd("LIST"), #cmd("NLST"), #cmd("RETR") and #cmd("DELE")

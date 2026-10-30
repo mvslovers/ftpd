@@ -7,9 +7,11 @@ JOBNAME  JOBID    OWNER    STATUS CLASS
 FTPHELLO JOB00039 BOB      OUTPUT  A   RC=0000
 250 List completed successfully.
 ftp> site jesowner=ALICE
-501 JESOWNER is not permitted
+200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains BOB
+200 SITE command was accepted
 ftp> site jesowner=*
-501 JESOWNER is not permitted
+200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains BOB
+200 SITE command was accepted
 ftp> dir JOB00038
 229 Entering Extended Passive Mode (|||22000|)
 550 Jobid JOB00038 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=BOB

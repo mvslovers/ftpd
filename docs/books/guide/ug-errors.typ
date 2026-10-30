@@ -142,11 +142,15 @@ last column is the section with the session.
     [#cmd("550 Access denied - cannot cancel JOBnnnnn")],
       [#cmd("delete") of a job of another user that you may read but not
       update. Ask the administrator for the right.], [@ug-jes-others],
-    [#cmd("501 JESOWNER is not permitted")],
+    [#cmd("200-User X is not authorized to filter on JESOWNER, JESOWNER remains X")],
       [#cmd("site jesowner") named another user or #cmd("*") without the right to
-      read their jobs, or the value is a pattern, longer than eight characters
-      or has a character that is not allowed. The value is not repeated, and
-      the filter stays as it was.], [@ug-jes-list, @ug-jes-others],
+      read their jobs. The reply ends with #cmd("200 SITE command was accepted"),
+      so a client goes on. The value is not repeated, and the filter stays as
+      it was: the user sees the own jobs.], [@ug-jes-list, @ug-jes-others],
+    [#cmd("501 JESOWNER is not permitted")],
+      [The value of #cmd("site jesowner") is a pattern, longer than eight
+      characters or has a character that is not allowed. The value is not
+      repeated, and the filter stays as it was.], [@ug-jes-list],
     [#cmd("550 Spool file n not found for Jobid ...")],
       [The number after the point is past the output files of the job. The reply
       says how many there are.], [@ug-jes-output],
@@ -182,8 +186,8 @@ last column is the section with the session.
     [#cmd("501 ...")],
       [The server refuses the value of #cmd("site"), for example a retention
       period above #cmd("MAXRETPD"), #cmd("rdw"), a #cmd("DCBDSN") that is not
-      cataloged or a #cmd("jesowner") that you may not use. The first line says
-      which value and why, except for #cmd("jesowner"): its text is always
+      cataloged. The first line says which value and why, except for a
+      #cmd("jesowner") that is no owner: its text is always
       #cmd("JESOWNER is not permitted").],
       [@ug-site-form],
     [#cmd("?Invalid command.")],
