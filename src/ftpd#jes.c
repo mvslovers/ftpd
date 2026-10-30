@@ -8,8 +8,9 @@
 ** 1. Read byte-by-byte from data connection in ASCII
 ** 2. Split at ASCII LF (0x0A) — each line is one JCL card
 ** 3. Convert each line ASCII→EBCDIC (CP037), pad to 80 with blanks
-** 4. Detect JOB card, inject USER= and PASSWORD= continuation lines
-** 5. jesirput() per card, jesircls() to trigger JES2 processing
+** 4. Hold back the JOB statement until its end is known, then inject
+**    USER= and PASSWORD= continuation lines behind it (ftpd#jcd.c)
+** 5. jesirput() per card, jesircl2() to trigger JES2 processing
 **
 ** USER/PASSWORD injection follows mvsmf/src/jobsapi.c process_jobcard().
 */
@@ -29,10 +30,6 @@
 /* ASCII constants (wire format before translation) */
 #define ASCII_LF    0x0A
 #define ASCII_CR    0x0D
-
-/* EBCDIC constants (after CP037 translation) */
-#define EBC_BLANK   0x40
-#define EBC_COMMA   0x6B
 
 /* --------------------------------------------------------------------
 ** Helper: build an 80-byte EBCDIC card from an ASCII line.
@@ -119,6 +116,58 @@ inject_job_params(ftpd_session_t *sess, VSFILE *intrdr, int *cardcount,
     return 0;
 }
 
+/* The JOB statement is kept here until its last card is known: the cards
+** put to the internal reader cannot be taken back, and a job without the
+** credentials behind its JOB statement must not be started (#383). */
+typedef struct jes_stream {
+    VSFILE      *intrdr;
+    ftpd_jcd_t  jcd;
+    int         cardcount;
+    char        held[FTPD_JCD_MAXCARDS][81];
+} jes_stream_t;
+
+#define JES_REFUSED 1
+
+/* --------------------------------------------------------------------
+** Helper: take one card of the stream.
+** Returns 0 when it is done with, < 0 when jesirput() failed and
+** JES_REFUSED when the JOB statement cannot take the credentials; nothing of
+** the statement has been put to the reader then.
+** ----------------------------------------------------------------- */
+static int
+jes_card(ftpd_session_t *sess, jes_stream_t *js, char *card)
+{
+    int rc;
+    int i;
+
+    switch (ftpd_jcd_feed(&js->jcd, card, 80)) {
+    case FTPD_JCD_PASS:
+        rc = submit_card(js->intrdr, card, js->cardcount + 1);
+        if (rc < 0) return rc;
+        js->cardcount++;
+        return 0;
+
+    case FTPD_JCD_HOLD:
+        memcpy(js->held[js->jcd.nheld - 1], card, 80);
+        js->held[js->jcd.nheld - 1][80] = '\0';
+        return 0;
+
+    case FTPD_JCD_DONE:
+        memcpy(js->held[js->jcd.nheld - 1], card, 80);
+        js->held[js->jcd.nheld - 1][80] = '\0';
+        for (i = 0; i < js->jcd.nheld; i++) {
+            rc = submit_card(js->intrdr, js->held[i], js->cardcount + 1);
+            if (rc < 0) return rc;
+            js->cardcount++;
+        }
+        return inject_job_params(sess, js->intrdr, &js->cardcount,
+                                 js->jcd.has_notify);
+
+    default:
+        return JES_REFUSED;
+    }
+}
+
 /* --------------------------------------------------------------------
 ** Submit JCL from data connection to JES2 internal reader.
 **
@@ -133,18 +182,11 @@ ftpd_jes_submit(ftpd_session_t *sess)
     char line[81];          /* ASCII line being accumulated */
     char card[81];          /* EBCDIC card for jesirput */
     char jobid[9];
+    jes_stream_t js;        /* about 1.3K: the JOB statement is held in it */
     int linepos;
     int rc;
-    int cardcount;
     long total;
     char c;
-
-    /* JOB card detection state:
-    ** 0 = haven't seen JOB yet
-    ** 1 = inside JOB card (may have continuations)
-    ** 2 = JOB card complete, params injected */
-    int job_state;
-    int has_notify;     /* 1 if NOTIFY= found in any JOB card line */
 
     /* z/OS: "125 Sending Job to JES internal reader FIXrecfm 80" */
     ftpd_session_reply(sess, FTP_125,
@@ -170,11 +212,11 @@ ftpd_jes_submit(ftpd_session_t *sess)
 
     ftpd_log(LOG_INFO, "JES: internal reader opened, receiving JCL");
 
+    js.intrdr = intrdr;
+    js.cardcount = 0;
+    ftpd_jcd_init(&js.jcd);
     linepos = 0;
-    cardcount = 0;
     total = 0;
-    job_state = 0;
-    has_notify = 0;
 
     /* Read byte-by-byte, split at ASCII LF (0x0A) */
     while (ftpd_data_recv(sess, &c, 1) == 1) {
@@ -188,61 +230,10 @@ ftpd_jes_submit(ftpd_session_t *sess)
             /* Build 80-byte EBCDIC card from this line */
             build_card(sess, line, linepos, card);
 
-            /* JOB card detection + USER/PASSWORD injection */
-            if (job_state == 0) {
-                /* Only "//name JOB" is the JOB statement.  A comment card
-                ** that contains the word is not, and the credentials must
-                ** not land behind it (#277). */
-                if (ftpd_jcd_is_job(card, 80))
-                    job_state = 1;
-            }
-
-            if (job_state == 1) {
-                /* Scan this JOB card line for NOTIFY (EBCDIC).
-                ** C literal "NOTIFY" is EBCDIC on c2asm370, card is
-                ** also EBCDIC after build_card, so strstr works. */
-                if (strstr(card, "NOTIFY") != NULL)
-                    has_notify = 1;
-
-                /* Check if JOB card ends (no trailing comma = last JOB line).
-                ** Find last non-blank EBCDIC byte. */
-                int len = 80;
-                while (len > 0 && (unsigned char)card[len - 1] == EBC_BLANK)
-                    len--;
-
-                if (len > 0 && (unsigned char)card[len - 1] != EBC_COMMA) {
-                    /* Last JOB card line — append comma for continuation */
-                    if (len < 71) {
-                        card[len] = (char)EBC_COMMA;
-                    }
-
-                    /* Submit the modified JOB card */
-                    rc = submit_card(intrdr, card, cardcount + 1);
-                    if (rc < 0) goto fail;
-                    cardcount++;
-
-                    /* Inject NOTIFY (if missing), USER, PASSWORD */
-                    rc = inject_job_params(sess, intrdr, &cardcount,
-                                           has_notify);
-                    if (rc < 0) goto fail;
-
-                    job_state = 2;
-                    linepos = 0;
-                    continue;   /* skip normal submit — already done */
-                }
-                /* else: JOB card continues (ends with comma), submit normally
-                ** and check next line */
-            }
-
-            /* Normal card submission */
-            rc = submit_card(intrdr, card, cardcount + 1);
+            /* JOB statement tracking + USER/PASSWORD injection */
+            rc = jes_card(sess, &js, card);
             if (rc < 0) goto fail;
-            cardcount++;
-
-            /* If we just submitted a JOB continuation line that was NOT the
-            ** last one, check if the NEXT line is still a continuation.
-            ** A continuation starts with "// " (cols 1-2 = //, col 3 = blank).
-            ** We check this on the NEXT iteration when job_state == 1. */
+            if (rc == JES_REFUSED) goto refused;
 
             linepos = 0;
         } else {
@@ -255,15 +246,18 @@ ftpd_jes_submit(ftpd_session_t *sess)
     /* Handle final line without trailing LF */
     if (linepos > 0) {
         build_card(sess, line, linepos, card);
-        rc = submit_card(intrdr, card, cardcount + 1);
+        rc = jes_card(sess, &js, card);
         if (rc < 0) goto fail;
-        cardcount++;
+        if (rc == JES_REFUSED) goto refused;
     }
+
+    /* The stream ended inside the JOB statement: what is held is no job. */
+    if (ftpd_jcd_unfinished(&js.jcd)) goto refused;
 
     ftpd_data_close(sess);
 
     ftpd_log(LOG_INFO, "JES: closing internal reader, %d cards, %ld bytes",
-             cardcount, total);
+             js.cardcount, total);
 
     /* Close internal reader — triggers JES2 processing.  jesircl2() hands
     ** the jobid out between the ENDREQ and the close; the old read of
@@ -287,7 +281,7 @@ ftpd_jes_submit(ftpd_session_t *sess)
     }
 
     ftpd_log(LOG_INFO, "JES: job submitted: %s (%d cards, %ld bytes)",
-             jobid, cardcount, total);
+             jobid, js.cardcount, total);
 
     /* z/OS FTP multi-line reply:
     ** 250-It is known to JES as JOBnnnnn
@@ -313,6 +307,23 @@ fail:
     }
     ftpd_session_reply(sess, FTP_451,
                        "Failed to submit JCL to internal reader");
+    return 0;
+
+refused:
+    /* The JOB statement of the stream cannot carry USER and PASSWORD: the
+    ** cards that would follow it are not part of it, so the job would run
+    ** without an owner and PASSWORD= would stand in its JCL listing.  Of the
+    ** statement nothing was put; closing the reader submits only what came
+    ** before it. */
+    ftpd_data_close(sess);
+    ftpd_log(LOG_ERROR, "JES: JOB statement cannot take the credentials, "
+             "job not submitted");
+    rc = jesircls(intrdr);
+    if (rc < 0)
+        ftpd_log(LOG_ERROR, "JES: jesircls() failed rc=%d", rc);
+    ftpd_session_reply(sess, FTP_550,
+                       "JOB statement cannot be continued with the "
+                       "credentials; job not submitted");
     return 0;
 }
 
