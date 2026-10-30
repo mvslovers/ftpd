@@ -467,7 +467,11 @@ as before:
       Reply: #cmd("125 Sending Job to JES internal reader FIXrecfm 80"), then
       #cmd("250-It is known to JES as JOBnnnnn") and
       #cmd("250 Transfer completed successfully."). FTPD adds #cmd("NOTIFY"),
-      #cmd("USER") and #cmd("PASSWORD") to the JOB statement.],
+      #cmd("USER") and #cmd("PASSWORD") to the JOB statement, with the comma
+      that binds them directly behind its operand field.
+      #cmd("550 JOB statement cannot be continued with the credentials; job not submitted")
+      if the statement cannot take them, and then none of its cards reaches JES2
+      (@ref-reply-550-job). Since FTPD 1.3.3.],
     [#cmd("LIST"), #cmd("NLST")], [The list of jobs, filtered by the owner,
       the job name and the status of #cmd("SITE"). At most 200 entries.],
     [#cmd("LIST JOBnnnnn")], [The spool files of one job.

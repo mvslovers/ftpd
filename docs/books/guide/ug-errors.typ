@@ -139,6 +139,13 @@ last column is the section with the session.
       pattern gets it too. The reply does not say which. Check the ID with
       #cmd("dir") and set the status back to #cmd("all").],
       [@ug-jes-output, @ug-jes-others],
+    [#cmd("550 JOB statement cannot be continued with the credentials; job not submitted")],
+      [The JOB statement of the job you stored has no room for the comma that
+      binds #cmd("USER=") and #cmd("PASSWORD="): the card runs to column 71, a
+      card ends in a comma and no continuation follows, the stream ends inside
+      the statement, or the statement has more than 16 cards. No job starts.
+      Shorten the card or continue the operand field on the next card.],
+      [@ug-jes-credentials],
     [#cmd("550 Access denied - cannot cancel JOBnnnnn")],
       [#cmd("delete") of a job of another user that you may read but not
       update. Ask the administrator for the right.], [@ug-jes-others],

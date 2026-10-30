@@ -72,7 +72,8 @@ texts that this book quotes are the ones of FTPD 1.3.2.
     [#cmd("550")], [The action did not happen: the name does not exist, access
       is denied, the name exists already, the data set is under retention
       (@ref-site-retained), a data set listing shows nothing
-      (#cmd("550 No data sets found.")), or the view does not fit.],
+      (#cmd("550 No data sets found.")), or the view does not fit. A JOB statement
+      that cannot take the credentials gets its own reply: @ref-reply-550-job.],
     [#cmd("552")], [The storage or the directory is used up and a retry gives the same answer:
       @ref-reply-552.],
     [#cmd("553")], [UFS only: the path name is too long.],
@@ -196,6 +197,27 @@ causes are:
       [The same, at the third attempt.],
   )
 ]
+
+== The 550 Reply for a JOB Statement <ref-reply-550-job>
+
+#idx("JOB statement", "550 reply")
+#cmd("550 JOB statement cannot be continued with the credentials; job not submitted") is the reply of #cmd("STOR") in the JES view. FTPD adds the cards
+#cmd("USER=") and #cmd("PASSWORD=") to the JOB statement of the stream. It can
+do so only when the statement ends in a card that has room for a comma. The
+reply says that it has not: the operand field of a card ends in column 71 or
+later\; a card ends with a comma and the next card is no continuation card (it
+does not start with #cmd("// "), or its operand starts after column 16)\; the
+stream ends inside the statement\; the statement has more than 16 cards,
+comment cards between its lines included\; or a parenthesis stays open at the
+end of the operand field. The operand field ends at the first blank outside a
+quoted string. A comma in the comment field behind it does not continue the
+statement.
+
+FTPD holds the cards of the JOB statement back until it knows the end. On this
+reply it has put none of them to the internal reader, so no job starts and
+nothing of the statement is in the spool. Cards before the statement, such as
+comment cards, are with the reader and go to JES2 when FTPD closes it. Since
+FTPD 1.3.3.
 
 == The 552 Reply <ref-reply-552>
 

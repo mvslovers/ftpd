@@ -156,8 +156,9 @@ user ID and the password of the session to the JOB statement
 the started task. FTPD keeps the password in the memory of the session for
 this. FTPD looks for the JOB statement, adds #cmd("NOTIFY=DUMMY") when the
 statement has no #cmd("NOTIFY"), and does not look at the rest of the JCL. It
-adds the two operands only when it finds a JOB statement. What the job may do is what
-RAKF allows this user.
+adds the two operands only when it finds a JOB statement. A JOB statement that
+cannot take them is refused, and the job does not start (@ug-jes-credentials).
+What the job may do is what RAKF allows this user.
 
 Jobs of other users are a separate matter: FTPD asks RAKF for each one
 (@ug-security-jesspool).

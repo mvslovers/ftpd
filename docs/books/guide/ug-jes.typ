@@ -88,8 +88,12 @@ EBCDIC only in text mode (#cmd("ascii")). In binary mode it sends the bytes as
 they come and does not find the JOB statement, so it adds nothing to it. Send
 JCL as text.
 
-FTPD looks for the JOB statement, the first card that has the word JOB between
-blanks. It changes the statement in this way:
+FTPD looks for the JOB statement. It is the first card of the form
+#cmd("//name JOB"): two slashes, a name of one to eight letters, digits or
+#cmd("@"), #cmd("#") and #cmd("$"), one or more blanks, and the word JOB followed
+by a blank or the end of the card. A comment card, even one with the word JOB in
+it, is not a JOB statement. Cards before the JOB statement go to JES2 as they
+are. FTPD changes the statement in this way:
 
 - At the end of the JOB statement, FTPD adds a comma and then up to
   three continuation cards.
@@ -100,17 +104,7 @@ blanks. It changes the statement in this way:
 
 The job runs under the identity of the user, not under the one of the started
 task (@ug-security-jes). FTPD does not look for a #cmd("USER=") or a
-#cmd("PASSWORD=") that the JCL has already, so leave them out. FTPD adds the
-comma only if the last line of the JOB statement ends before column 71. Keep
-that line shorter.
-
-#note[*A defect* (ftpd\#277): FTPD takes the first card of the stream that has
-the word JOB between blanks for the JOB statement, also a comment card. A
-comment such as #cmd("//* RUN THE JOB NOW") before the real JOB statement gets
-the three operands, and the real JOB statement gets none. The job then does not
-run under the identity of the user. Until
-a later release fixes this, put no card before the JOB statement that has the
-word JOB between blanks, and write no comment with it.]
+#cmd("PASSWORD=") that the JCL has already, so leave them out.
 
 FTPD does not check the JCL. A JCL error shows in the list of the job
 (@ug-jes-list), as the text #cmd("JCL ERROR") for the job.
@@ -120,6 +114,63 @@ If FTPD cannot hand the JCL over, the replies are
 #cmd("451 Failed to submit JCL to internal reader") and
 #cmd("451 Failed to close internal reader"). A data connection that cannot be
 opened gives #cmd("425 Cannot open data connection").
+
+=== Where the Credentials Go <ug-jes-credentials>
+
+#idx("job", "credentials")#idx("JOB statement", "continuation")
+FTPD reads the JOB statement the way JCL does. The operand field of a card ends
+at the first blank that is not inside a quoted string. What stands behind that
+blank is the comment field. A comma at the end of the operand field continues
+the statement on the next card, and nothing else does: a comma in the comment
+field continues nothing. FTPD puts its own comma on the last card of the
+statement, directly behind the operand field and not at the end of the card:
+
+#screen(```
+//MYJOB   JOB (ACCT),'TEST',CLASS=A,MSGCLASS=H   RUNS EVERY NIGHT, OK
+```)
+
+The card above has a comma in its comment, and it is still the last card of the
+statement. FTPD puts the comma directly behind #cmd("MSGCLASS=H") and the
+cards with the credentials after the card. A comment that begins one blank
+behind the operand field moves one column to the right, and FTPD drops it if it
+would then pass column 71.
+
+A statement that goes over several cards has a comma at the end of every card
+but the last, and each continuation card has the form #cmd("// ") with the
+operand in the columns 4 to 16. Comment cards (#cmd("//*")) between the cards
+of the statement are allowed. A JOB statement may have at most 16 cards,
+comment cards included.
+
+If the statement cannot take the credentials, FTPD does not guess. It puts no
+card of the JOB statement to JES2, so no job starts and nothing of the
+statement reaches the spool, and answers
+
+#screen(```
+550 JOB statement cannot be continued with the credentials; job not submitted
+```)
+
+Cards before the JOB statement, such as comment cards, are already with the
+reader, and JES2 takes them when FTPD closes it. The session stays open, and
+the client may send the job again. FTPD 1.3.3 and later send this reply in these
+cases:
+
+#tab(caption: [When FTPD refuses a JOB statement])[
+  #table(columns: (1.8in, 1fr),
+    [Case], [What to do],
+    [The operand field of a card ends in column 71 or later, so column 71 has
+      no room for the comma.],
+      [Shorten the card, or end it with a comma and continue the operand field
+      on a second card.],
+    [A card ends with a comma, and the next card is not a continuation: it is
+      the #cmd("EXEC") card, a blank card, or the card starts after column 16.],
+      [Take the comma away, or write the continuation card.],
+    [The stream ends inside the JOB statement.],
+      [Send the whole job, with its #cmd("EXEC") card.],
+    [The statement has more than 16 cards.], [Shorten the operand list.],
+    [A parenthesis opened on a card is not closed at the end of the operand
+      field.], [Close it, or end the card with a comma.],
+  )
+]
 
 == Listing Jobs <ug-jes-list>
 
