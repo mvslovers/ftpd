@@ -33,7 +33,8 @@ texts that this book quotes are the ones of FTPD 1.3.2.
     [#cmd("220")], [The connection is ready. The text is the parameter
       #cmd("BANNER").],
     [#cmd("221")], [The reply to #cmd("QUIT").],
-    [#cmd("226")], [The transfer is complete, or #cmd("ABOR") has closed the
+    [#cmd("226")], [The transfer is complete (a #cmd("RETR") from UFS that
+      failed to read or to send gets #cmd("451") or #cmd("426") instead), or #cmd("ABOR") has closed the
       data connection.],
     [#cmd("227"), #cmd("229")], [The address and the port for passive mode
       (#cmd("PASV"), #cmd("EPSV")).],
@@ -51,7 +52,8 @@ texts that this book quotes are the ones of FTPD 1.3.2.
     [#cmd("425")], [FTPD cannot open the data connection (@ref-reply-425).],
     [#cmd("426")], [The data connection broke during a transfer. The text says
       after how many bytes and, for data sets and UFS files, that the target is
-      incomplete.],
+      incomplete. #cmd("RETR") from UFS sends it too: #cmd("426 Connection
+      closed; transfer aborted after n bytes.")],
     [#cmd("451")], [Local error. FTPD could not do the work, and a retry may
       work. See @ref-reply-451.],
     [#cmd("452")], [UFS only: no space on the device for a command other than
@@ -109,6 +111,9 @@ causes are:
       [The started task ran out of storage while it built a list of data sets.],
     [#cmd("Read error on data set after N bytes: transfer is incomplete.")],
       [#cmd("RETR") of a data set could not read to the end.],
+    [#cmd("Read error on the server after N bytes: transfer is incomplete.")],
+      [#cmd("RETR") in UFS could not read the file to the end. Before FTPD 1.3.3
+      the reply was #cmd("226").],
     [#cmd("Write error on data set after N bytes received: the data set is incomplete.")], [#cmd("STOR") or #cmd("APPE") could not write.],
     [#cmd("Write failed on the server after N bytes received: the file is incomplete.")], [#cmd("STOR") in UFS failed and UFSD gave no reason.],
     [#cmd("Unable to open JES checkpoint")],

@@ -8,6 +8,22 @@ releases are on their [release pages](https://github.com/mvslovers/ftpd/releases
 A patch release for 1.3.2: fixes only, no new function. It is cut from `main`.
 SMP FMID `TFTP133`, which deletes `TFTP132`.
 
+### Fixed
+
+- **`RETR` from UFS no longer answers `226` for a file that was not sent to the
+  end.** The server loop ended at the first read that returned no data, and
+  that is the result of the end of the file and of a failed read alike, so a
+  read error was answered `226 Transfer complete` and a client kept a
+  truncated file as a complete one. A send that failed on the data connection
+  was answered `226` too. FTPD now asks the file handle whether the read
+  failed. A read error is answered
+  `451 Read error on the server after N bytes: transfer is incomplete.`, and a
+  lost data connection `426 Connection closed; transfer aborted after N bytes.`
+  (when both happened, `426`). A transfer that fails is not counted in the
+  number of transfers of the session. FTPD writes a line to the log for each:
+  `RETR: read failed on PATH after N bytes sent (rc=N)` or
+  `RETR: data connection failed on PATH after N bytes`. (#313)
+
 ## 1.3.2 — 2026-10-28
 
 A patch release for 1.3.x: fixes only, no new function. It is a drop-in

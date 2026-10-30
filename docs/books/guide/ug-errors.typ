@@ -163,6 +163,12 @@ last column is the section with the session.
     [#cmd("552 No inodes available")],
       [The UFS file system has no free inode. A retry gets the same answer. Ask the
       administrator.], [@ug-ufs-errors],
+    [#cmd("451 Read error on the server after N bytes: transfer is incomplete.")],
+      [#cmd("get") of a UFS file stopped: the read failed. The local file is
+      incomplete. Fetch it again.], [@ug-ufs-read-errors],
+    [#cmd("426 Connection closed; transfer aborted after N bytes.")],
+      [#cmd("get") of a UFS file stopped: the data connection broke. The local
+      file is incomplete. Fetch it again.], [@ug-ufs-read-errors],
   )
 ]
 

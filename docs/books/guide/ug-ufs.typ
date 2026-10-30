@@ -65,7 +65,9 @@ and #cmd("dir") both send #cmd("LIST"), so both show the long format (see
 #cmd("150 Opening data connection for") and the path of the file, and
 #cmd("226 Transfer complete") at the end. #cmd("put") replaces a file that
 exists. The file that went up and the file that came back are the same in the
-session, shown by the #cmd("diff") of the client.
+session, shown by the #cmd("diff") of the client. A #cmd("get") that cannot read
+the file to the end does not get the #cmd("226")
+(@ug-ufs-read-errors).
 
 #cmd("size") and #cmd("modtime") (#cmd("SIZE") and #cmd("MDTM")) work in the UFS
 view: the reply is #cmd("213") with the size in bytes or the time of the last
@@ -142,3 +144,41 @@ Other errors of UFSD map to these replies: #cmd("550") for a missing file or
 directory, a file that exists, a name that is not a directory or is one, a
 directory that is not empty, a file system that is read-only, and a refused
 permission. #cmd("451") is the reply for an I/O error and for any other code.
+
+== When a File Cannot Be Read <ug-ufs-read-errors>
+
+#idx("451", "UFS")#idx("426", "UFS")#idx("RETR", "UFS")
+FTPD sends #cmd("226 Transfer complete") for a #cmd("get") only when it has
+sent the file to the end. Two things can stop a #cmd("get") after the data has
+begun to flow. In both cases FTPD closes the data connection, and the reply
+says how many bytes FTPD had sent:
+
+#tab(caption: [Errors of RETR in the UFS view])[
+  #table(columns: (1.6in, 1fr),
+    [Reply], [Cause],
+    [#cmd("451 Read error on the server after n bytes: transfer is incomplete.")],
+      [FTPD could not read the file to the end. The read failed in UFSD, or
+      the request never reached UFSD. The client holds the first #cmd("n")
+      bytes of the file.],
+    [#cmd("426 Connection closed; transfer aborted after n bytes.")],
+      [A send on the data connection failed, so the client did not receive the
+      rest. When the read failed as well, this reply is the one FTPD sends.],
+  )
+]
+
+Before FTPD 1.3.3 both cases were answered with #cmd("226 Transfer complete"),
+and a client kept a part of the file as if it were the whole.
+A client that checks the reply code sees the failure now.
+
+A transfer that fails is not counted in the number of transfers that FTPD
+writes to the log at the end of the session (@ug-ops-log). FTPD writes one
+line at the level ERROR for the failure to the log, and none to the console:
+
+- #cmd("[ERROR] RETR: read failed on PATH after N bytes sent (rc=RC)") goes
+  with #cmd("451"). #cmd("RC") is the return code that UFSD gave for the
+  failing request, or #cmd("-1") when the request never reached UFSD.
+- #cmd("[ERROR] RETR: data connection failed on PATH after N bytes") goes with
+  #cmd("426").
+
+#cmd("PATH") is the path that FTPD resolved from the name that the client
+sent. Fetch the file again after the cause is removed.

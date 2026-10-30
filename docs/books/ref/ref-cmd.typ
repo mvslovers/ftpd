@@ -326,7 +326,10 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       #cmd("250 Transfer completed successfully."). In #cmd("TYPE A") one
       record is one line, also for the record formats #cmd("V"), #cmd("VB") and
       #cmd("VBA"). For record format #cmd("U") one block is one line
-      (_FTPD User's Guide_, "Downloading a Data Set"). UFS: #cmd("150 Opening data connection for PATH") and #cmd("226 Transfer complete"). JES: the output
+      (_FTPD User's Guide_, "Downloading a Data Set"). UFS: #cmd("150 Opening data connection for PATH") and #cmd("226 Transfer complete").
+      A read that fails is answered with #cmd("451 Read error on the server after n bytes: transfer is incomplete."),
+      and a send that fails with #cmd("426 Connection closed; transfer aborted after n bytes.") (_FTPD User's Guide_, "When a File Cannot Be Read").
+      JES: the output
       of a job (@ref-cmd-jes).],
     [#cmd("STOR")], [MVS: #cmd("125 Storing data set NAME"), the data, and
       #cmd("250 Transfer completed successfully."). Creates the data set or
