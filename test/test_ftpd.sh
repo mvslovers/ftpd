@@ -1467,8 +1467,8 @@ fi
 # more members than that, so the 21st STOR fails on the directory and
 # on nothing else.  The members are one record each, so that the data
 # of 21 of them fits into TRK(5,0) on any device.  With MEMRECS records
-# each, a 3350 (MVS/CE puts a data set without VOLUME= on WORK01, one)
-# has no room for the 21st member: the write fails before the directory
+# each, a 3350 has no room for the 21st member (MVS/CE puts a data set
+# without VOLUME= on WORK01, which is a 3350): the write fails before the directory
 # entry is made and the reply is the out-of-space 552 (#359).
 # The system ABENDs the CLOSE with SB14-0C (STOW finds
 # no room), which is not an x37 and used to answer 451 -- a transient
