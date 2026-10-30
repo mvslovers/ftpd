@@ -902,7 +902,7 @@ DEFSPACETYPE=TRACK
   volumes (`PUB000` is a 3380, `PUB001` a 3390). A 3350 track holds less than a
   3390 track, so a data set that a client creates with a small `SITE PRIMARY`
   in tracks is full after fewer records there; set `DEFVOLUME` (and `DEFUNIT`)
-  if that matters.
+  when the result must not depend on the device.
 
   Note for anyone upgrading from 1.0.2 or earlier: these two keys were stored
   and never used, so whatever your `FTPDPRM` says about them has had no effect

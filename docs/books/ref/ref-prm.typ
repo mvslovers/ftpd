@@ -169,7 +169,7 @@ the system chooses the volume. On MVS/CE that is #cmd("WORK00") or
 #cmd("PUB001") a 3390. A 3350 track holds less than a 3390 track, so a data
 set that a client creates with a small #cmd("SITE PRIMARY") in tracks runs out
 of space after fewer records there. Set #cmd("DEFVOLUME") and
-#cmd("DEFUNIT") when the answer must not depend on the device.]
+#cmd("DEFUNIT") when the result must not depend on the device.]
 
 The default space is 10 tracks as primary quantity and 5 tracks as secondary
 quantity. A data set can have 16 extents (the primary and 15 secondary
