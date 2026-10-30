@@ -98,7 +98,7 @@ FTPD runs on MVS 3.8j with these parts:
   every UFS request is answered with #cmd("550 UFS service not available").
 
 FTPD 1.3 is built against LIBC/370 2.25.1, and its load module is
-link-edited authorized (AC(1)). FTPD 1.3.1 and 1.3.2 carry the client library
+link-edited authorized (AC(1)). FTPD 1.3.1, 1.3.2 and 1.3.3 carry the client library
 of UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
 authorize them and how to upgrade from an earlier release is the subject of
 @ug-install.

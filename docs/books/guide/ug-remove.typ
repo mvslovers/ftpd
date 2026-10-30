@@ -13,9 +13,10 @@ in the wrong chapter: a release deletes its predecessor when it is installed
 (@ug-install-upgrade), and the last step below would scratch the libraries
 that the new release installs into.
 
-#note[*Did you install a development build of #cmd("main")?* Its FMID is
-#cmd("TFTP140"), which none of the steps below names. Start with
-@ug-remove-dev.]
+#note[*Did you install a development build of #cmd("main")?* A build of
+1.4.0-dev carries #cmd("TFTP140"), which none of the steps below names. A build
+of 1.3.3-dev carries #cmd("TFTP133"), which they do name, but the release should
+not be installed over it unseen. Start with @ug-remove-dev.]
 
 #note[*The removal instructions in older archives are wrong.* The file
 #cmd("README.md") in #cmd("ftpd-1.0.?-dist.zip") says to run #cmd("RESTORE")
@@ -29,10 +30,10 @@ chapter instead.]
 
 == What FTPD Put on the System <ug-remove-what>
 
-#tab(caption: [What release 1.3.2 installed])[
+#tab(caption: [What release 1.3.3 installed])[
   #table(columns: (1.6in, 1fr),
     [Item], [Name],
-    [FMID], [#cmd("TFTP132")],
+    [FMID], [#cmd("TFTP133")],
     [Load module], [#cmd("FTPD")],
     [Target library], [#cmd("FTPD.LINKLIB")],
     [Distribution library], [#cmd("FTPD.AFTPDLOD")],
@@ -51,8 +52,8 @@ cleanup step of the install job scratched it.
 
 *Earlier releases left their FMIDs behind.* Since 1.1.0 there is one FMID for
 each release: #cmd("TFTP110") is 1.1.0 and nothing else, #cmd("TFTP120") is
-1.2.0, #cmd("TFTP130") is 1.3.0, #cmd("TFTP131") is 1.3.1 and #cmd("TFTP132")
-is 1.3.2. #cmd("TFTP100") is the exception, from the
+1.2.0, #cmd("TFTP130") is 1.3.0, #cmd("TFTP131") is 1.3.1, #cmd("TFTP132")
+is 1.3.2 and #cmd("TFTP133") is 1.3.3. #cmd("TFTP100") is the exception, from the
 policy that came before it: it covered 1.0.0, 1.0.1 and 1.0.2 alike. Each
 upgrade deletes the release before it and leaves its id in the inventory as a
 mark, in both zones:
@@ -62,13 +63,13 @@ TFTP131   TYPE            = FUNCTION
           DELBY           = TFTP132
 ```)
 
-A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0 and 1.3.1 to 1.3.2
+A system that went from 1.0.x through 1.1.0, 1.2.0, 1.3.0, 1.3.1 and 1.3.2 to 1.3.3
 carries one such mark for every step. Deleting the id of the current release and of its
 predecessor clears only the newest of them. Both ways below therefore name
 every id that FTPD has ever used (#cmd("TFTP100"), #cmd("TFTP110"),
-#cmd("TFTP120"), #cmd("TFTP130"), #cmd("TFTP131") and #cmd("TFTP132")), and you
+#cmd("TFTP120"), #cmd("TFTP130"), #cmd("TFTP131"), #cmd("TFTP132") and #cmd("TFTP133")), and you
 need not know which releases the system has seen. The jobs are written for
-releases up to 1.3.2. A later
+releases up to 1.3.3. A later
 release adds its own id to every list in this chapter.
 
 == Step 1: Stop the Server <ug-remove-stop>
@@ -84,7 +85,7 @@ P FTPD
 SMP deletes a function when a later function names it in a #cmd("DELETE")
 operand, and it removes the load module of the deleted function from the
 libraries on the way. The job below receives, applies and accepts such a
-function. #cmd("TFTPDEL") has no elements. It deletes all FTPD ids up to 1.3.2
+function. #cmd("TFTPDEL") has no elements. It deletes all FTPD ids up to 1.3.3
 in one #cmd("DELETE") statement.
 
 *#cmd("TFTPDEL") is not a release FMID.* No release of FTPD ships it, the
@@ -109,6 +110,14 @@ Two things in the job matter:
   #cmd("HMA3971"). With the usual #cmd("COND=(0,NE,...)") the job would stop
   right after the receive.
 
+*Continue the #cmd("++VER") card on a second line.* With the seven ids the
+card is 77 characters long. A card of that length was rejected on the test
+systems: the #cmd("RECEIVE") ended with return code 08 and printed
+#cmd("HMA2032 ** SYNTAX ERROR IN CONTROL STATEMENT AT COL 68"), which is where
+the seventh id starts, and the job ended with 12. The job below breaks the card
+after #cmd("TFTP132,") and continues it on the next line, which SMP accepts. Do
+not type the card on one line.
+
 Submit this job:
 
 #screen(```
@@ -118,7 +127,8 @@ Submit this job:
 //RECV    EXEC SMPREC
 //SMPPTFIN DD  *
 ++FUNCTION(TFTPDEL) .
-++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132) .
+++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132,
+            TFTP133) .
 /*
 //SMPCNTL  DD  *
  RESETRC .
@@ -183,7 +193,10 @@ difference is in the #cmd("APPLY"): it printed #cmd("HMA2461") twice, once for
 #cmd("TFTP120") and once for #cmd("TFTP132"). A system whose data sets carry
 the patch level in their names, and a dummy function with a #cmd("++MAC")
 element instead of none, have not been measured. Whatever the system, the
-#cmd("LIST") in step 4 is the proof.
+#cmd("LIST") in step 4 is the proof. The screens of this chapter were taken with
+the lists of release 1.3.2, which end with #cmd("TFTP132"). They show no line
+for #cmd("TFTP133")\; the counts in the text are those of the jobs as printed
+here.
 
 == Step 3: Free the Ids <ug-remove-free>
 
@@ -191,7 +204,7 @@ element instead of none, have not been measured. Whatever the system, the
 #idx("FMID", "removal")
 The dummy function has not made the ids free. It has left #cmd("TFTPDEL")
 itself in both zones, with the status #cmd("REC APP ACC"), and a mark
-#cmd("DELBY = TFTPDEL") on every id it deleted. This job removes the seven
+#cmd("DELBY = TFTPDEL") on every id it deleted. This job removes the eight
 entries from the CDS (what is applied) and the ACDS (what is accepted). It
 changes the two SMP data bases and no library:
 
@@ -203,6 +216,7 @@ changes the two SMP data bases and no library:
 //SMPCNTL  DD  *
  UCLIN CDS .
   DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP133) .
   DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
@@ -215,6 +229,7 @@ changes the two SMP data bases and no library:
 //SMPCNTL  DD  *
  UCLIN ACDS .
   DEL SYSMOD(TFTPDEL) .
+  DEL SYSMOD(TFTP133) .
   DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
@@ -228,6 +243,8 @@ changes the two SMP data bases and no library:
  RESETRC .
  LIST CDS  SYSMOD(TFTPDEL) .
  LIST ACDS SYSMOD(TFTPDEL) .
+ LIST CDS  SYSMOD(TFTP133) .
+ LIST ACDS SYSMOD(TFTP133) .
  LIST CDS  SYSMOD(TFTP132) .
  LIST ACDS SYSMOD(TFTP132) .
  LIST CDS  SYSMOD(TFTP131) .
@@ -256,13 +273,13 @@ The step #cmd("UCLACDS") gives the same. Any other message is not expected.
 
 *This job depends on step 2.* For an id that is not in the zone,
 #cmd("DEL SYSMOD") ends the step with return code 08 (@ug-remove-uclin). Only
-the marks of the dummy function make all seven ids exist, so run this job after
+the marks of the dummy function make all eight ids exist, so run this job after
 step 2 and not instead of it.
 
 == Step 4: Read the LIST <ug-remove-list>
 
 The last step of the job is the result. For every id, in both zones, it must
-answer that the entry was not found. These are the first two of the fourteen
+answer that the entry was not found. These are the first two of the sixteen
 statements, as the step printed them:
 
 #screen(raw(read("../ex/ug-remove/list-gone.txt")))
@@ -273,8 +290,8 @@ Both zones count: an id gone from one and still in the other is not free.
 
 *Read the stanzas, not the return code of the step.* A mark that is still
 there answers with return code 00, so it does not raise the return code of
-the step above the 04 that you expect. The job has fourteen #cmd("LIST")
-statements, and all fourteen must show the id as not found. A stanza that names
+the step above the 04 that you expect. The job has sixteen #cmd("LIST")
+statements, and all sixteen must show the id as not found. A stanza that names
 #cmd("TYPE = FUNCTION") is an entry that is still there, whether it shows the
 status #cmd("REC APP ACC") or only a #cmd("DELBY") of its successor. This is
 what the statements #cmd("LIST CDS SYSMOD(TFTP132)") and
@@ -314,7 +331,7 @@ Use this way when the dummy function cannot be used. After step 1, submit this
 job instead of steps 2 and 3. It changes the two SMP data bases and no
 library. In the first line of each block, name the FMID that the system
 carries (#cmd("LIST CDS MOD(FTPD) .") shows it as #cmd("FMID")); the job names
-#cmd("TFTP132"):
+#cmd("TFTP133"):
 
 #screen(```
 //FTPDUCL  JOB (SYS),'FTPD UNINSTALL',
@@ -323,9 +340,10 @@ carries (#cmd("LIST CDS MOD(FTPD) .") shows it as #cmd("FMID")); the job names
 //UCLCDS  EXEC SMPAPP
 //SMPCNTL  DD  *
  UCLIN CDS .
-  DEL SYSMOD(TFTP132) MOD(FTPD) .
+  DEL SYSMOD(TFTP133) MOD(FTPD) .
   DEL MOD(FTPD) .
   DEL LMOD(FTPD) .
+  DEL SYSMOD(TFTP133) .
   DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
@@ -337,8 +355,9 @@ carries (#cmd("LIST CDS MOD(FTPD) .") shows it as #cmd("FMID")); the job names
 //UCLACDS EXEC SMPAPP
 //SMPCNTL  DD  *
  UCLIN ACDS .
-  DEL SYSMOD(TFTP132) MOD(FTPD) .
+  DEL SYSMOD(TFTP133) MOD(FTPD) .
   DEL MOD(FTPD) .
+  DEL SYSMOD(TFTP133) .
   DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
@@ -350,6 +369,8 @@ carries (#cmd("LIST CDS MOD(FTPD) .") shows it as #cmd("FMID")); the job names
 //LIST    EXEC SMPAPP
 //SMPCNTL  DD  *
  RESETRC .
+ LIST CDS  SYSMOD(TFTP133) .
+ LIST ACDS SYSMOD(TFTP133) .
  LIST CDS  SYSMOD(TFTP132) .
  LIST ACDS SYSMOD(TFTP132) .
  LIST CDS  SYSMOD(TFTP131) .
@@ -395,7 +416,7 @@ the #cmd("UCLIN CDS") block ended with return code 08 at
 ignored, the step ended with return code 12, and
 #cmd("LIST ACDS SYSMOD(TFTP132)") still showed the entry.
 
-Then read the #cmd("LIST") as in step 4, here fourteen statements without
+Then read the #cmd("LIST") as in step 4, here sixteen statements without
 #cmd("TFTPDEL") and with the two module entries, and, if you remove FTPD for
 good, scratch the libraries as in step 5. #cmd("UCLIN") changes only the
 inventory: until you scratch them, the load module is still in the target
@@ -405,13 +426,26 @@ library, and the copy that SMP accepted is in the distribution library.
 
 #idx("development build")
 #idx("TFTP140")
+#idx("TFTP133")
 A development build of #cmd("main") is packaged under the FMID of the release
-that #cmd("main") is heading for. A build of 1.4.0-dev carries
-#cmd("TFTP140"), although 1.4.0 is not released. If you installed such a
-package by SMP, the system holds an id that no step above names. Neither the
-dummy function of step 2 nor the lists of step 3 know it, so it stays in both
-zones, and it still owns the load module. Install a release only after you
-have cleaned the system up as described here.
+that #cmd("main") is heading for. #cmd("main") is the line of the patch release
+1.3.3, so a build of 1.3.3-dev carries #cmd("TFTP133"), the id of the release
+itself. A build that was packaged before #cmd("main") became 1.3.3-dev was a
+build of 1.4.0-dev and carries #cmd("TFTP140"), although 1.4.0 is not released.
+If you installed such a package by SMP, the system holds an id that you have to
+deal with before you install a release.
+
+- #cmd("TFTP140") is named by no step above. Neither the dummy function of
+  step 2 nor the lists of step 3 know it, so it stays in both zones, and it
+  still owns the load module. Install a release only after you have cleaned the
+  system up as described here.
+- #cmd("TFTP133") is named by the main way, which therefore removes such a
+  build. To install release 1.3.3 over it, clean the system up with the steps
+  below and leave out everything that they say about #cmd("TFTP140"). Both have
+  the same id, so SMP cannot tell the development build from the release. What
+  SMP does with the release package when its id is already installed has not
+  been measured with FTPD, so remove the build first. The banner of a
+  development build says #cmd("1.3.3-DEV").
 
 Ask SMP which id the system carries, with this job under the SMP procedure of
 your system (it is the one of @ug-install-upgrade):
@@ -425,12 +459,16 @@ your system (it is the one of @ug-install-upgrade):
 
 #cmd("FMID = TFTP140") means that you are in the right section, and so does
 any other id except #cmd("TFTP100"), #cmd("TFTP110"), #cmd("TFTP120"),
-#cmd("TFTP130"), #cmd("TFTP131") and #cmd("TFTP132"). Only #cmd("TFTP140") has
-been measured. If the #cmd("FMID") is one of those six, the system holds a
-release, the main way removes it, and this section is not yours.
+#cmd("TFTP130"), #cmd("TFTP131"), #cmd("TFTP132") and #cmd("TFTP133"). Only
+#cmd("TFTP140") has been measured. If the #cmd("FMID") is one of those seven,
+the main way removes what the system holds. This section is then yours only if
+the id is #cmd("TFTP133"), the module is a development build (its banner says
+#cmd("1.3.3-DEV")) and you want to replace it with the release.
 
-The steps are those of the main way, with three differences: the release package is on the system before FTPD stops,
-#cmd("TFTP140") is named in every list, and the libraries stay.
+The steps are those of the main way, with three differences: the release
+package is on the system before FTPD stops, #cmd("TFTP140") is named in every
+list if that is your id (a #cmd("TFTP133") build needs no addition), and the
+libraries stay.
 
 === Upload the Release Package First <ug-remove-dev-upload>
 
@@ -441,18 +479,18 @@ your data set names. Do not run it yet.
 
 === Stop the Server, Then Delete the Development Build <ug-remove-dev-dummy>
 
-Stop FTPD with #cmd("/P FTPD"). Then submit the job of step 2 with one change:
-#cmd("TFTP140") is added to the #cmd("DELETE") operand. Everything else stays
+Stop FTPD with #cmd("/P FTPD"). Then submit the job of step 2 with one change for a #cmd("TFTP140") build:
+#cmd("TFTP140") is added to the #cmd("DELETE") operand after #cmd("TFTP133").
+A #cmd("TFTP133") build needs no change. Everything else stays
 as it is there: the #cmd("HMASMP.LINKLIB") and #cmd("HMASMP.AFTPDLOD")
 statements, the #cmd("COND") on the later steps and the member lists at the
 end.
 
-*Continue the #cmd("++VER") card on a second line.* With #cmd("TFTP140") the
-card is 77 characters long. SMP rejects it: the #cmd("RECEIVE") ends with
-return code 08 and prints #cmd("HMA2032 ** SYNTAX ERROR IN CONTROL STATEMENT AT COL 68"),
-which is the start of the last id, and the job ends with 12. The job below
-breaks the card after #cmd("TFTP132,") and continues it on the next line, which
-SMP accepts. Do not type the card on one line.
+*Continue the #cmd("++VER") card on a second line*, as in step 2. With
+#cmd("TFTP140") the card is 85 characters long, and a card of 77 was rejected
+already. The job below, for a #cmd("TFTP140") build, breaks the card after
+#cmd("TFTP132,") and continues it on the next line. A break after a comma is the
+shape that SMP accepted on the test systems. Do not type the card on one line.
 
 #screen(```
 //FTPDDEL  JOB (SYS),'FTPD DELETE',
@@ -462,7 +500,7 @@ SMP accepts. Do not type the card on one line.
 //SMPPTFIN DD  *
 ++FUNCTION(TFTPDEL) .
 ++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132,
-            TFTP140) .
+            TFTP133,TFTP140) .
 /*
 //SMPCNTL  DD  *
  RESETRC .
@@ -512,9 +550,10 @@ and both member lists are empty.
 
 === Free the Ids, With TFTP140 in the Lists <ug-remove-dev-free>
 
-Submit the job of step 3 with #cmd("TFTP140") added to the #cmd("DEL")
+For a #cmd("TFTP133") build, submit the job of step 3 as it is. For a
+#cmd("TFTP140") build, submit it with #cmd("TFTP140") added to the #cmd("DEL")
 statements of both #cmd("UCLIN") blocks and to the #cmd("LIST") statements.
-#cmd("TFTP140") goes right after #cmd("TFTPDEL") and ahead of #cmd("TFTP132"),
+#cmd("TFTP140") goes right after #cmd("TFTPDEL") and ahead of #cmd("TFTP133"),
 in the #cmd("DEL") blocks and in the #cmd("LIST") statements alike:
 
 #screen(```
@@ -526,6 +565,7 @@ in the #cmd("DEL") blocks and in the #cmd("LIST") statements alike:
  UCLIN CDS .
   DEL SYSMOD(TFTPDEL) .
   DEL SYSMOD(TFTP140) .
+  DEL SYSMOD(TFTP133) .
   DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
@@ -539,6 +579,7 @@ in the #cmd("DEL") blocks and in the #cmd("LIST") statements alike:
  UCLIN ACDS .
   DEL SYSMOD(TFTPDEL) .
   DEL SYSMOD(TFTP140) .
+  DEL SYSMOD(TFTP133) .
   DEL SYSMOD(TFTP132) .
   DEL SYSMOD(TFTP131) .
   DEL SYSMOD(TFTP130) .
@@ -554,6 +595,8 @@ in the #cmd("DEL") blocks and in the #cmd("LIST") statements alike:
  LIST ACDS SYSMOD(TFTPDEL) .
  LIST CDS  SYSMOD(TFTP140) .
  LIST ACDS SYSMOD(TFTP140) .
+ LIST CDS  SYSMOD(TFTP133) .
+ LIST ACDS SYSMOD(TFTP133) .
  LIST CDS  SYSMOD(TFTP132) .
  LIST ACDS SYSMOD(TFTP132) .
  LIST CDS  SYSMOD(TFTP131) .
@@ -570,9 +613,10 @@ in the #cmd("DEL") blocks and in the #cmd("LIST") statements alike:
 //
 ```)
 
-Both #cmd("UCLIN") steps end with return code 00. Each zone reports eight
-#cmd("HMA2550 UPDATE COMPLETE"), one per id, #cmd("TFTP140") among them. This
-is the step #cmd("UCLCDS"):
+Both #cmd("UCLIN") steps end with return code 00. On the test systems each zone
+reported eight #cmd("HMA2550 UPDATE COMPLETE"), one per id, #cmd("TFTP140")
+among them. With #cmd("TFTP133") in the lists there is one more. This is the
+step #cmd("UCLCDS"):
 
 #screen(raw(read("../ex/ug-remove/dev-uclcds.txt")))
 
@@ -580,9 +624,9 @@ The step #cmd("UCLACDS") prints the same lines. On the test systems this job
 was enough: no #cmd("HMA2532") or #cmd("HMA2560") appeared in either zone, and
 the ACDS needed no statement beyond these.
 
-Read the #cmd("LIST") as in step 4: sixteen statements, and every one must show
-its id as not found. On the test systems every statement did, and the step ended
-with return code 04. A stanza with #cmd("TYPE = FUNCTION") for #cmd("TFTP140")
+Read the #cmd("LIST") as in step 4: eighteen statements, and every one must show
+its id as not found. On the test systems, with sixteen statements, every one
+did, and the step ended with return code 04. A stanza with #cmd("TYPE = FUNCTION") for #cmd("TFTP140")
 is an entry that is still there, in whichever zone it shows.
 
 If you install a release next, do not scratch the libraries (step 5 of the
@@ -626,7 +670,11 @@ Start FTPD and read the banner. It must name the release (the line
 
 #screen(raw(read("../ex/ug-remove/dev-banner.txt")))
 
-*A banner that says #cmd("1.4.0-DEV") after this means that the server was
+After a development build of #cmd("TFTP133") the #cmd("FMID") is the same either
+way. The banner tells them apart: it must say #cmd("1.3.3"), not
+#cmd("1.3.3-DEV").
+
+*A banner that says #cmd("1.4.0-DEV") or #cmd("1.3.3-DEV") after this means that the server was
 loaded from another library.* #cmd("mbt deploy") writes a development build to
 #cmd("FTPD.DEV.LINKLIB") by default, and a procedure whose #cmd("STEPLIB")
 names that library ahead of #cmd("FTPD.LINKLIB") loads the module from there.
@@ -674,12 +722,14 @@ banner show this. The return codes do not.
 
 *What has not been measured.* A system with a longer history than the TK5
 system, for example one that holds ids from earlier releases that SMP lost
-track of. A second development build installed over the first has not been
+track of. A development build of 1.3.3-dev (#cmd("TFTP133")) has not been installed or
+removed with these steps, and the release has not been installed over one. A
+second development build installed over the first has not been
 measured with FTPD either. A test with another product that is built the same
 way showed that installing the same development id again ends with return code
 0, and that a second, different development id deletes the first with one
 #cmd("HMA2461") for it. If your development build carries another id than
-#cmd("TFTP140"), put that id in the #cmd("DELETE") operand of the dummy
+#cmd("TFTP140") or #cmd("TFTP133"), put that id in the #cmd("DELETE") operand of the dummy
 function and in the lists of the step that frees the ids.
 
 == What Is Not Removed <ug-remove-left>
