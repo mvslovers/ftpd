@@ -126,8 +126,9 @@ adds no function. Each is described where the book explains the subject:
       #cmd("550 JOB statement cannot be continued with the credentials; job not submitted"),
       and no card of it reaches JES2. These are a card whose operands run to
       column 71, a card that ends in a comma without a continuation card, a
-      statement that ends the stream or has more than 16 cards, and a card that
-      ends inside a quoted string. Before, FTPD put the comma at the end of the
+      statement that ends the stream or has more than 16 cards, a card that
+      ends inside a quoted string, and an operand field that ends with a
+      parenthesis still open. Before, FTPD put the comma at the end of the
       card, comment included. A comma in a comment continues nothing, and there
       was no room for it in column 71. The cards with the credentials were
       statements of their own, and the job ran without an owner.],
@@ -149,6 +150,15 @@ adds no function. Each is described where the book explains the subject:
       layout of z/OS, such as the job commands of the Zowe CLI plug-in for
       z/OS FTP, found no table in it.],
       [@ug-jes-output, _FTPD Reference_, "The JES View"],
+    [#cmd("SITE JESOWNER") with another user ID or #cmd("*") needs the right to
+      see the jobs of others. A user without it gets
+      #cmd("200-User X is not authorized to filter on JESOWNER, JESOWNER remains X")
+      and #cmd("200 SITE command was accepted"), and sees the own jobs.
+      Before, FTPD answered #cmd("501 JESOWNER is not permitted"), and a client
+      that sends #cmd("JESOWNER=*") with every job request, such as the Zowe CLI
+      plug-in for z/OS FTP, stopped on it. A value that is no owner at all
+      is still answered with #cmd("501").],
+      [@ug-jes-list, _FTPD Reference_, "JESOWNER"],
     [When two sessions ask for a passive port at the same moment, FTPD takes
       the next free port of #cmd("PASVPORTS") for the second one. Before,
       #cmd("PASV") and #cmd("EPSV") of that session were answered
