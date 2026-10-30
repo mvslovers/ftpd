@@ -375,6 +375,9 @@ ftpd_ufs_retr(ftpd_session_t *sess, const char *arg)
     UFSFILE *fp;
     char buf[FTPD_DATA_BUF_SIZE];
     UINT32 n;
+    int conn_lost = 0;          /* a send on the data connection failed  */
+    int io_rc = 0;              /* ufs_ferror(): the read failed         */
+    long total = 0;             /* bytes that left the machine           */
 
     if (!arg || !arg[0]) {
         ftpd_session_reply(sess, FTP_501, "Missing file path");
@@ -415,13 +418,50 @@ ftpd_ufs_retr(ftpd_session_t *sess, const char *arg)
             // Text mode: EBCDIC-1047 → ASCII
             ftpd_xlat_e2a((unsigned char *)buf, (int)n);
         }
-        if (ftpd_data_send(sess, buf, (int)n) < 0)
+        if (ftpd_data_send(sess, buf, (int)n) < 0) {
+            conn_lost = 1;
             break;
+        }
+        total += n;
     }
+
+    /* ufs_fread() returns 0 at end of file and after a failure alike; only
+    ** the error flag on the handle tells them apart.  ufs_ferror() is not a
+    ** predicate: it returns the UFSD_RC_* the failing request recorded, -1
+    ** when the request never reached the server, and 0 when nothing failed.
+    ** Ask before the close, which frees the handle.  (See STOR.) */
+    io_rc = ufs_ferror(fp);
 
     sess->cur_ufs_file = NULL;
     ufs_fclose(&fp);
     ftpd_data_close(sess);
+
+    /* A client that was cut off knows it; one that was told 226 does not,
+    ** and keeps a truncated file as a complete one.  The connection is
+    ** checked first: once it is gone, 426 is the reply RFC 959 has for it,
+    ** whatever the read did before. */
+    if (conn_lost) {
+        ftpd_log(LOG_ERROR,
+                 "RETR: data connection failed on %s after %ld bytes",
+                 path, total);
+        ftpd_session_reply(sess, FTP_426,
+                           "Connection closed; transfer aborted after %ld "
+                           "bytes.", total);
+        return 0;
+    }
+
+    /* The file is at fault, not the connection.  The byte count tells the
+    ** client how far the fragment it holds reaches. */
+    if (io_rc) {
+        ftpd_log(LOG_ERROR,
+                 "RETR: read failed on %s after %ld bytes sent (rc=%d)",
+                 path, total, io_rc);
+        ftpd_session_reply(sess, FTP_451,
+                           "Read error on the server after %ld bytes: "
+                           "transfer is incomplete.", total);
+        return 0;
+    }
+
     ftpd_session_reply(sess, FTP_226, "Transfer complete");
     sess->xfer_count++;
     return 0;
