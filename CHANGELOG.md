@@ -72,8 +72,46 @@ the jobs, `LIST` without a job ID, is unchanged.
   comment, the real JOB statement got none, and the job ran without an owner
   instead of under the identity of the user. FTPD now takes a card for the JOB
   statement only if it starts with `//`, has a name of one to eight characters
-  (letters, digits, `@`, `#`, `$`), blanks, and the operation `JOB`. Comment
-  cards and any other card before it are skipped. (#277)
+  (letters, digits, `@`, `#`, `$`), one or more blanks, and the operation `JOB`
+  followed by a blank or the end of the card. A card without a name is not a
+  JOB statement. Comment cards and any other card before it are passed on to
+  JES unchanged. Only the first JOB statement of a stream gets the operands; a
+  later JOB card is passed on as it is. (#277)
+
+- **`USER` and `PASSWORD` go on the JOB statement, or the job is refused.** When
+  a job is submitted in the JES view, FTPD puts `USER` and `PASSWORD` on
+  continuation cards behind the JOB statement, and `NOTIFY=DUMMY` as well when
+  the statement has no `NOTIFY` of its own. It took the last card of the JOB
+  statement from the last non-blank character of a card alone and put the
+  comma that continues the statement there, and only if the card was shorter
+  than 71 characters. Two shapes of input put the three cards behind a card
+  that is not part of the statement: a comma in the comment field
+  (`//J JOB (A),'T',CLASS=A   NOTE, MORE`) was taken for a continuation, and a
+  JOB card that reached column 71 had no room for the comma. The cards were
+  then statements of their own. The job ended with a JCL error, had no owner,
+  and the `PASSWORD=` card stood in its JCL listing in the spool.
+
+  FTPD now ends the statement as JCL does. The operand field ends at the first
+  blank outside quotes and parentheses. Only a comma as the last character of
+  the operand field continues the statement, and a comment card between
+  continuation cards does not end it. The comma goes directly behind the
+  operand field, and the cards that follow it are the credentials. FTPD holds
+  the cards of the statement back until its end is known. When the statement
+  cannot take the credentials, no card of it is put to JES2, the job is not
+  submitted, and the answer is
+
+  ```
+  550 JOB statement cannot be continued with the credentials; job not submitted
+  ```
+
+  That is the case when the operand field ends in column 71 or beyond (no room
+  for the comma), when a card ends inside a quoted string or with a parenthesis
+  still open, when the card after a comma is not a continuation card (`//`, a
+  blank, and operands that begin at column 16 at the latest), when the stream
+  ends inside the statement, and when the statement has more than 16 cards. For
+  a refused statement the password is never written to the spool. A comma in
+  the comment field and a comment card between continuation cards are
+  submitted with the credentials on the JOB statement. (#383, #386)
 
 - **`PASV` and `EPSV` go on with the next port when a session lost the race for
   one.** FTPD walks the range of `PASVPORTS` and takes the first port that
