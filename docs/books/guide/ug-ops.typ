@@ -339,8 +339,8 @@ session, goes to the DD name #cmd("STDOUT") as lines of the form
 ```
 
 The level is ERROR, WARN, INFO or DEBUG. FTPD writes the levels up to INFO.
-A line at the end of a session has the user ID and the number of bytes that the
-session sent and received. The warnings about the configuration (@ug-ops-config)
+A line at the end of a session has the user ID, the number of bytes that the
+session sent and received, and the number of transfers (#cmd("xfers")). The warnings about the configuration (@ug-ops-config)
 and the refusal of a connection at the session limit (@ug-ops-ses) are only in
 this log. Look at it when the console is quiet and a client has a problem.
 
