@@ -1,0 +1,15 @@
+$ zowe zos-ftp list spool-files-by-jobid JOB00036
+1 JESMSGLG   JES2 
+2 JESJCL     JES2 
+3 JESYSMSG   JES2 
+4 SYSPRINT   STEP1
+5 SYSUT2     STEP1
+
+$ zowe zos-ftp list spool-files-by-jobid JOB00036
+Unable to perform this operation due to the following problem:
+JESOWNER is not permitted
+Other parameters on this command were applied.
+
+Response From Service
+Error: JESOWNER is not permitted
+Other parameters on this command were applied.

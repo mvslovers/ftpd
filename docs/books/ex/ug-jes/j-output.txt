@@ -3,33 +3,34 @@ ftp> site filetype=jes
 ftp> dir JOB00036
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JOB00036
-JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
-FTPHELLO JOB00036                   H JESJCLIN        720
-FTPHELLO JOB00036                   H JESMSGLG        931
-FTPHELLO JOB00036                   H JESJCL          810
-FTPHELLO JOB00036                   H JESYSMSG       3192
-FTPHELLO JOB00036                   A JESINTXT          0
-FTPHELLO JOB00036 STEP1             H SYSUT1           80
-FTPHELLO JOB00036 STEP1             H SYSPRINT        484
-FTPHELLO JOB00036 STEP1             H SYSUT2           80
+JOBNAME  JOBID    OWNER    STATUS CLASS
+FTPHELLO JOB00036 IBMUSER  OUTPUT  A   RC=0000
+--------
+        ID  STEPNAME PROCSTEP C DDNAME   BYTE-COUNT 
+        001 JES2              H JESMSGLG        931
+        002 JES2              H JESJCL          810
+        003 JES2              H JESYSMSG       3192
+        004 STEP1             H SYSPRINT        484
+        005 STEP1             H SYSUT2           80
+5 spool files
 250 List completed successfully.
 ftp> get JOB00036 out.txt
 local: out.txt remote: JOB00036
 229 Entering Extended Passive Mode (|||22000|)
 125 Sending all spool files for requested Jobid
 250 Transfer completed successfully.
-3325 bytes received in 00:00 (68.16 KiB/s)
+3325 bytes received in 00:00 (64.21 KiB/s)
 ftp> !head -4 out.txt
                                                 J E S 2   J O B   L O G
- 6.58.13 JOB   36  $HASP373 FTPHELLO STARTED - INIT  1 - CLASS A - SYS MVSC
- 6.58.13 JOB   36  IEF403I FTPHELLO - STARTED - TIME=06.58.13
- 6.58.13 JOB   36  IEFACTRT STEP1   /IEBGENER/00:00:00.01/00:00:00.02/00000/FTPHELLO
+11.16.19 JOB   36  $HASP373 FTPHELLO STARTED - INIT  1 - CLASS A - SYS MVSC
+11.16.19 JOB   36  IEF403I FTPHELLO - STARTED - TIME=11.16.19
+11.16.19 JOB   36  IEFACTRT STEP1   /IEBGENER/00:00:00.03/00:00:00.04/00000/FTPHELLO
 ftp> get JOB00036.3 spool3.txt
 local: spool3.txt remote: JOB00036.3
 229 Entering Extended Passive Mode (|||22000|)
 125 Sending data set IBMUSER.FTPHELLO.JOB00036.D0000004.JESYSMSG
 250 Transfer completed successfully.
-2170 bytes received in 00:00 (48.71 KiB/s)
+2170 bytes received in 00:00 (52.74 KiB/s)
 ftp> !head -6 spool3.txt
 IEF236I ALLOC. FOR FTPHELLO STEP1
 IEF237I JES2 ALLOCATED TO SYSPRINT
