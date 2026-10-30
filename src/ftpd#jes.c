@@ -556,9 +556,14 @@ reply_job_not_found(ftpd_session_t *sess, const char *jobid)
 **
 ** canon receives the value to store (upper case, "" to reset).  The own
 ** userid and the empty value need nothing; "*" needs READ on the probe
-** "..", another userid X on "X.." (ftpd#jwn.h).  A refusal is one fixed
-** answer for the caller and one log line here, counted in the session's
-** refusals like a refused RETR.
+** "..", another userid X on "X.." (ftpd#jwn.h).  A value that is not a
+** userid, "*" or empty is a syntax error (FTPD_JES_OWNER_BAD).  A well
+** formed value without the right is FTPD_JES_OWNER_DENIED: the caller
+** ignores it and says so with a 200, as z/OS does, because a client such as
+** Zowe sends JESOWNER=* with every job request and must go on with the
+** own jobs.  The denial is one debug line and is not counted in the
+** session's refusals; nothing is hidden or revealed by it, the jobs are
+** still decided one by one by job_access().
 ** ----------------------------------------------------------------- */
 int
 ftpd_jes_owner_ok(ftpd_session_t *sess, const char *value,
@@ -566,7 +571,6 @@ ftpd_jes_owner_ok(ftpd_session_t *sess, const char *value,
 {
     ftpd_jwn_ctx_t ctx;
     ftpd_jwn_res_t res;
-    ftpd_jwn_tally_t tally;
     char probe[FTPD_JWN_ENTSZ];
     char who[FTPD_JWN_PRTSZ];
     char what[FTPD_JWN_PRTSZ];
@@ -577,7 +581,12 @@ ftpd_jes_owner_ok(ftpd_session_t *sess, const char *value,
 
     kind = ftpd_jwn_narrows(sess->user, value, canon, canonsz);
     if (kind == FTPD_JWN_NR_RESET || kind == FTPD_JWN_NR_OWN)
-        return 1;
+        return FTPD_JES_OWNER_OK;
+    if (kind != FTPD_JWN_NR_ALL && kind != FTPD_JWN_NR_OTHER) {
+        if (canon && canonsz > 0)
+            canon[0] = '\0';
+        return FTPD_JES_OWNER_BAD;
+    }
 
     memset(&res, 0, sizeof(res));
     res.rc = -1;
@@ -587,13 +596,12 @@ ftpd_jes_owner_ok(ftpd_session_t *sess, const char *value,
     ctx.auth_arg = sess->acee;
     ctx.cache = NULL;
 
-    if ((kind == FTPD_JWN_NR_ALL || kind == FTPD_JWN_NR_OTHER) &&
-        ctx.acee_present && sess->user[0] &&
+    if (ctx.acee_present && sess->user[0] &&
         ftpd_jwn_probe(probe, sizeof(probe),
                        kind == FTPD_JWN_NR_ALL ? "" : canon) >= 0) {
         res.level = ftpd_jwn_level(&ctx, probe, 0, &res);
         if (res.level >= FTPD_JWN_LV_READ)
-            return 1;
+            return FTPD_JES_OWNER_OK;
     }
 
     if (canon && canonsz > 0)
@@ -609,16 +617,10 @@ ftpd_jes_owner_ok(ftpd_session_t *sess, const char *value,
     else
         snprintf(rcs, sizeof(rcs), "%d", res.rc);
 
-    /* Counted like any other refusal: the same 16 lines per session. */
-    ftpd_jwn_tally_init(&tally);
-    res.decision = FTPD_JWN_HIDE;
-    res.reason = FTPD_JWN_R_NONE;
-    if (ftpd_jwn_tally(&tally, &sess->jwn, FTPD_JWN_OP_RETR, &res) ==
-        FTPD_JWN_LINE_WARN)
-        ftpd_log(LOG_WARN,
-                 "SITE JESOWNER refused: user=%s value=%s rc=%s",
-                 who, what, rcs);
-    return 0;
+    ftpd_log(LOG_DEBUG,
+             "SITE JESOWNER ignored: user=%s value=%s rc=%s",
+             who, what, rcs);
+    return FTPD_JES_OWNER_DENIED;
 }
 
 /* --------------------------------------------------------------------

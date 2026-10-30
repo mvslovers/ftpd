@@ -2880,13 +2880,33 @@ jw_owner_is() {
     if [ "$JW_OC" = "$3" ]; then pass "$4"; else fail "$4: expected $3, got '$JW_OT'"; fi
 }
 
-# DELE of job $2 by $1: OK, NOCANCEL, HIDE or OTHER in JW_DEL.
+# jw_owner_ignored USER VALUE LABEL: a well formed JESOWNER without the right
+# is a 200 that names the filter that stays (the z/OS wording, #398), not a 5xx.
+# The whole reply is left in JW_OFULL, the user name replaced by %U.
+jw_owner_ignored() {
+    local uu
+    uu=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    jw_owner "$1" "$2"
+    JW_OFULL=$(jw_seg 3 | grep '^200' | tr -d '\r' | sed "s/$uu/%U/g" | tr '\n' '|')
+    if [ "$JW_OC" = 200 ] && printf '%s' "$JW_OFULL" | grep -q \
+        '^200-User %U is not authorized to filter on JESOWNER, JESOWNER remains %U|'; then
+        pass "$3"
+    else
+        fail "$3: expected 200 'User %U is not authorized to filter on JESOWNER, JESOWNER remains %U', got '$JW_OFULL'"
+    fi
+}
+
+# DELE of job $2 by $1: OK, NOCANCEL, HIDE or OTHER in JW_DEL.  With JW_DEL_OWN
+# set, SITE JESOWNER=$JW_DEL_OWN comes first (what Zowe does).
 jw_del() {
+    local r pre="" seg=3
+    if [ -n "$JW_DEL_OWN" ]; then pre="site jesowner=$JW_DEL_OWN
+--
+"; seg=4; fi
     jw_ftp "$1" "site filetype=jes
 --
-delete $2"
-    local r
-    r=$(jw_seg 3 | grep '^[0-9][0-9][0-9]' | tail -1)
+${pre}delete $2"
+    r=$(jw_seg $seg | grep '^[0-9][0-9][0-9]' | tail -1)
     [ "$JW_LOGIN" = 0 ] && r="NOLOGIN"
     case "$r" in
     250\ Cancel\ successful*)        JW_DEL=OK ;;
@@ -3099,8 +3119,17 @@ for k in JWN0 STC NOOWN; do
 done
 jw_only_own "$JW_ME" && pass "Fall 1: LIST shows only the own jobs" \
                      || fail "Fall 1: LIST shows jobs of others"
-jw_owner_is "$JW_ME" '*' 501 "Fall 1: SITE JESOWNER=* is refused"
-JW1_TEXT="$JW_OT"
+jw_owner_ignored "$JW_ME" '*' "Fall 1: SITE JESOWNER=* is answered 200 and ignored"
+JW1_TEXT="$JW_OFULL"
+jw_expect "$JW_ME" "${JID[IBMUSER]}" '*' ALLOW "Fall 1: the own job is read and listed after SITE JESOWNER=*"
+for k in JWN0 STC NOOWN; do
+    jw_have "$k" && jw_expect "$JW_ME" "${JID[$k]}" '*' HIDE "Fall 1: the job $k of someone else stays hidden after SITE JESOWNER=*"
+done
+if jw_have JWN0; then
+    JW_DEL_OWN='*'
+    jw_dele_case "$JW_ME" JWN0 HIDE "Fall 1: DELE of a foreign job after SITE JESOWNER=*"
+    JW_DEL_OWN=
+fi
 jw_owner_is "$JW_ME" "$JW_ME" 200 "Fall 1: SITE JESOWNER=<own> is accepted"
 jw_dele_case "$JW_ME" JWN0 HIDE "Fall 1: DELE of a foreign job"
 jw_dele_case "$JW_ME" "$JW_ME" OK "Fall 1: DELE of an own job"
@@ -3259,23 +3288,38 @@ jw_ftp AUDU "site filetype=jes
 nlist"
 if jw_seg 3 | grep -qw "${JID[JWN0]}"; then fail "Fall 9: NLST lists a job of someone else"
 else pass "Fall 9: NLST shows no job of someone else"; fi
-jw_owner_is JWN0 '*' 501 "Fall 9: SITE JESOWNER=* without READ is refused"
-JW9_TEXT="$JW_OT"
+jw_owner_ignored JWN0 '*' "Fall 9: SITE JESOWNER=* without READ is answered 200 and ignored"
+JW9_TEXT="$JW_OFULL"
 if [ "$JW9_TEXT" = "$JW1_TEXT" ]; then
-    pass "Fall 9: the 501 text is the same for 'no READ' and 'no profile'"
+    pass "Fall 9: the 200 text is the same for 'no READ' and 'no profile'"
 else
-    fail "Fall 9: the 501 text differs ('$JW9_TEXT' / '$JW1_TEXT')"
+    fail "Fall 9: the 200 text differs ('$JW9_TEXT' / '$JW1_TEXT')"
 fi
-jw_owner_is JWN0 '*' 501 "Fall 9: JESOWNER=* repeated"
+jw_owner_ignored JWN0 '*' "Fall 9: JESOWNER=* repeated"
 jw_ftp JWN0 "site filetype=jes
 --
 site jeso=*"
 JW_OT=$(jw_seg 3 | grep '^[0-9][0-9][0-9]' | tail -1)
-case "$JW_OT" in 501*) pass "Fall 9: SITE JESO=* (abbreviation) is refused" ;;
+case "$JW_OT" in 200*) pass "Fall 9: SITE JESO=* (abbreviation) is answered 200" ;;
                  *)    fail "Fall 9: SITE JESO=* gave '$JW_OT'" ;; esac
 for v in ABCDEFGHI A.B 'AB%' 'ABC*'; do
-    jw_owner_is JWN0 "$v" 501 "Fall 9: JESOWNER=$v is refused, not cut to 8"
+    jw_owner_is JWN0 "$v" 501 "Fall 9: JESOWNER=$v is a syntax error, not cut to 8"
 done
+jw_owner_ignored JWN0 ABCDEFGH "Fall 9: a well formed foreign userid without READ is answered 200"
+# Zowe sends JESOWNER=* with every request: many of them in one session stay
+# 200.  (That they do not count into the session's WARN budget shows in the
+# job log only; tstjwn covers the tally.)
+JW9_N=0
+JW9_CMDS="site filetype=jes"
+while [ $JW9_N -lt 20 ]; do
+    JW9_CMDS="$JW9_CMDS
+site jesowner=*"
+    JW9_N=$((JW9_N + 1))
+done
+jw_ftp JWN0 "$JW9_CMDS"
+JW9_BAD=$(grep -c '^5' "$JW_OUT")
+[ "$JW9_BAD" = 0 ] && pass "Fall 9: 20 times JESOWNER=* in one session gives no 5xx" \
+                   || fail "Fall 9: 20 times JESOWNER=* gave $JW9_BAD 5xx replies"
 jw_owner_is JWN0 '' 200 "Fall 9: an empty JESOWNER resets"
 
 # ============================================================
@@ -3336,7 +3380,7 @@ jw_present JWN0 "${JID[JWN0]}" && jw_present OWNX "${JID[OWNX]}" \
 jw_fx 3
 jw_owner_is RDOU OWNX 200 "Fall 3: JESOWNER=OWNX is accepted with READ"
 jw_expect RDOU "${JID[OWNX]}" OWNX ALLOW "Fall 3: LIST and RETR of the job of OWNX"
-jw_owner_is RDOU '*' 501 "Fall 3: JESOWNER=* is refused (no READ on the universal profile)"
+jw_owner_ignored RDOU '*' "Fall 3: JESOWNER=* is ignored (no READ on the universal profile)"
 jw_expect RDOU "${JID[JWN0]}" JWN0 HIDE "Fall 3: the job of JWN0 stays hidden"
 jw_dele_case RDOU OWNX NOCANCEL "Fall 3: DELE with READ only"
 jw_expect JWN0 "${JID[OWNX]}" OWNX HIDE "Fall 3: a user outside RDOW does not see the job of OWNX"
@@ -3373,7 +3417,7 @@ jw_dele_case JWN0 OWNX HIDE "Fall 5: a user with no permit does not delete a for
 jw_fx 6
 jw_expect AUDU "${JID[ABC]}" ABC ALLOW "Fall 6: ABC.* with READ shows the job of ABC"
 jw_expect AUDU "${JID[ABCD]}" ABCD HIDE "Fall 6: ABC.* does not show the job of ABCD"
-jw_owner_is AUDU ABCD 501 "Fall 6: JESOWNER=ABCD is refused"
+jw_owner_ignored AUDU ABCD "Fall 6: JESOWNER=ABCD is ignored"
 jw_expect ABC "${JID[ABC]}" "" ALLOW "Fall 6: ABC sees its own job"
 jw_dele_case ABC ABC OK "Fall 6: ABC deletes its own job"
 jw_dele_case AUDU ABCD HIDE "Fall 6: DELE of the job of ABCD"
@@ -3533,17 +3577,18 @@ jw_live_case() {   # label
     local r g
     jw_fx N
     jw_live_start AUDU
-    r=$(jw_live_send "site jesowner=*" | grep -o '^[0-9][0-9][0-9]' | tail -1)
-    [ "$r" = 501 ] && pass "$1: before the change JESOWNER=* is refused" \
-                   || fail "$1: before the change JESOWNER=* gave '$r'"
+    r=$(jw_live_send "site jesowner=*" | tr -d '\r' | grep 'not authorized to filter on JESOWNER' | head -1)
+    [ -n "$r" ] && pass "$1: before the change JESOWNER=* is ignored with the 200 notice" \
+                || fail "$1: before the change JESOWNER=* gave no 'not authorized' notice"
     rm -f "$TMPDIR/jw_got11"
     jw_live_send "get ${JID[JWN0]} $TMPDIR/jw_got11" > /dev/null
     [ -s "$TMPDIR/jw_got11" ] && fail "$1: before the change the foreign job was read" \
                               || pass "$1: before the change the foreign job is not read"
     jw_fx 4 || fail "$1: the change could not be loaded"
-    r=$(jw_live_send "site jesowner=*" | grep -o '^[0-9][0-9][0-9]' | tail -1)
-    [ "$r" = 200 ] && pass "$1: after the change JESOWNER=* is accepted in the same session" \
-                   || fail "$1: after the change JESOWNER=* gave '$r' in the same session"
+    r=$(jw_live_send "site jesowner=*" | tr -d '\r')
+    printf '%s\n' "$r" | grep -q '^200 ' && ! printf '%s\n' "$r" | grep -q 'not authorized' \
+        && pass "$1: after the change JESOWNER=* is accepted in the same session" \
+        || fail "$1: after the change JESOWNER=* gave '$r' in the same session"
     jw_live_send "get ${JID[JWN0]} $TMPDIR/jw_got11" > /dev/null
     [ -s "$TMPDIR/jw_got11" ] && pass "$1: after the change the foreign job is read in the same session" \
                               || fail "$1: after the change the foreign job is still not read"

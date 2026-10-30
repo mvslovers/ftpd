@@ -495,14 +495,15 @@ read the spool through TSO, SDSF or another interface.
 
 Without any JESSPOOL profile nothing else is visible: every user sees, reads and
 deletes only their own jobs, and `SITE JESOWNER=*` or another user's id is
-refused with `501`. That is the state of FTPD 1.3 without any action.
+answered with `200` and ignored (see below). That is the state of FTPD 1.3
+without any action.
 
 A refused check writes no message to the operator console. FTPD asks RAKF
 through libc370's `racf_auth()`, which sets the request flag LOG=NONE, and
 RAKF's `ICHSFR00` then skips `RAKF0005`/`RAKF000A`. FTPD's own
 `STDOUT` log records what it refused: a `JES <op> denied: ...` line for each
-job hidden from `dir JOBnnnnn`, `RETR` and `DELE`, and a `SITE JESOWNER
-refused` line. A plain `dir` hides jobs without a line of their own; the
+job hidden from `dir JOBnnnnn`, `RETR` and `DELE`. A `SITE JESOWNER` that is
+ignored writes a `SITE JESOWNER ignored` line at debug level only. A plain `dir` hides jobs without a line of their own; the
 number is in the `JES LIST: ... hidden ...` line. The User's Guide, "A
 Complete Sample Session with JESSPOOL", has a full session and the measurement.
 
@@ -532,14 +533,29 @@ reply does not tell whether the job exists.
 `SITE JESOWNER=<value>` only narrows the view, never widens it. The value is one
 user id (compared whole: `ABC` does not match `ABCD`) or `*` for all owners.
 `*` and another user's id need READ on the profile that would cover that
-user's jobs; without it the answer is `501`. A pattern such as `ABC*`, a value
-of more than eight characters and a character outside `A–Z 0–9 $ # @` are `501`
-as well; a value is never cut to eight characters.
+user's jobs. Without it FTPD answers like z/OS does, with `200` and a notice,
+and the filter stays what it was (your own user id unless you set another one
+before):
+
+```
+200-User IBMUSER is not authorized to filter on JESOWNER, JESOWNER remains IBMUSER
+200 SITE command was accepted
+```
+
+A client that sends `SITE JESOWNER=*` with every request, such as the Zowe FTP
+plug-in, therefore carries on with its own jobs and does not stop on an error.
+The `200` gives no one access: the jobs of others are still decided one by one
+by the profiles above, and `LIST`, `LIST JOBnnnnn`, `RETR` and `DELE` keep
+hiding them. A pattern such as `ABC*`, a value of more than eight characters
+and a character outside `A–Z 0–9 $ # @` are not an owner at all and stay
+`501`; a value is never cut to eight characters.
 
 > **Change from FTPD 1.2.0:** `SITE JESOWNER=` compared a prefix and accepted any
 > value (`200`), and any user could list, read and delete the jobs of everyone.
-> If you relied on seeing or deleting other users' jobs, define the profiles
-> below **before** you upgrade.
+> Since 1.3.0 a value without the right is not stored; 1.3.0 to 1.3.2 answered
+> it with `501`, FTPD 1.3.3 answers `200` with the notice above. If you relied
+> on seeing or deleting other users' jobs, define the profiles below **before**
+> you upgrade.
 
 ### Rules for profiles
 
@@ -836,7 +852,8 @@ after `S RAKFPROF`.
 ### Check it
 
 1. Log in as an ordinary user: `LIST` shows only your own jobs; `SITE
-   JESOWNER=*` answers `501`.
+   JESOWNER=*` answers `200` with `User … is not authorized to filter on
+   JESOWNER` and `LIST` still shows only your own jobs.
 2. Log in as a member of the group that the profile permits: `LIST` shows the
    foreign jobs; `RETR` reads them; `DELE` answers `550 Access denied - cannot
    cancel <jobid>` with READ and `250 Cancel successful` with UPDATE.
@@ -862,7 +879,8 @@ after `S RAKFPROF`.
 | `S RAKFPROF` ends with `ABEND S000 U0400` | A profile line with an id has no line without an id for the same entity — section 7. The old tables stay in effect |
 | `S RAKFPROF` ends with `ABEND S000 U0300` or `U0500` | A second line for the same resource and group (`RAKFPROF3  I/P RECORDS OUT OF ORDER`), or a line without a permission (`RAKFPROF6  ENTITY RECORD WITH NO ACCESS AUTHORITY`). The `RAKFPROF8` line before the message is the record that stopped the load. Section 7, "Writing `PROFILES` by hand" |
 | `550 Jobid … not found` for a job that exists | The job is hidden: it belongs to another owner and no JESSPOOL profile gives you READ — section 7 |
-| `501` for `SITE JESOWNER=…` | A pattern, a value of more than 8 characters, or no READ on the owner's jobs — section 7 |
+| `501` for `SITE JESOWNER=…` | A pattern, a value of more than 8 characters or a character outside `A–Z 0–9 $ # @` — section 7 |
+| `200-User … is not authorized to filter on JESOWNER` | No READ on the owner's jobs: the filter stays your own, nothing is wrong with the server — section 7 |
 
 ---
 
