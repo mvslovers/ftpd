@@ -135,7 +135,7 @@ def worker(i):
     try:
         f = login()
     except Exception as e:
-        res[i] = ("setup", "login: %s" % e)
+        res[i] = ("setup", "login: %s" % (str(e) or type(e).__name__))
         try:
             barrier.abort()
         except threading.BrokenBarrierError:
@@ -170,8 +170,15 @@ print("  uploads took %.1f s" % (time.time() - t0))
 setup = [r[1] for r in res if r and r[0] == "setup"] + \
         ["no result" for r in res if r is None]
 if setup:
+    # Every distinct reason, with its count: the barrier message of the
+    # sessions that were waiting hides the login that never got its 220 (#327).
+    reasons = {}
+    for r in setup:
+        reasons[r] = reasons.get(r, 0) + 1
     print("  SETUP ERROR: %d of %d sessions never uploaded (MAXSESSIONS too "
-          "small?): %s" % (len(setup), nsess, setup[0]))
+          "small?):" % (len(setup), nsess))
+    for r, n in reasons.items():
+        print("    %d x %s" % (n, r))
     sys.exit(2)
 
 bad = [(i, r[1], r[2]) for i, r in enumerate(res) if r[1] != 226]

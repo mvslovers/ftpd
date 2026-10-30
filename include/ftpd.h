@@ -78,6 +78,9 @@ typedef unsigned char   UCHAR;
 #define FTPD_MAX_PATH_LEN   256     /* max UFS path length           */
 #define FTPD_MAX_USER_LEN   8       /* max userid length             */
 #define FTPD_DATA_BUF_SIZE  4096    /* data transfer buffer size     */
+#define FTPD_LISTEN_BACKLOG 128     /* completed connections the host
+                                    ** holds for accept(); see
+                                    ** socket_thread() (#327)          */
 
 /* --- ABEND recovery --- */
 #define FTPD_MAX_RECOVER    3       /* consecutive per-command ABEND

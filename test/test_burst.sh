@@ -26,6 +26,13 @@
 # maxsessions must be the server's MAXSESSIONS (default 10, the FTPD default).
 # Nothing else may be connected while it runs.
 #
+# The listen backlog (#327) shows only in a burst larger than 11: with a
+# backlog of 10 the host held 11 completed connections and left the rest to
+# SYN-ACK retransmits, so some of 30 got no 220 for seconds or at all.  Run it
+# with MAXSESSIONS=40 on the server and `./test_burst.sh HOST PORT 40`: round 1
+# then opens 40 at once and fails on such a server.  The default of 10 does
+# not reach it.
+#
 # Exit status: 0 = all checks passed.
 # ============================================================
 
@@ -80,6 +87,10 @@ PYBURST
 }
 
 echo "FTPD burst test: $HOST:$PORT, MAXSESSIONS=$MAXS"
+if [ "$MAXS" -lt 30 ]; then
+    echo "  NOTE: a burst of $MAXS does not reach the listen backlog (#327);"
+    echo "        run with MAXSESSIONS=40 and maxsessions 40 to cover it"
+fi
 
 echo "Round 1: $MAXS simultaneous connections"
 OUT=$(burst "$MAXS")

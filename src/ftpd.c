@@ -780,7 +780,14 @@ socket_thread(void *arg1, void *arg2)
         return 8;
     }
 
-    if (listen(sock, 10) < 0) {
+    /* The backlog must hold a whole burst, because accept() only runs on
+    ** the one-second tick (accept_loop).  The listening socket is the
+    ** host's: once its queue is full the host drops the client's final ACK
+    ** and answers nothing until a later SYN-ACK retransmit finds room, so
+    ** the client sees a connect() that worked and a 220 that comes seconds
+    ** late or never.  With 10 here, a burst of 30 lost 2 to 8 of them
+    ** (#327).  The host caps the value at its own limit (somaxconn). */
+    if (listen(sock, FTPD_LISTEN_BACKLOG) < 0) {
         ftpd_log_wto("FTPD052E LISTEN() FAILED, ERRNO=%d", errno);
         closesocket(sock);
         return 8;
