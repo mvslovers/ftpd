@@ -95,7 +95,7 @@ the jobs, `LIST` without a job ID, is unchanged.
   JCL listing in the spool.
 
   FTPD now ends the statement as JCL does. The operand field ends at the first
-  blank outside quotes and parentheses. Only a comma as the last character of
+  blank outside a quoted string. Only a comma as the last character of
   the operand field continues the statement, and a comment card between
   continuation cards does not end it. The comma goes directly behind the
   operand field, and the cards that follow it are the credentials. FTPD holds
@@ -108,13 +108,14 @@ the jobs, `LIST` without a job ID, is unchanged.
   ```
 
   That is the case when the operand field ends in column 71 or beyond (no room
-  for the comma), when a card ends inside a quoted string or with a parenthesis
-  still open, when the card after a comma is not a continuation card (`//`, a
-  blank, and operands that begin at column 16 at the latest), when the stream
-  ends inside the statement, and when the statement has more than 16 cards. For
-  a refused statement the password is never written to the spool. A comma in
-  the comment field and a comment card between continuation cards are
-  submitted with the credentials on the JOB statement. (#383, #386)
+  for the comma), when a card ends inside a quoted string, when a parenthesis
+  is still open at the end of the operand field (a blank inside the parentheses
+  ends the field), when the card after a comma is not a continuation card
+  (`//`, a blank, and operands that begin at column 16 at the latest), when the
+  stream ends inside the statement, and when the statement has more than 16
+  cards. For a refused statement the password is never written to the spool.
+  A comma in the comment field and a comment card between continuation cards
+  are submitted with the credentials on the JOB statement. (#383, #386)
 
 - **`PASV` and `EPSV` go on with the next port when a session lost the race for
   one.** FTPD walks the range of `PASVPORTS` and takes the first port that
