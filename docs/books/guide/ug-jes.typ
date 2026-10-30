@@ -213,33 +213,69 @@ which #cmd("dir") answers with the same #cmd("550"), where #cmd("get") and
 == Reading the Output of a Job <ug-jes-output>
 
 #idx("job", "output")#idx("spool")
-The command #cmd("dir JOB00036") lists the spool files of the job, one line for
-each, with the step, the procedure step, the output class and the DD name. The
-command #cmd("get") (#cmd("RETR")) fetches them. The session lists the spool
-files, fetches all of them in one file, fetches the third one alone, and asks
-for two that do not exist:
+The command #cmd("dir JOB00036") lists the spool files of the job. The list
+has the same layout as the list of a job on z/OS: the job line, a line of
+dashes, a table with one line for each spool file, and a last line with the
+number of files. The command #cmd("get") (#cmd("RETR")) fetches the files. The
+session lists the spool files, fetches all of them in one file, fetches the
+third one alone, and asks for two that do not exist:
 
 #screen(raw(read("../ex/ug-jes/j-output.txt"), block: true))
 
-- *#cmd("get JOB00036 out.txt"):* all output files of the job, one after the
-  other, in one local file. FTPD writes the line #cmd(" !! END OF JES SPOOL FILE !!")
-  after every file. The start is #cmd("125 Sending all spool files for requested Jobid").
-  The local file starts with the job log.
-- *#cmd("get JOB00036.3 spool3.txt"):* only the third output file. The number
-  counts the output files of the job from 1. The start is #cmd("125 Sending data
-  set") and the name of the file: the owner, the job name, the job ID, the ID of
-  the data set in JES2 (#cmd("D0000004") in the example, not the number that
-  was typed) and the DD name.
+The lines of the list are:
 
-The list of the spool files has eight lines, and only five of them can be
-fetched. The number after the point does not count the input files of the job:
-the JCL that was read (#cmd("JESJCLIN")), the input text (#cmd("JESINTXT")) and the data of #cmd("SYSIN") that is part of the job (#cmd("SYSUT1") of
-the example). In the example #cmd("JOB00036.3") is therefore the third of
-#cmd("JESMSGLG"), #cmd("JESJCL"), #cmd("JESYSMSG"), #cmd("SYSPRINT") and
-#cmd("SYSUT2"), and #cmd("JOB00036.9") is past the five. The first of the two
-error lines at the end of the session shows this reply, and the second one is
-for a job that JES2 does not know. The byte count of the list is the number of
-records times the record length of the file, so it is not exact.
+- *The job line:* the header of the job list (#cmd("JOBNAME  JOBID    OWNER    STATUS CLASS"))
+  and the line of the job, the same line as in the list of the jobs
+  (@ug-jes-list).
+- *The table:* the columns are the ID, the step (#cmd("STEPNAME")), the
+  procedure step (#cmd("PROCSTEP")), the output class (#cmd("C")), the DD name
+  and the byte count. The ID counts the files from 1. It is printed with
+  three digits.
+- *The last line:* #cmd("5 spool files") is the number of lines of the table.
+  The line says #cmd("files") also for a job with one file.
+
+The ID is the number of #cmd("get JOB00036.n"). The list shows the files that
+#cmd("get") can fetch, and no others. The files that JES2 wrote itself
+(#cmd("JESMSGLG"), #cmd("JESJCL") and #cmd("JESYSMSG")) have the step
+#cmd("JES2"), because they belong to no step of the job. The input files of the
+job have no line and no ID: the JCL that was read (#cmd("JESJCLIN")), the input
+text (#cmd("JESINTXT")) and the data of #cmd("SYSIN") that is part of the job
+(#cmd("SYSUT1") of the example). A job that has no such file (it is still in
+the input queue, or its output is purged) gets the header and the job line
+alone, with no dashes, no table and no count. The list shows at
+most 999 files.
+
+In the example #cmd("JOB00036.3") is the third line, #cmd("JESYSMSG"), and
+#cmd("JOB00036.9") is past the five. The first of the two error lines at the
+end of the session shows this reply, and the second one is for a job that JES2
+does not know. The byte count of the list is the number of records times the
+record length of the file, so it is not exact.
+
+#note[*Changed in FTPD 1.3.3.* Up to FTPD 1.3.2 the list of the spool files had
+its own header (#cmd("JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT")),
+repeated the job name and the job ID on every line, listed the input files too,
+had no ID column and no last line. The number of #cmd("get JOB00036.n") was not
+shown. A script that read the old
+columns must read the new layout: the table follows the line with the header
+#cmd("ID  STEPNAME PROCSTEP C DDNAME   BYTE-COUNT") and ends before the line
+#cmd("N spool files").]
+
+*Zowe CLI.* The job commands of the Zowe CLI plug-in for z/OS FTP read this
+layout: the plug-in 3.1.1 finds the table by the header line with #cmd("ID")
+and the end by the line #cmd("N spool files"). The commands that take a job ID
+(#cmd("list spool-files-by-jobid"), #cmd("view job-status-by-jobid"),
+#cmd("view all-spool-by-jobid"), #cmd("view spool-file-by-id") and
+#cmd("download all-spool-by-jobid")) first send
+#cmd("SITE FILETYPE=JES SBSENDEOL=CRLF JESJOBNAME=* JESOWNER=*"). FTPD accepts
+#cmd("JESOWNER=*") only for a user who has READ on the entity #cmd("..") in the
+class #cmd("JESSPOOL") (@ug-jes-others, the Reference has the table of the
+values of #cmd("JESOWNER")). For any other user the reply is
+#cmd("501 JESOWNER is not permitted"), and the plug-in stops with that error.
+The first run is a user with READ on #cmd("..") (IBMUSER, a member of
+#cmd("ADMIN")), the second one a user without it (BOB). The options of the
+connection (host, port, user and password) are left out:
+
+#screen(raw(read("../ex/ug-jes/j-zowe.txt"), block: true))
 
 FTPD converts the text to ASCII in text mode (#cmd("ascii")). A line longer than
 253 characters is cut. A spool file that holds no data keeps its number, and
@@ -530,7 +566,8 @@ the spool files of the job, cancels it, and lists again:
   Both get #cmd("501 Invalid job ID"). FTPD refuses the form before it asks
   JES2, and #cmd("501") never means that the job is hidden: a hidden or
   missing job gets the #cmd("550") of BOB's session.
-- #cmd("dir JOB00038") lists the spool files of the job, and the own
+- #cmd("dir JOB00038") lists the five spool files of the job (@ug-jes-output),
+  and the own
   #cmd("delete") answers #cmd("250 Cancel successful"). The last list is
   empty.
 

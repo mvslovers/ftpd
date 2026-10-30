@@ -13,7 +13,7 @@ local: again.txt remote: job00038
 229 Entering Extended Passive Mode (|||22000|)
 125 Sending all spool files for requested Jobid
 250 Transfer completed successfully.
-3307 bytes received in 00:00 (44.47 KiB/s)
+3318 bytes received in 00:00 (69.32 KiB/s)
 ftp> get JOB38 x.txt
 local: x.txt remote: JOB38
 229 Entering Extended Passive Mode (|||22000|)
@@ -25,15 +25,16 @@ local: x.txt remote: JOB*
 ftp> dir JOB00038
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JOB00038
-JOBNAME  JOBID    STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
-PAYROLL  JOB00038                   H JESJCLIN        720
-PAYROLL  JOB00038                   H JESMSGLG        931
-PAYROLL  JOB00038                   H JESJCL          810
-PAYROLL  JOB00038                   H JESYSMSG       3192
-PAYROLL  JOB00038                   A JESINTXT          0
-PAYROLL  JOB00038 STEP1             H SYSUT1           80
-PAYROLL  JOB00038 STEP1             H SYSPRINT        484
-PAYROLL  JOB00038 STEP1             H SYSUT2           80
+JOBNAME  JOBID    OWNER    STATUS CLASS
+PAYROLL  JOB00038 ALICE    OUTPUT  A   RC=0000
+--------
+        ID  STEPNAME PROCSTEP C DDNAME   BYTE-COUNT 
+        001 JES2              H JESMSGLG        931
+        002 JES2              H JESJCL          810
+        003 JES2              H JESYSMSG       3192
+        004 STEP1             H SYSPRINT        484
+        005 STEP1             H SYSUT2           80
+5 spool files
 250 List completed successfully.
 ftp> delete JOB00038
 250 Cancel successful

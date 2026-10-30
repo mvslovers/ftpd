@@ -467,7 +467,11 @@ as before:
       #cmd("USER") and #cmd("PASSWORD") to the JOB statement.],
     [#cmd("LIST"), #cmd("NLST")], [The list of jobs, filtered by the owner,
       the job name and the status of #cmd("SITE"). At most 200 entries.],
-    [#cmd("LIST JOBnnnnn")], [The spool files of one job.
+    [#cmd("LIST JOBnnnnn")], [The spool files of one job in the z/OS layout:
+      the job line, a line of dashes, a table with the ID of each file and the
+      last line #cmd("N spool files"). The ID is the number of
+      #cmd("RETR JOBnnnnn.n"). Only the files that #cmd("RETR") can send are
+      listed, at most 999 (FTPD 1.3.3; before it the list had its own layout).
       #cmd("550 Jobid JOBnnnnn not found for JESJOBNAME=n, JESSTATUS=s, JESOWNER=o")
       if there is none, if the job is not in the status of
       #cmd("SITE JESSTATUS"), if the session may not see it, or if the ID has a
