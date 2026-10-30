@@ -241,7 +241,13 @@ again unless something changes. FTPD sends it in these cases:
     [#cmd("Requested file action aborted: out of space on the data set. Allocate more space with SITE PRIMARY/SECONDARY and CYLINDERS, or ask the administrator to raise DEFPRIMARY.")],
       [A write to a data set ended with no space left. With an abend code
       (#cmd("(ABEND SB37)")) when the system ended the write with B37, D37 or
-      E37.],
+      E37. A partitioned data set whose space is used up gets this text, not
+      the one for the directory, even if its directory is full as well: the
+      write fails before the entry of the member is made. Measured with a PDS
+      of five tracks and one directory block, which holds 20 entries, and
+      members of 3760 bytes (47 records of 80): on a 3350 20 members were
+      stored and the 21st got this text. On a 3390 the 21st
+      member got the text for the directory.],
     [#cmd("Requested file action aborted: the directory of the PDS is most likely full (ABEND SB14). It cannot be extended; create the PDS with more directory blocks (SITE DIRECTORY=n, then MKD) and copy the members.")],
       [A member #cmd("STOR") or #cmd("APPE") ended with the ABEND SB14. FTPD
       takes it for a full directory of the partitioned data set, as the system

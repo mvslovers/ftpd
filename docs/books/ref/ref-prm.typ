@@ -161,7 +161,15 @@ new data sets then go where the system chooses. If the volume is online and
 #cmd("DEFUNIT") has four digits that do not match the device type of the
 volume, FTPD writes #cmd("FTPD060W") and drops the unit. A unit that is not four
 digits, for example an esoteric name, is not compared. FTPD does not check
-the unit that a client sets with #cmd("SITE UNIT").]
+the unit that a client sets with #cmd("SITE UNIT").
+
+With #cmd("DEFVOLUME") empty, as in the sample file in #cmd("FTPD.SAMPLIB"),
+the system chooses the volume. On MVS/CE that is #cmd("WORK00") or
+#cmd("WORK01"), both 3350 volumes; #cmd("PUB000") is a 3380 and
+#cmd("PUB001") a 3390. A 3350 track holds less than a 3390 track, so a data
+set that a client creates with a small #cmd("SITE PRIMARY") in tracks runs out
+of space after fewer records there. Set #cmd("DEFVOLUME") and
+#cmd("DEFUNIT") when the result must not depend on the device.]
 
 The default space is 10 tracks as primary quantity and 5 tracks as secondary
 quantity. A data set can have 16 extents (the primary and 15 secondary

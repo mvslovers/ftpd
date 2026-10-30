@@ -1138,9 +1138,9 @@ xfer_reply() {
     grep -E "^(226|250|[45][0-9][0-9]) " "$1" | tail -1
 }
 
-# mkmem <file> <tag>: MEMRECS records, each starting with the tag
+# mkmem <file> <tag> [records]: MEMRECS records (default), each starting with the tag
 mkmem() {
-    awk -v n=$MEMRECS -v t="$2" \
+    awk -v n="${3:-$MEMRECS}" -v t="$2" \
         'BEGIN{for(i=1;i<=n;i++) printf "%s%06d\n", t, i}' > "$1"
 }
 
@@ -1550,7 +1550,12 @@ fi
 # Test 8 keeps the directory out of the way on purpose; this is the
 # opposite shape: one directory block (20 members) and room for far
 # more members than that, so the 21st STOR fails on the directory and
-# on nothing else.  The system ABENDs the CLOSE with SB14-0C (STOW finds
+# on nothing else.  The members are one record each, so that the data
+# of 21 of them fits into TRK(5,0) on any device.  With MEMRECS records
+# each, a 3350 has no room for the 21st member (MVS/CE puts a data set
+# without VOLUME= on WORK01, which is a 3350): the write fails before the directory
+# entry is made and the reply is the out-of-space 552 (#359).
+# The system ABENDs the CLOSE with SB14-0C (STOW finds
 # no room), which is not an x37 and used to answer 451 -- a transient
 # code, so a client retried into the same full directory.  A directory
 # cannot be extended, so the answer is the permanent 552, with the one
@@ -1571,6 +1576,7 @@ section "Test 11: Member STOR into a PDS with a full directory"
 DSN_DIR="${HLQ}.TEST.FULLDIR"
 DSN_DIR_OLD="${HLQ}.TEST.FULLDOLD"
 DSN_DIR_FULL="$DSN_DIR"     # the full PDS, under whichever name it has now
+DIRMEMRECS=1                # records per member, see above
 
 info "MKD '$DSN_DIR' (FB 80, BLKSIZE 19040, TRK(5,0), 1 directory block)"
 FTP_OUT="$TMPDIR/ftp_dir_mkd.log"
@@ -1596,7 +1602,7 @@ else
     DFULL_REPLY=""
     m=1
     while [ "$m" -le 60 ]; do
-        mkmem "$TMPDIR/dir_m$m.txt" "MEMBER$m-"
+        mkmem "$TMPDIR/dir_m$m.txt" "MEMBER$m-" "$DIRMEMRECS"
         FTP_OUT="$TMPDIR/ftp_dir_m$m.log"
         ftp_run "type ascii
 put $TMPDIR/dir_m$m.txt '$DSN_DIR(M$m)'" "$FTP_OUT"
@@ -1645,9 +1651,9 @@ get '$DSN_DIR(M$DFULL)' $TMPDIR/dir_absent.txt" "$FTP_OUT"
             ftp_run "type ascii
 get '$DSN_DIR(M$k)' $TMPDIR/dir_back$k.txt" "$FTP_OUT"
             GOT=$(grep -c "^MEMBER$k-" "$TMPDIR/dir_back$k.txt" 2>/dev/null)
-            if [ "${GOT:-0}" -ne "$MEMRECS" ]; then
+            if [ "${GOT:-0}" -ne "$DIRMEMRECS" ]; then
                 DINTACT=0
-                info "M$k has ${GOT:-0} of $MEMRECS records"
+                info "M$k has ${GOT:-0} of $DIRMEMRECS records"
             fi
         done
         if [ "$DINTACT" -eq 1 ]; then
@@ -1658,7 +1664,7 @@ get '$DSN_DIR(M$k)' $TMPDIR/dir_back$k.txt" "$FTP_OUT"
 
         # The same failure again, on a new session: the server survived the
         # first one, and the retry meets the same permanent answer.
-        mkmem "$TMPDIR/dir_again.txt" "AGAIN-"
+        mkmem "$TMPDIR/dir_again.txt" "AGAIN-" "$DIRMEMRECS"
         FTP_OUT="$TMPDIR/ftp_dir_again.log"
         ftp_run "type ascii
 put $TMPDIR/dir_again.txt '$DSN_DIR(M$DFULL)'" "$FTP_OUT"
