@@ -84,12 +84,15 @@ the jobs, `LIST` without a job ID, is unchanged.
   the statement has no `NOTIFY` of its own. It took the last card of the JOB
   statement from the last non-blank character of a card alone and put the
   comma that continues the statement there, and only if the card was shorter
-  than 71 characters. Two shapes of input put the three cards behind a card
-  that is not part of the statement: a comma in the comment field
-  (`//J JOB (A),'T',CLASS=A   NOTE, MORE`) was taken for a continuation, and a
-  JOB card that reached column 71 had no room for the comma. The cards were
-  then statements of their own. The job ended with a JCL error, had no owner,
-  and the `PASSWORD=` card stood in its JCL listing in the spool.
+  than 71 characters. Three shapes of input put the cards behind a card that
+  is not part of the statement. A comment behind the operands, as in
+  `//J JOB (A),'T',CLASS=A   NOTE, MORE`, got the comma behind its last
+  word, so the comma stood in the comment and continued nothing. A comment
+  that ended in a comma (`NOTE,`) was taken for a continuation, so the cards
+  went behind the card that followed. A JOB card that reached column 71 had
+  no room for the comma. The cards were then statements of their own. The job
+  ended with a JCL error, had no owner, and the `PASSWORD=` card stood in its
+  JCL listing in the spool.
 
   FTPD now ends the statement as JCL does. The operand field ends at the first
   blank outside quotes and parentheses. Only a comma as the last character of
