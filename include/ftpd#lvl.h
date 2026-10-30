@@ -93,4 +93,22 @@ int ftpd_lvl_of(const char *pattern, char *level, int levelsz)   asm("FTPLVLOF")
 int ftpd_lvl_keep(const char *filter, int has_wildcard, const char *dsn)
                                                             asm("FTPLVKEP");
 
+/*
+** The index of the first name of a catalog level that LIST/NLST shows, or -1
+** when it shows none.
+**
+** The count that tells an empty result from a listing only has to know
+** whether there is a first hit, so it stops there; a full count would match
+** every entry twice per command, once to count and once to print (#348).
+**
+** name_at -- answers the name at index i, or NULL at the end of the level.
+**            It is not called again after it has answered NULL, nor after
+**            the first name that is kept.
+** ctx     -- handed to name_at as it is.
+** filter and has_wildcard are those of ftpd_lvl_keep().
+*/
+int ftpd_lvl_first(const char *filter, int has_wildcard,
+                   const char *(*name_at)(void *ctx, int i), void *ctx)
+                                                            asm("FTPLVFST");
+
 #endif /* FTPD_LVL_H */

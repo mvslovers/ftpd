@@ -895,6 +895,15 @@ send_pds_entry(ftpd_session_t *sess, PDSLIST *pd, int nlst,
     }
 }
 
+/* Name at index i of a __listds() result, NULL at its end. */
+static const char *
+ds_name_at(void *ctx, int i)
+{
+    DSLIST **dsl = ctx;
+
+    return dsl[i] ? dsl[i]->dsn : NULL;
+}
+
 /* --------------------------------------------------------------------
 ** LIST/NLST — dataset or PDS member listing
 **
@@ -1202,13 +1211,9 @@ ftpd_mvs_list(ftpd_session_t *sess, const char *arg, int nlst)
         ** is not (550): neither shows a data set, and 550 is what z/OS FTP
         ** says for both. */
         shown = 0;
-        if (dsl) {
-            for (i = 0; dsl[i]; i++) {
-                if (ftpd_lvl_keep(has_filter ? prefix : NULL, has_wildcard,
-                                  dsl[i]->dsn))
-                    shown++;
-            }
-        }
+        if (dsl && ftpd_lvl_first(has_filter ? prefix : NULL, has_wildcard,
+                                  ds_name_at, dsl) >= 0)
+            shown = 1;
         if (shown == 0) {
             if (dsl) __freeds(&dsl);
             ftpd_session_reply(sess, FTP_550, "No data sets found.");

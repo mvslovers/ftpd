@@ -18,6 +18,21 @@
 
 static char lvl[64];
 
+/* A level that counts how many names the search looks at. */
+struct names {
+    const char **dsn;
+    int looked;
+};
+
+static const char *
+name_at(void *ctx, int i)
+{
+    struct names *n = ctx;
+
+    n->looked++;
+    return n->dsn[i];
+}
+
 /* The level of pattern; the buffer is poisoned first so that "untouched"
 ** can be told from "written empty". */
 static int
@@ -211,6 +226,40 @@ main(void)
             CHECK(n == cases[c].want,
                   cases[c].filter ? cases[c].filter : "(no filter)");
         }
+    }
+
+    /* --- the count of a listing stops at the first name it keeps (#348) - */
+    {
+        const char *level[] = {
+            "SYS1.A", "SYS1.B", "SYS1.PROCLIB", "SYS1.C", "SYS1.D",
+            "SYS1.PROCLIB.OLD", NULL
+        };
+        const char *none[] = { "SYS1.A", "SYS1.B", NULL };
+        struct names n;
+
+        n.dsn = level;
+        n.looked = 0;
+        CHECK(ftpd_lvl_first("SYS1.PROC*", 1, name_at, &n) == 2,
+              "the first kept name is found");
+        CHECK(n.looked == 3,
+              "the search looks at the names up to the first hit, no more");
+
+        n.looked = 0;
+        CHECK(ftpd_lvl_first(NULL, 0, name_at, &n) == 0 && n.looked == 1,
+              "no filter: the first name keeps it, one name looked at");
+
+        n.looked = 0;
+        CHECK(ftpd_lvl_first("SYS1.PROCLIB", 0, name_at, &n) == 2 &&
+              n.looked == 3,
+              "a name without a wildcard stops at the data set itself");
+
+        n.dsn = none;
+        n.looked = 0;
+        CHECK(ftpd_lvl_first("SYS1.PROC*", 1, name_at, &n) == -1,
+              "no name kept: -1");
+        CHECK(n.looked == 3,
+              "a level with no hit is read to its end, the terminator "
+              "included");
     }
 
     return mbt_test_summary("TSTLVL");
