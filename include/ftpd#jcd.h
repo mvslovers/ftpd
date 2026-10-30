@@ -18,7 +18,10 @@
 ** JOB statement, the job has no owner and PASSWORD= stands in the spool in
 ** the clear.  So the cards of the JOB statement are held back until the end
 ** of the statement is known, and a statement that cannot be continued is
-** refused before anything of it reaches the internal reader.
+** refused before anything of it reaches the internal reader.  A card that
+** ends inside a quoted string is refused too: JES2 does not take the string
+** carried over to the next card as a continuation of the JOB statement, so
+** the cards that follow would be statements of their own.
 */
 
 /* Most cards a JOB statement may have, comment cards between continuation
@@ -35,7 +38,7 @@
 
 typedef struct ftpd_jcd {
     int phase;          /* 0 before the JOB statement, 1 inside, 2 behind */
-    int inquote;        /* a quoted string runs on to the next card */
+    int inquote;        /* inside a quoted string while a card is scanned */
     int depth;          /* open parentheses */
     int nheld;          /* cards HOLD or DONE returned so far */
     int has_notify;     /* a card of the statement contains NOTIFY */

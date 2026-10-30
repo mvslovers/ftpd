@@ -3900,6 +3900,13 @@ printf '//F383F JOB (ACCT),'"'"'T'"'"',CLASS=A,MSGCLASS=X\n//S1 EXEC PGM=IEFBR14
 printf '//F383H JOB (ACCT),'"'"'T'"'"',CLASS=A,MSGCLASS=X NOTE\n//S1 EXEC PGM=IEFBR14' \
     > "$TMPDIR/je_h.jcl"
 
+printf '//F383Q JOB (ACCT),'"'"'T NAME\n//S1 EXEC PGM=IEFBR14\n' > "$TMPDIR/je_q.jcl"
+printf '//F383R JOB (ACCT),'"'"'T'"'"',CLASS=A,MSGCLASS=X,\n//   TYPRUN='"'"'A B\n//S1 EXEC PGM=IEFBR14\n' \
+    > "$TMPDIR/je_r.jcl"
+# No operands: the job ends with a JCL error (programmer name missing) of its
+# own, but it has the user as owner, so the credentials are on its JOB card.
+printf '//F383N JOB\n//S1 EXEC PGM=IEFBR14\n' > "$TMPDIR/je_n.jcl"
+
 # je_stor FILE LABEL EXPECTED-REPLY: submit one stream in the JES view.
 je_stor() {
     local f="$1" label="$2" want="$3"
@@ -3932,13 +3939,16 @@ je_stor d "stream ending inside the JOB statement" 550
 je_stor e "comment card between the continuation lines" 250
 je_stor f "plain JOB card" 250
 je_stor h "single blank before a comment, last card without LF" 250
+je_stor q "card ends inside a quoted string" 550
+je_stor r "continuation card ends inside a quoted string" 550
+je_stor n "JOB statement without operands" 250
 
 # The accepted jobs have the user as owner and ran: the credentials went onto
 # the JOB statement.  An ownerless job would not show here.
 sleep 10
 ftp_run "site filetype=jes
 ls" "$TMPDIR/ftp_je_ls.log"
-for je in a e f h; do
+for je in a e f h n; do
     var="JE_ID_$je"
     id="${!var}"
     if [ -n "$id" ] && grep -q " $id .*OUTPUT" "$TMPDIR/ftp_je_ls.log"; then

@@ -203,12 +203,25 @@ test_statement_end(void)
     ftpd_jcd_init(&st);
     CHECK(feed("//J JOB (A),'O''BRIEN X',CLASS=A") == FTPD_JCD_DONE &&
           card_is("//J JOB (A),'O''BRIEN X',CLASS=A,"), "doubled quote");
+    /* a card that ends inside a quoted string: JES2 does not continue it */
     ftpd_jcd_init(&st);
-    CHECK(feed("//J JOB (A),'A, B ,CLASS=A") == FTPD_JCD_HOLD &&
-          st.inquote == 1, "open quote: the string runs on");
-    CHECK(feed("//              C',CLASS=A") == FTPD_JCD_DONE &&
-          card_is("//              C',CLASS=A,"),
-          "string continues in column 16");
+    CHECK(feed("//J JOB (A),'A, B ,CLASS=A") == FTPD_JCD_REFUSE,
+          "open quote in the programmer name");
+    CHECK(feed("//              C',CLASS=A") == FTPD_JCD_REFUSE,
+          "nothing is taken after a refusal");
+    ftpd_jcd_init(&st);
+    CHECK(feed("//J JOB (A),NAME,CLASS=A,MSGCLASS='X Y") == FTPD_JCD_REFUSE,
+          "open quote in a keyword value");
+    ftpd_jcd_init(&st);
+    CHECK(feed("//J JOB (A),'OPEN,") == FTPD_JCD_REFUSE,
+          "a comma inside the open string is no continuation");
+    ftpd_jcd_init(&st);
+    feed("//J JOB (A),");
+    CHECK(feed("//   'OPEN STRING") == FTPD_JCD_REFUSE,
+          "open quote on a continuation card");
+    ftpd_jcd_init(&st);
+    CHECK(feed("//J JOB (A),'MY NAME") == FTPD_JCD_REFUSE &&
+          ftpd_jcd_unfinished(&st) == 0, "refused is not unfinished");
     ftpd_jcd_init(&st);
     CHECK(feed("//J JOB (A,") == FTPD_JCD_HOLD && st.depth == 1,
           "open parenthesis continues");

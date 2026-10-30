@@ -14,8 +14,6 @@
 ** latest, the index of that column is 70. */
 #define JCD_CONTENT     71
 #define JCD_COMMA_MAX   70
-/* A quoted string that runs on to the next card goes on in column 16. */
-#define JCD_QUOTE_CONT  15
 #define JCD_CONT_START  15
 
 /* Spelled out: the EBCDIC letters are not contiguous, so no range test. */
@@ -140,15 +138,11 @@ ftpd_jcd_feed(ftpd_jcd_t *st, char *card, int len)
             return jcd_hold(st);
         if (len < 3 || card[0] != '/' || card[1] != '/' || card[2] != ' ')
             return jcd_refuse(st);
-        if (st->inquote) {
-            i = JCD_QUOTE_CONT;
-        } else {
-            i = 3;
-            while (i < len && card[i] == ' ')
-                i++;
-            if (i >= len || i > JCD_CONT_START)
-                return jcd_refuse(st);
-        }
+        i = 3;
+        while (i < len && card[i] == ' ')
+            i++;
+        if (i >= len || i > JCD_CONT_START)
+            return jcd_refuse(st);
     }
 
     lim = len < JCD_CONTENT ? len : JCD_CONTENT;
@@ -188,8 +182,11 @@ ftpd_jcd_feed(ftpd_jcd_t *st, char *card, int len)
         if (jcd_has_notify(card, start, i))
             st->has_notify = 1;
 
+        /* JES2 does not take a string carried over to the next card as a
+        ** continuation of the JOB statement, so the cards that follow would
+        ** be statements of their own. */
         if (st->inquote)
-            return jcd_hold(st);
+            return jcd_refuse(st);
         if (i > start && card[i - 1] == ',')
             return jcd_hold(st);
 
