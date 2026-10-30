@@ -570,12 +570,30 @@ site_apply_one(ftpd_session_t *sess,
 
     /* A listing filter that narrows to somebody else's jobs needs the right
     ** to see them (#90).  The value is checked whole, before anything cuts
-    ** it to the size of the field; the reply does not say why. */
+    ** it to the size of the field.  A well formed value without the right is
+    ** ignored with a 200 that names the filter that stays, as z/OS does
+    ** ("User x is not authorized to filter on JESOWNER, JESOWNER remains
+    ** x"): Zowe sends JESOWNER=* with every job request and stops on a 5xx
+    ** (#398).  A value that is no owner at all stays a 501. */
     if (strcmp(key, "JESOWNER") == 0) {
         char canon[FTPD_JWN_PRTSZ];
+        int ok = ftpd_jes_owner_ok(sess, val, canon, sizeof(canon));
 
-        if (ftpd_jes_owner_ok(sess, val, canon, sizeof(canon))) {
+        if (ok == FTPD_JES_OWNER_OK) {
             strcpy(sess->jes_owner, canon);
+        } else if (ok == FTPD_JES_OWNER_DENIED) {
+            char who[FTPD_JWN_PRTSZ];
+            char cur[FTPD_JWN_PRTSZ];
+            char msg[96];
+
+            ftpd_jwn_printable(who, sizeof(who), sess->user);
+            ftpd_jwn_printable(cur, sizeof(cur),
+                               sess->jes_owner[0] ? sess->jes_owner
+                                                  : sess->user);
+            snprintf(msg, sizeof(msg),
+                "User %s is not authorized to filter on JESOWNER, "
+                "JESOWNER remains %s", who, cur);
+            site_warn(warn, warnsz, msg);
         } else if (deny[0] == '\0') {
             snprintf(deny, denysz, "JESOWNER is not permitted");
         }

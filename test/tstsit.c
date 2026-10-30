@@ -80,14 +80,16 @@ ftpd_jes_owner_ok(ftpd_session_t *s, const char *value, char *canon,
     int kind = ftpd_jwn_narrows(s->user, value, canon, canonsz);
 
     if (kind == FTPD_JWN_NR_RESET || kind == FTPD_JWN_NR_OWN)
-        return 1;
+        return FTPD_JES_OWNER_OK;
     if (kind == FTPD_JWN_NR_ALL || kind == FTPD_JWN_NR_OTHER) {
         owner_probes++;
         if (owner_probe_ok)
-            return 1;
+            return FTPD_JES_OWNER_OK;
+        canon[0] = '\0';
+        return FTPD_JES_OWNER_DENIED;
     }
     canon[0] = '\0';
-    return 0;
+    return FTPD_JES_OWNER_BAD;
 }
 
 /* The model data set lookup is replaced: the real one needs a catalog, a
@@ -658,18 +660,46 @@ main(void)
           "a character outside A-Z 0-9 $ # @ is 501");
 
     owner_probe_ok = 0;
+    st.jes_owner[0] = '\0';
     run("JESOWNER=ABC", &st, &code, text, sizeof(text));
+    CHECK(code == 200 && st.jes_owner[0] == '\0'
+          && strstr(text, "User IBMUSER is not authorized to filter on "
+                          "JESOWNER, JESOWNER remains IBMUSER") != NULL,
+          "a foreign userid without READ is 200, ignored, names the filter");
+    run("JESOWNER=*", &st, &code, text, sizeof(text));
+    CHECK(code == 200 && st.jes_owner[0] == '\0'
+          && strstr(text, "JESOWNER remains IBMUSER") != NULL,
+          "* without READ on the universal profile is 200 and ignored");
+    run("jesowner=abc", &st, &code, text, sizeof(text));
+    CHECK(code == 200 && st.jes_owner[0] == '\0',
+          "a denied value in lower case is ignored the same way");
+    run("FILETYPE=JES JESOWNER=* JESJOBNAME=ABC*", &st, &code, text,
+        sizeof(text));
+    CHECK(code == 200 && strcmp(st.jes_jobname, "ABC*") == 0
+          && st.jes_owner[0] == '\0',
+          "the other parameters of the line are applied");
+    run("JESOWNER=ABC*", &st, &code, text, sizeof(text));
     CHECK(code == 501 && strcmp(text, "JESOWNER is not permitted") == 0
           && st.jes_owner[0] == '\0',
-          "a foreign userid without READ is 501 and not stored");
-    run("JESOWNER=*", &st, &code, text, sizeof(text));
+          "a pattern stays 501 without READ");
+    run("JESOWNER=ABCDEFGHI", &st, &code, text, sizeof(text));
     CHECK(code == 501 && st.jes_owner[0] == '\0',
-          "* without READ on the universal profile is 501");
+          "nine characters stay 501 without READ");
     run("JESOWNER=IBMUSER", &st, &code, text, sizeof(text));
     CHECK(code == 200 && strcmp(st.jes_owner, "IBMUSER") == 0,
           "the own userid needs no right");
+    /* A value that was accepted earlier stays when a later one is denied. */
+    fresh_session();
+    strcpy(sess.jes_owner, "ABC");
+    last_text[0] = '\0';
+    replies = 0;
+    ftpd_site_dispatch(&sess, "JESOWNER=*");
+    CHECK(replies == 1 && last_code == 200 && strcmp(sess.jes_owner, "ABC") == 0
+          && strstr(last_text, "JESOWNER remains ABC") != NULL,
+          "a denied value leaves the filter that was set and names it");
     run("JESOWNER=", &st, &code, text, sizeof(text));
-    CHECK(code == 200, "a reset needs no right");
+    CHECK(code == 200 && st.jes_owner[0] == '\0',
+          "a reset needs no right");
     owner_probe_ok = 1;
 
     return mbt_test_summary("TSTSIT");

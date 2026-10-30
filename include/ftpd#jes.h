@@ -39,9 +39,18 @@ int ftpd_jes_delete(ftpd_session_t *sess, const char *arg)
 /*
 ** May the session narrow its JES listing to this SITE JESOWNER value?
 ** The value is checked whole, in any case.  canon (at least 9 bytes)
-** receives what to store: the upper-case value, or "" to reset.  Returns 1
-** to accept; 0 refuses (nothing to store), the refusal is logged.
+** receives what to store: the upper-case value, or "" to reset.
+**   FTPD_JES_OWNER_OK      accepted, store canon
+**   FTPD_JES_OWNER_BAD     not a userid, "*" or empty: a syntax error (501)
+**   FTPD_JES_OWNER_DENIED  well formed, but the session has no READ on the
+**                          owner's jobs: ignored, the filter stays (200)
+** A denial is logged at debug level and does not count into the session's
+** refusal budget (ftpd#jwn.h).
 */
+#define FTPD_JES_OWNER_OK       1
+#define FTPD_JES_OWNER_BAD      0
+#define FTPD_JES_OWNER_DENIED  (-1)
+
 int ftpd_jes_owner_ok(ftpd_session_t *sess, const char *value,
                       char *canon, int canonsz)           asm("FTPJEOWN");
 
