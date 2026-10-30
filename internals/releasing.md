@@ -23,18 +23,25 @@ ftpd 1.2.10 cannot be expressed and must not be released.
 
 Current: 1.3.0 (`TFTP130`, deleting `TFTP120`) and the patch releases 1.3.1
 (`TFTP131`, deleting `TFTP130` only) and 1.3.2 (`TFTP132`, deleting `TFTP131`
-only) are released. The patch releases were cut on the branch `release-1.3.x`;
+only) are released. 1.3.1 and 1.3.2 were cut on the branch `release-1.3.x`;
 mbt derives the id from the minor version only, so `mbt.toml` carried an
-explicit `fmid` and `delete` in `[smp]` on that branch (see the comment there;
-`main` does not). Not yet checked on any stand: `TFTP132` and `TFTP140`.
+explicit `fmid` and `delete` in `[smp]` on that branch. From 1.3.3 on, releases
+are cut from `main`: the branch `release-1.3.x` is contained in `main` and is
+not used any more, and the tags `v1.3.0` to `v1.3.2` hold its history.
+Not yet checked on any stand: `TFTP132`, `TFTP133` and `TFTP140`.
 Because `delete` names `TFTP131` only, a system that skipped 1.3.1 and still
 carries `TFTP130` must install 1.3.1 first (the same rule 1.3.1 had for
 `TFTP120`); `docs/installation.md` says so for 1.3.2.
 
-`main` is 1.4.0-dev, so mbt 3 derives **`TFTP140`**. `TFTP132` owns the modules
-after an install of 1.3.2, so the derived `delete` of 1.4.0 (`TFTP130`) is not
-enough: when 1.4.0 is cut, `[smp]` needs an explicit `delete` that names
-`TFTP132` (and `TFTP131` and `TFTP130` for a system that skipped a patch).
+`main` is 1.3.3-dev and carries the explicit `fmid = "TFTP133"` and
+`delete = ["TFTP132"]` in `[smp]`; 1.3.3 is a patch release and mbt does not
+derive its id. `TFTP140` is reserved for 1.4.0. A development build of `main`
+packaged before this change carries `TFTP140` (`docs/uninstall.md`). When 1.4.0
+is cut, `[smp]` needs an explicit `delete` that names `TFTP133` (and `TFTP132`,
+`TFTP131` and `TFTP130` for a system that skipped a patch), and the explicit
+`fmid` goes: the derived `TFTP140` is then right. A development
+build of `main` now carries `TFTP133`, the id of the release: do not install it
+on a system that will take 1.3.3 (the rule below about test installs).
 
 `TFTP111` was assigned to a 1.1.1 that was never cut (the libc370 2.0 port made
 the next release 1.2.0) and is unspent and unassigned. Burned: `TFTP100`

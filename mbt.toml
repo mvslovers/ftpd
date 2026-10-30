@@ -2,7 +2,7 @@ schema = 3
 
 [project]
 name = "ftpd"
-version = "1.4.0-dev"
+version = "1.3.3-dev"
 kind = "application"
 
 [toolchain]
@@ -296,12 +296,15 @@ readme = "docs/installation.md"
 # minor level. 1.0.0 through 1.0.2 were TFTP100 (the policy before this one);
 # 1.1.0 was TFTP110; 1.2.0 was TFTP120 (released 2026-10-13); 1.3.0
 # was TFTP130 (released 2026-10-22); 1.3.1 was TFTP131 (released 2026-10-27) and
-# 1.3.2 is TFTP132 (released 2026-10-28), patch releases cut on the branch
+# 1.3.2 was TFTP132 (released 2026-10-28), patch releases cut on the branch
 # release-1.3.x with an explicit fmid, each deleting its predecessor only
-# (TFTP130, then TFTP131). 1.4.0-dev derives TFTP140, and the derived delete
-# would name TFTP130: the 1.4.0 release needs an explicit delete that names
-# TFTP132 (and TFTP131 and TFTP130 for a system that skipped a patch), or
-# TFTP132 keeps the modules. TFTP111 was assigned to a
+# (TFTP130, then TFTP131). 1.3.3 is cut from main as a patch release the same
+# way: main is 1.3.3-dev and carries the explicit fmid TFTP133 deleting TFTP132
+# below, because mbt does not derive a patch id. TFTP140 stays reserved for
+# 1.4.0, which will need an explicit delete that names TFTP133 (and TFTP132,
+# TFTP131 and TFTP130 for a system that skipped a patch), or TFTP133 keeps the
+# modules. A development build of main packaged before 1.3.3-dev carries
+# TFTP140. TFTP111 was assigned to a
 # 1.1.1 that was never cut -- the libc370 2.0 port made the next release 1.2.0
 # -- and is unspent and unassigned. CLAUDE.md carries the rule, including the
 # one that constrains versioning itself: a 7-character id has room for three
@@ -354,7 +357,7 @@ readme = "docs/installation.md"
 # TFTP120 was free on the maintainer's word (2026-10-01): the TFTP ids are
 # assigned here and nowhere else, and he knows the systems. That was not a
 # measurement -- no LIST CDS/ACDS SYSMOD(TFTP120) was run on any stand before
-# 1.2.0 shipped under it. TFTP130, TFTP131, TFTP132 and TFTP140 are in the same state. If a check is run,
+# 1.2.0 shipped under it. TFTP130, TFTP131, TFTP132, TFTP133 and TFTP140 are in the same state. If a check is run,
 # record the stands and job numbers here, the way it was done for TFTP111
 # below.
 #
@@ -388,6 +391,8 @@ readme = "docs/installation.md"
 # above (2026-09-14, JOB00307-JOB00311). TFTP110 was verified still NOT FOUND
 # in both zones after each (FINALCHK JOB00277, TTMPCLN JOB00283).
 prefix = "TFTP"  # FMID and delete follow from the version
+fmid = "TFTP133"       # a patch release: mbt does not derive it, and refuses to respend TFTP130
+delete = ["TFTP132"]   # the patch id it replaces; the derivation would name TFTP120
 
 # Empty despite the [dependencies] entry on ufsd, which is a *build* time one:
 # libufs is linked statically, so nothing of ufsd has to be installed for FTPD
