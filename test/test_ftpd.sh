@@ -4045,6 +4045,14 @@ printf '//F383R JOB (ACCT),'"'"'T'"'"',CLASS=A,MSGCLASS=X,\n//   TYPRUN='"'"'A B
 # No operands: the job ends with a JCL error (programmer name missing) of its
 # own, but it has the user as owner, so the credentials are on its JOB card.
 printf '//F383N JOB\n//S1 EXEC PGM=IEFBR14\n' > "$TMPDIR/je_n.jcl"
+# No MSGCLASS on the two streams below: the job takes the message class the
+# system defaults to.  Where that class prints and purges (TK5), the job is
+# gone from the output queue before the listing is read, so n cannot be found
+# there on its own.  m has the same lack of a programmer name with a held
+# message class, so it stays; z is the control that tells which kind of
+# system this is.
+printf '//F383M JOB MSGCLASS=X\n//S1 EXEC PGM=IEFBR14\n' > "$TMPDIR/je_m.jcl"
+printf '//F383Z JOB (ACCT),'"'"'T'"'"',CLASS=A\n//S1 EXEC PGM=IEFBR14\n' > "$TMPDIR/je_z.jcl"
 
 # je_stor FILE LABEL EXPECTED-REPLY: submit one stream in the JES view.
 je_stor() {
@@ -4081,13 +4089,15 @@ je_stor h "single blank before a comment, last card without LF" 250
 je_stor q "card ends inside a quoted string" 550
 je_stor r "continuation card ends inside a quoted string" 550
 je_stor n "JOB statement without operands" 250
+je_stor m "JOB statement with a held message class only" 250
+je_stor z "JOB statement with the default message class" 250
 
 # The accepted jobs have the user as owner and ran: the credentials went onto
 # the JOB statement.  An ownerless job would not show here.
 sleep 10
 ftp_run "site filetype=jes
 ls" "$TMPDIR/ftp_je_ls.log"
-for je in a e f h n; do
+for je in a e f h m; do
     var="JE_ID_$je"
     id="${!var}"
     if [ -n "$id" ] && grep -q " $id .*OUTPUT" "$TMPDIR/ftp_je_ls.log"; then
@@ -4096,6 +4106,21 @@ for je in a e f h n; do
         fail "job $id ($je) is not listed as the user's own finished job"
     fi
 done
+
+# n and z take the default message class.  If z, whose JOB statement is a
+# plain one, is listed, the system keeps such jobs and n has to be listed as
+# well.  If z is gone, the default class prints and purges the job: neither
+# is to be found, and m is what shows the owner of a job without a
+# programmer name.
+if [ -n "$JE_ID_z" ] && grep -q " $JE_ID_z .*OUTPUT" "$TMPDIR/ftp_je_ls.log"; then
+    if [ -n "$JE_ID_n" ] && grep -q " $JE_ID_n .*OUTPUT" "$TMPDIR/ftp_je_ls.log"; then
+        pass "job $JE_ID_n (n) is the user's own job and has ended"
+    else
+        fail "job $JE_ID_n (n) is not listed as the user's own finished job"
+    fi
+else
+    info "job $JE_ID_n (n) left the output queue: the default message class of this system prints and purges the job (control job $JE_ID_z is gone as well), so its owner is read from job $JE_ID_m (m) only"
+fi
 
 # ============================================================
 # Summary
