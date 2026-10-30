@@ -226,6 +226,16 @@ sources = ["test/tstrcl.c", "src/ftpd#log.c",
            "src/ftpd#dsn.c", "src/ftpd#lmp.c", "src/ftpd#lvl.c",
            "src/ftpd#lse.c", "src/ftpd#rec.c", "src/ftpd#ret.c", "src/ftpd#xlt.c"]
 
+# ftpd_ufs_retr() -- a read error on a UFS file must end the RETR with 451
+# (426 when the data connection is gone), never 226 (#313).  MVS-only:
+# ftpd#ufs.c includes ftpd.h and so the libc370 MVS headers.  The test includes
+# ftpd#ufs.c with ufs_fopen(), ufs_fread(), ufs_ferror() and ufs_fclose()
+# replaced by scripted ones and stubs the reply and data connection functions.
+[test.TSTUFR]
+host = false
+sources = ["test/tstufr.c", "src/ftpd#log.c", "src/ftpd#xlt.c",
+           "src/ftpd#urc.c"]
+
 # ── Dependencies ─────────────────────────────────────────
 # Only ufsd is a declared dependency: libufs.h / libufs.a are ufsd-specific.
 # The C runtime -- sockets, threads, JES2, RACF, dynalloc -- is libc370, the
