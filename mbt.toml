@@ -161,6 +161,12 @@ sources = ["test/tstjid.c", "src/ftpd#jid.c"]
 [test.TSTJCD]
 sources = ["test/tstjcd.c", "src/ftpd#jcd.c"]
 
+# ftpd_jsl_*() -- the spool file table of LIST JOBnnnnn in the z/OS form, with
+# the ID column and the line of dashes that clients such as the Zowe FTP plug-in
+# look for (#370).  ftpd#jsl.c is free of project and MVS headers: DUAL.
+[test.TSTJSL]
+sources = ["test/tstjsl.c", "src/ftpd#jsl.c"]
+
 # ftpd_jwn_check() and friends -- who may see, read and delete which job on
 # the JES spool (#90): entity and component rules, ownership, the RACF return
 # code to level table, the decision table, the SITE JESOWNER classification,

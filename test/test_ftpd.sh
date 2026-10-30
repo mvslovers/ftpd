@@ -560,8 +560,13 @@ ls $JOBID
 site filetype=seq
 CMDS
 )" "$FTP_OUT"
-    if grep -qi "DDNAME\|JESMSGLG\|JESJCL" "$FTP_OUT"; then
-        pass "JES spool file listing"
+    # The z/OS form that clients such as the Zowe FTP plug-in parse (#370):
+    # the dashes, the table with its ID column, the count of the files.
+    if grep -q "^--------" "$FTP_OUT" \
+       && grep -q "^ *ID  STEPNAME PROCSTEP C DDNAME" "$FTP_OUT" \
+       && grep -q "^ *001 JES2 .* JESMSGLG" "$FTP_OUT" \
+       && grep -q "^[0-9][0-9]* spool files" "$FTP_OUT"; then
+        pass "JES spool file listing (z/OS table with ID column)"
     else
         info "JES spool output:"
         cat "$FTP_OUT" | sed 's/^/    /'
