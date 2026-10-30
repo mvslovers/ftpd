@@ -74,6 +74,12 @@ sources = ["test/tstadr.c", "src/ftpd#adr.c"]
 [test.TSTUER]
 sources = ["test/tstuer.c", "src/ftpd#urc.c"]
 
+# ftpd_acee_user_matches() -- does the ACEE racf_login() returned belong to the user
+# who logged in.  ftpd#anm.c is free of ftpd.h and of MVS services, so this is
+# DUAL like TSTADR.
+[test.TSTANM]
+sources = ["test/tstanm.c", "src/ftpd#anm.c"]
+
 # ftpd_list_nomem() -- a list builder's NULL with errno ENOMEM is a storage
 # shortage, not an empty result (#118).  ftpd#lse.c is free of project and MVS
 # headers, so this is DUAL like TSTADR.

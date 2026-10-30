@@ -7,11 +7,52 @@
 #include "ftpd.h"
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
+#include "ftpd#anm.h"
 #include <mvs/lock.h>               /* lock()/unlock() — identity window */
 
 #define FTPD_MAX_AUTH_ATTEMPTS  3
 #define FTPD_FACILITY_RESOURCE  "FTPAUTH"
 #define FTPD_FACILITY_CLASS     "FACILITY"
+
+/* A userid no security system defines ('?' is not a RACF userid character)
+** and a password to go with it, for the start check. */
+#define FTPD_PROBE_USER         "?FTPDPRB"
+#define FTPD_PROBE_PASS         "?NOPASS?"
+
+/* --------------------------------------------------------------------
+** Is the ACEE racf_login() returned the one of the user who logged in?
+**
+** The ACEE has to belong to the user who was asked for, and it must not be
+** the started task's own: that one would be freed from under the address
+** space by the racf_logout() below.  Otherwise the login is refused.  The
+** STC ACEE is never freed: it is the resting identity the server restores
+** after every identity window.
+**
+** Returns the ACEE to use, or NULL after refusing it.
+** ----------------------------------------------------------------- */
+static ACEE *
+login_acee_ok(ftpd_server_t *server, ACEE *acee, const char *user)
+{
+    char name[9];
+    int  rc;
+
+    if (acee != server->stc_acee
+        && ftpd_acee_user_matches(acee->aceeuser, user))
+        return acee;
+
+    ftpd_acee_user_name(name, acee->aceeuser);
+    ftpd_log(LOG_WARN, "%s: RAKF login for %s returned the ACEE of %s%s, "
+             "refused", __func__, user, name[0] ? name : "nobody",
+             acee == server->stc_acee ? " (the started task's own)" : "");
+
+    if (acee != server->stc_acee) {
+        rc = racf_logout(&acee);
+        if (rc != 0)
+            ftpd_log(LOG_WARN, "%s: racf_logout of the refused ACEE "
+                     "failed, rc=%d", __func__, rc);
+    }
+    return NULL;
+}
 
 /* --------------------------------------------------------------------
 ** Authenticate via RAKF and set up session.
@@ -46,6 +87,24 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
         return 0;
     }
 
+    /* The start check of the security system failed, so its answer to a
+    ** login cannot be relied on and nobody logs in.  Like the unauthorized
+    ** case this is not a wrong password and not counted; the operator has
+    ** FTPD004E. */
+    if (sess->server->open_security) {
+        if (!sess->server->open_logged) {
+            sess->server->open_logged = 1;
+            ftpd_log(LOG_ERROR, "%s: login refused, the start check of "
+                     "the security system failed (see FTPD004E)", __func__);
+        }
+        ftpd_session_reply(sess, FTP_530,
+            "Login not possible: the security check of this server is not "
+            "working. Ask the administrator to check the FTPD004E console "
+            "message.");
+        sess->state = SESS_AUTH_USER;
+        return 0;
+    }
+
     /* Uppercase userid and password (RAKF requires uppercase) */
     {
         int i;
@@ -64,6 +123,9 @@ ftpd_auth_pass(ftpd_session_t *sess, const char *password)
 
     /* Clear password from stack immediately */
     memset(pass, 0, sizeof(pass));
+
+    if (acee)
+        acee = login_acee_ok(sess->server, acee, user);
 
     if (!acee) {
         sess->auth_attempts++;
@@ -199,4 +261,38 @@ int
 ftpd_racf_allowed(int rc)
 {
     return (rc == 0 || rc == FTPD_RACF_NOTPROT);
+}
+
+/* --------------------------------------------------------------------
+** Start check: does the security system verify userids?
+** See ftpd#aut.h.
+** ----------------------------------------------------------------- */
+int
+ftpd_auth_probe(ftpd_server_t *server)
+{
+    ACEE *acee;
+    int racf_rc = -1;
+    int rc;
+
+    if (!server->authorized)
+        return 0;
+
+    acee = racf_login(FTPD_PROBE_USER, FTPD_PROBE_PASS, NULL, &racf_rc);
+
+    if (!acee && racf_rc != 0) {
+        ftpd_log(LOG_DEBUG, "%s: the security system refused the check "
+                 "login, rc=%d", __func__, racf_rc);
+        return 0;
+    }
+
+    ftpd_log(LOG_ERROR, "%s: the check login was accepted, rc=%d", __func__, racf_rc);
+    server->open_security = 1;
+
+    if (acee && acee != server->stc_acee) {
+        rc = racf_logout(&acee);
+        if (rc != 0)
+            ftpd_log(LOG_WARN, "%s: racf_logout of the check ACEE "
+                     "failed, rc=%d", __func__, rc);
+    }
+    return 1;
 }

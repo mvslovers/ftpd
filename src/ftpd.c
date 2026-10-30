@@ -19,6 +19,7 @@
 
 #include "ftpd.h"
 #include "ftpd#ses.h"
+#include "ftpd#aut.h"
 #include <mvs/crt.h>
 #include <mvs/apf.h>
 #include <mvs/enq.h>
@@ -377,6 +378,17 @@ initialize(ftpd_server_t *server)
     } else {
         ftpd_log_wto("FTPD004W NO SECURITY ENVIRONMENT FOR THE STC: "
                      "RAKF PERMITS ANY ACCESS WITHOUT AN ACEE");
+    }
+
+    /* Check once that the security system verifies userids: log in with a
+    ** userid and password that cannot be valid.  If that is accepted, no
+    ** client gets in.  The server stays up so the operator can read the
+    ** message; the next start checks again. */
+    if (ftpd_auth_probe(server)) {
+        ftpd_log_wto("FTPD004E THE SECURITY SYSTEM ACCEPTS ANY USERID AND "
+                     "PASSWORD");
+        ftpd_log_wto("FTPD004E ALL LOGINS ARE REFUSED: CORRECT THE SECURITY "
+                     "TABLES, THEN RESTART FTPD");
     }
 
     /* Initialize trace ring buffer */
