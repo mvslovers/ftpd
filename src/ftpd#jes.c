@@ -14,6 +14,7 @@
 ** USER/PASSWORD injection follows mvsmf/src/jobsapi.c process_jobcard().
 */
 #include "ftpd.h"
+#include "ftpd#jcd.h"
 #include "ftpd#jfl.h"
 #include "ftpd#jid.h"
 #include "ftpd#ses.h"
@@ -188,16 +189,11 @@ ftpd_jes_submit(ftpd_session_t *sess)
 
             /* JOB card detection + USER/PASSWORD injection */
             if (job_state == 0) {
-                /* Look for " JOB " in the EBCDIC card.
-                ** After a2e: ' '=0x40, 'J'=0xD1, 'O'=0xD6, 'B'=0xC2 */
-                unsigned char *p;
-                for (p = (unsigned char *)card; p < (unsigned char *)card + 76; p++) {
-                    if (p[0] == 0x40 && p[1] == 0xD1 &&
-                        p[2] == 0xD6 && p[3] == 0xC2 && p[4] == 0x40) {
-                        job_state = 1;
-                        break;
-                    }
-                }
+                /* Only "//name JOB" is the JOB statement.  A comment card
+                ** that contains the word is not, and the credentials must
+                ** not land behind it (#277). */
+                if (ftpd_jcd_is_job(card, 80))
+                    job_state = 1;
             }
 
             if (job_state == 1) {

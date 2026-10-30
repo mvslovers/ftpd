@@ -148,6 +148,13 @@ sources = ["test/tstjfl.c", "src/ftpd#jfl.c"]
 [test.TSTJID]
 sources = ["test/tstjid.c", "src/ftpd#jid.c"]
 
+# ftpd_jcd_is_job() -- which card of a submitted stream is the JOB statement
+# that NOTIFY/USER/PASSWORD are injected behind: "//name JOB", not a comment
+# card that contains the word (#277).  ftpd#jcd.c is free of project and MVS
+# headers: DUAL.
+[test.TSTJCD]
+sources = ["test/tstjcd.c", "src/ftpd#jcd.c"]
+
 # ftpd_jwn_check() and friends -- who may see, read and delete which job on
 # the JES spool (#90): entity and component rules, ownership, the RACF return
 # code to level table, the decision table, the SITE JESOWNER classification,
