@@ -47,6 +47,23 @@ the jobs, `LIST` without a job ID, is unchanged.
   purged) gets the header and the job line alone. The last line says `files`
   also for one file. `RETR` is unchanged. (#370)
 
+- **The Zowe CLI plug-in for z/OS FTP works without a JESSPOOL profile.** The
+  plug-in sends `SITE JESOWNER=*` before every job access, and FTPD answered
+  `501 JESOWNER is not permitted` to a user who had no right to read the jobs
+  of all users. The plug-in stopped at that reply, so without a profile of the
+  class `JESSPOOL` (and on a RAKF that has no such class, where the profile
+  cannot be defined) a user could not list or read the spool files of their own
+  job. `SITE JESOWNER=*`, and `SITE JESOWNER=` followed by the ID of another
+  user, are now answered `200` with a line that says the user may not filter on
+  that owner, as z/OS FTP does, and the filter stays at the user's own ID. A
+  script that took the `501` as the sign of a missing right must read the text
+  of the `200` instead. A value that is not a user ID (a pattern such as
+  `ABC*`, more than eight characters, a character other than a letter, a
+  digit, `$`, `#` or `@`) is still answered `501`. The jobs of other users stay
+  hidden in `LIST`, `RETR` and `DELE` as before, because each job is checked on
+  its own, whatever the filter says. A user who has the right to read the jobs
+  gets the filter as before. (#398)
+
 - **A comment card is no longer taken for the JOB statement.** When a job is
   submitted in the JES view, FTPD adds `NOTIFY`, `USER` and `PASSWORD` behind
   the JOB statement. It found the statement as the first card with the word JOB
