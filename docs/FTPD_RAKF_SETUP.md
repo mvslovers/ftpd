@@ -814,8 +814,11 @@ after `S RAKFPROF`.
   jobs stay visible.
 - **Missing or invalid RAKF tables.** On RAKF 2.0.0 JES2 does not start without
   valid tables (measured with a broken `PROFILES` and a broken `USERS` at a cold
-  start); have valid tables **before** the IPL. The older RAKF of the MVS/CE
-  container images allows everything in that case.
+  start); have valid tables **before** the IPL. The old RAKF (1.2.x: TK4-, TK5
+  before Update 6) does start without valid tables, and then it checks nothing:
+  every logon and every access check is answered "allowed". That was measured on
+  the TK5 image; it was not measured on TK4-. The MVS/CE image carries RAKF
+  2.0.0, not the old RAKF.
 - **Withdrawing by group membership** takes effect only after the person has
   logged in again. For an immediate withdrawal change the profile (a user
   permit with `NONE`).
