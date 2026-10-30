@@ -38,6 +38,8 @@
 #       directory: 'SYS1.PROCLIB', 'SYS1.**' (#331)
 #   21. Parentheses in names: CWD, LIST, DELE, RMD and MKD refuse a malformed
 #       or misplaced member with 501 and leave the data set alone (#335, #339)
+#   22. The end of the JOB statement of a submitted stream: USER and PASSWORD
+#       go behind the real end of it or the stream is refused with 550 (#383)
 #
 # Test 13 reads the operator command F FTPD,STATS, which an FTP client cannot
 # reach.  Set FTPD_CONSOLE to a command that sends one operator command and
@@ -3861,6 +3863,90 @@ else
 fi
 
 ftp_run "rmdir '$PAR_PDS'" /dev/null
+
+# ============================================================
+# Test 22: the end of the JOB statement of a submitted stream (#383)
+#
+# USER and PASSWORD are injected behind the JOB statement.  Where it ends was
+# taken from the last non-blank byte of a card, so a comma in the comment
+# field counted as a continuation, and a card that reaches column 71 had no
+# room for the comma that makes the injected cards part of the statement.  The
+# job ended with a JCL error, had no owner, and PASSWORD= stood in its JCL
+# listing.  The operand field ends at the first blank outside quotes; a
+# statement that cannot take the credentials is refused with 550 before any
+# card of it is put to the internal reader.
+#
+# A refused stream leaves no job behind, and an ownerless job would not show
+# in the listing of this user anyway, so the reply is what is checked here.
+# Whether a job was left behind is read from the spool with the job API of
+# the system under test, see the pull request of #383.
+# ============================================================
+section "Test 22: end of the JOB statement (#383)"
+
+JE_LONG=$(printf '%s' "//F383B JOB (ACCT),'LONG NAME',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),TIME=1440,PRTY=1" | cut -c1-71)
+if [ "${#JE_LONG}" -ne 71 ] || [ "${JE_LONG: -1}" = "," ]; then
+    fail "Test 22: the long JOB card is not 71 bytes without a trailing comma"
+fi
+
+printf '%s\n//S1 EXEC PGM=IEFBR14\n' \
+    "//F383A JOB (ACCT),'T',CLASS=A,MSGCLASS=X   NOTE, MORE" > "$TMPDIR/je_a.jcl"
+printf '%s\n//S1 EXEC PGM=IEFBR14\n' "$JE_LONG" > "$TMPDIR/je_b.jcl"
+printf '//F383C JOB (ACCT),'"'"'T'"'"',\n//S1 EXEC PGM=IEFBR14\n' > "$TMPDIR/je_c.jcl"
+printf '//F383D JOB (ACCT),'"'"'T'"'"',\n' > "$TMPDIR/je_d.jcl"
+printf '//F383E JOB (ACCT),'"'"'T'"'"',\n//* a comment, between the lines\n//   CLASS=A,MSGCLASS=X\n//S1 EXEC PGM=IEFBR14\n' \
+    > "$TMPDIR/je_e.jcl"
+printf '//F383F JOB (ACCT),'"'"'T'"'"',CLASS=A,MSGCLASS=X\n//S1 EXEC PGM=IEFBR14\n' \
+    > "$TMPDIR/je_f.jcl"
+printf '//F383H JOB (ACCT),'"'"'T'"'"',CLASS=A,MSGCLASS=X NOTE\n//S1 EXEC PGM=IEFBR14' \
+    > "$TMPDIR/je_h.jcl"
+
+# je_stor FILE LABEL EXPECTED-REPLY: submit one stream in the JES view.
+je_stor() {
+    local f="$1" label="$2" want="$3"
+    ftp_run "site filetype=jes
+type ascii
+put $TMPDIR/je_$f.jcl je_$f.jcl" "$TMPDIR/ftp_je_$f.log"
+    if [ "$want" = 250 ]; then
+        local jid
+        jid=$(grep -o 'known to JES as JOB[0-9]*' "$TMPDIR/ftp_je_$f.log" | head -1 | grep -o 'JOB[0-9]*')
+        printf -v "JE_ID_$f" '%s' "$jid"
+        if [ -n "$jid" ]; then
+            pass "$label: submitted as $jid"
+        else
+            fail "$label: not submitted"; tail -6 "$TMPDIR/ftp_je_$f.log" | sed 's/^/    /'
+        fi
+    else
+        if grep -q '^550 JOB statement cannot be continued' "$TMPDIR/ftp_je_$f.log" \
+           && ! grep -q 'It is known to JES' "$TMPDIR/ftp_je_$f.log"; then
+            pass "$label: refused with 550, no job id"
+        else
+            fail "$label: not refused"; tail -6 "$TMPDIR/ftp_je_$f.log" | sed 's/^/    /'
+        fi
+    fi
+}
+
+je_stor a "comma in the comment field of the JOB card" 250
+je_stor b "JOB card that reaches column 71" 550
+je_stor c "JOB card ending in a comma, next card not a continuation" 550
+je_stor d "stream ending inside the JOB statement" 550
+je_stor e "comment card between the continuation lines" 250
+je_stor f "plain JOB card" 250
+je_stor h "single blank before a comment, last card without LF" 250
+
+# The accepted jobs have the user as owner and ran: the credentials went onto
+# the JOB statement.  An ownerless job would not show here.
+sleep 10
+ftp_run "site filetype=jes
+ls" "$TMPDIR/ftp_je_ls.log"
+for je in a e f h; do
+    var="JE_ID_$je"
+    id="${!var}"
+    if [ -n "$id" ] && grep -q " $id .*OUTPUT" "$TMPDIR/ftp_je_ls.log"; then
+        pass "job $id ($je) is the user's own job and has ended"
+    else
+        fail "job $id ($je) is not listed as the user's own finished job"
+    fi
+done
 
 # ============================================================
 # Summary
