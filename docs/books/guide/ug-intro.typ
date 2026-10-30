@@ -119,6 +119,20 @@ adds no function. Each is described where the book explains the subject:
       blanks counted, a comment card too. The cards went behind it, the real
       JOB statement had none, and the job ran without an owner.],
       [@ug-jes-submit],
+    [FTPD puts #cmd("USER") and #cmd("PASSWORD") behind the real end of the JOB
+      statement: the operand field of the last card ends at the first blank
+      outside a quoted string, and the comma goes directly behind it. A JOB
+      statement that cannot take them is refused with
+      #cmd("550 JOB statement cannot be continued with the credentials; job not submitted"),
+      and no card of it reaches JES2. These are a card whose operands run to
+      column 71, a card that ends in a comma without a continuation card, a
+      statement that ends the stream or has more than 16 cards, and a card that
+      ends inside a quoted string. Before, FTPD put the comma at the end of the
+      card, comment included. A comma in a comment continues nothing, and there
+      was no room for it in column 71. The cards with the credentials were
+      statements of their own, and the job ran without an owner.],
+      [@ug-jes-credentials, @ug-errors, _FTPD Reference_,
+      "The 550 Reply for a JOB Statement"],
     [A #cmd("get") from the UFS view that cannot read the file to the end is
       answered with
       #cmd("451 Read error on the server after N bytes: transfer is incomplete."),
