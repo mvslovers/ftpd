@@ -98,7 +98,7 @@ want it: <https://github.com/mvslovers/ufsd/releases>, with its own guide at
 Note that UFSD has to be **running**, not just installed — it is a started task
 FTPD talks to across address spaces.
 
-FTPD 1.3.1 and 1.3.2 carry `libufs` from UFSD 1.5.2; 1.3.0 carried the one from UFSD
+FTPD 1.3.1, 1.3.2 and 1.3.3 carry `libufs` from UFSD 1.5.2; 1.3.0 carried the one from UFSD
 1.4.0. `libufs` is linked into the load module, so a new FTPD build is the only
 way its fixes reach FTPD. The library reports a write that the server
 rejected, and it sends a block again when the server's buffer pool is empty,
@@ -123,9 +123,9 @@ nobody can log in**, and no configuration option turns that off.
 
 The setup — the identity of the started task and the `FTPAUTH` FACILITY
 profile — is step 8, and the full reference is
-[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.2/docs/FTPD_RAKF_SETUP.md).
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/docs/FTPD_RAKF_SETUP.md).
 
-**FTPD 1.3.2 does not need RAKF 2.0.0 to run.** On a RAKF without the class
+**FTPD 1.3.3 does not need RAKF 2.0.0 to run.** On a RAKF without the class
 `JESSPOOL` (RAKF 1.2.x has none) it installs and starts, and in the JES view
 every user sees, reads and cancels only the own jobs. **RAKF 2.0.0 or later is needed to let users see the
 jobs of other users:** that is done with profiles of the RAKF class
@@ -232,10 +232,10 @@ that is not finished.
 
 ---
 
-## 2a. Upgrading from 1.3.1 (and from earlier releases through 1.3.1)
+## 2a. Upgrading from 1.3.2 (and from earlier releases through 1.3.2)
 
 A fresh install can skip this section. Each release deletes only the release
-just before it: 1.3.2 deletes `TFTP131`. Ask SMP first which FMID owns the load
+just before it: 1.3.3 deletes `TFTP132`. Ask SMP first which FMID owns the load
 module, under the SMP procedure of your system:
 
 ```
@@ -248,26 +248,27 @@ module, under the SMP procedure of your system:
 
 | Owner of `MOD(FTPD)` | What to do |
 |---|---|
-| `TFTP131` | 1.3.1. Upgrade with this package, as described below. |
-| `TFTP130` | 1.3.0. Install 1.3.1 first, with the [1.3.1 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.1), then come back. If you use the UFS view, read the note on UFSD 1.5.2 below before that install. |
-| `TFTP120` | 1.2.0. Install 1.3.0 first, with the [1.3.0 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.0), then 1.3.1, then come back. The changes of 1.3.0 that need a decision are listed at the end of this section. |
+| `TFTP132` | 1.3.2. Upgrade with this package, as described below. |
+| `TFTP131` | 1.3.1. Install 1.3.2 first, with the [1.3.2 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.2), then come back. |
+| `TFTP130` | 1.3.0. Install 1.3.1 first, with the [1.3.1 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.1), then 1.3.2, then come back. If you use the UFS view, read the note on UFSD 1.5.2 below before that install. |
+| `TFTP120` | 1.2.0. Install 1.3.0 first, with the [1.3.0 package](https://github.com/mvslovers/ftpd/releases/tag/v1.3.0), then 1.3.1 and 1.3.2, then come back. The changes of 1.3.0 that need a decision are listed at the end of this section. |
 | `TFTP110`, `TFTP100` | Upgrade release by release, see the end of this section. |
 | none | FTPD is not installed through SMP on this system. This is a fresh install; on MVS/CE too (see step 5). |
 
-On a system where an older id owns the load module, the 1.3.2 install copies
-**nothing** and still ends `RC 00`: it deletes `TFTP131` and no other id, and
+On a system where an older id owns the load module, the 1.3.3 install copies
+**nothing** and still ends `RC 00`: it deletes `TFTP132` and no other id, and
 SMP keys the ownership of the load module on the module name.
 
-### From 1.3.1
+### From 1.3.2
 
-The upgrade is a **drop-in** as far as SMP and the data sets go: 1.3.2
+The upgrade is a **drop-in** as far as SMP and the data sets go: 1.3.3
 installs into the same data sets, under the same started task procedure and
 APF entry, and reads the same `FTPDPRM0`. Nothing needs a decision from you
 before you install.
 
-| | 1.3.1 | 1.3.2 |
+| | 1.3.2 | 1.3.3 |
 |---|---|---|
-| FMID | `TFTP131` | `TFTP132`, deletes `TFTP131` |
+| FMID | `TFTP132` | `TFTP133`, deletes `TFTP132` |
 | Libraries | `FTPD.LINKLIB`, … | unchanged |
 | C library | LIBC/370 2.25.1 | unchanged |
 | `libufs` | UFSD 1.5.2 | unchanged |
@@ -294,30 +295,31 @@ FTPD without UFSD is not affected.
 
 1. **Stop FTPD** (`/P FTPD`, step 5).
 2. **Skip the allocation job** (step 4) — if `FTPD.LINKLIB` and
-   `FTPD.AFTPDLOD` exist, which they do after an SMP install of 1.3.1. The job
+   `FTPD.AFTPDLOD` exist, which they do after an SMP install of 1.3.2. The job
    allocates them `NEW`, so on an existing pair it would fail. `LISTCAT
    LEVEL(FTPD)` (or ISPF 3.4 on `FTPD.*`) tells which case you are in.
 3. **Run the install job** (step 6). The `APPLY` ends `COND CODE 0004` on
-   `HMA2461 SYSMOD TFTP131 NOT FOUND ON SMPSCDS LIBRARY`. That is the expected
-   result of a replacement; see *One return code that looks wrong and is not*
+   `HMA2461 SYSMOD TFTP132 NOT FOUND ON SMPSCDS LIBRARY`. That is the expected
+   result of a replacement (the message was measured on the upgrade to 1.3.2,
+   where it named `TFTP131`; the upgrade to 1.3.3 has not been measured yet); see *One return code that looks wrong and is not*
    in section 2b.
 4. **Start FTPD** (`/S FTPD`) and read the banner. It must name the new
    release:
 
    ```
-   FTPD000I FTPD 1.3.2 (xxxxxxx) STARTING
+   FTPD000I FTPD 1.3.3 (xxxxxxx) STARTING
    FTPD005I LIBC370 2.25.1 (xxxxxxx)
    ```
 
-   `FTPD 1.3.1` on the first line means the started task still runs the old
+   `FTPD 1.3.2` on the first line means the started task still runs the old
    load module. Check the member list of `FTPD.LINKLIB` and the job log for
    `HMA2380 COPY SUCCESSFUL` — not the condition codes.
 
 ### From 1.2.0: install 1.3.0 first
 
-1.3.2 deletes `TFTP131` only, so a system on `TFTP120` installs the 1.3.0
-package first, then the 1.3.1 package (the README of each package describes the
-steps), and then this one. Two changes of 1.3.0 need a decision from you **before** that install:
+1.3.3 deletes `TFTP132` only, so a system on `TFTP120` installs the 1.3.0
+package first, then the 1.3.1 and the 1.3.2 package (the README of each package
+describes the steps), and then this one. Two changes of 1.3.0 need a decision from you **before** that install:
 
 1. **Create the `JESSPOOL` profiles you need.** In 1.2.0 every user could
    list, read and cancel the jobs of everybody through the JES view
@@ -328,7 +330,7 @@ steps), and then this one. Two changes of 1.3.0 need a decision from you **befor
    all jobs, create the profiles first, and update RAKF to 2.0.0 or later if it
    is older: a RAKF 1.2.x has no such class, the upgrade itself works, and
    every user sees only the own jobs. Section 7 of the
-   [RAKF setup guide](https://github.com/mvslovers/ftpd/blob/v1.3.2/docs/FTPD_RAKF_SETUP.md)
+   [RAKF setup guide](https://github.com/mvslovers/ftpd/blob/v1.3.3/docs/FTPD_RAKF_SETUP.md)
    has the profiles and examples.
 2. **Check the identity of the started task** (step 8). 1.2.0 logged on as
    `FTPD`/`USER` at startup. Since 1.3.0 FTPD keeps the identity RAKF gives the
@@ -357,8 +359,8 @@ either; delete them.
 
 Upgrade release by release. A 1.1.0 system installs the
 [1.2.0 package](https://github.com/mvslovers/ftpd/releases/tag/v1.2.0)
-(`TFTP120` deletes `TFTP110`, banner `LIBC370 2.10.3`), then the 1.3.0 and the
-1.3.1 package, then this one. A 1.0.x system goes to 1.1.0 first, following section 2b with the
+(`TFTP120` deletes `TFTP110`, banner `LIBC370 2.10.3`), then the 1.3.0, the
+1.3.1 and the 1.3.2 package, then this one. A 1.0.x system goes to 1.1.0 first, following section 2b with the
 1.1.0 package from the
 [releases page](https://github.com/mvslovers/ftpd/releases/tag/v1.1.0).
 
@@ -508,7 +510,8 @@ HMA2461 SYSMOD TFTP131 NOT FOUND ON SMPSCDS LIBRARY
 HMA2050 APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
-The excerpt was measured on the upgrade from 1.3.1 to 1.3.2.
+The excerpt was measured on the upgrade from 1.3.1 to 1.3.2. The upgrade to
+1.3.3 deletes `TFTP132` instead, and has not been measured yet.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
 never will, because it was deleted rather than superseded. The `APPLY` itself
@@ -702,7 +705,8 @@ HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
 These lines were measured on a test system with the SMP package of release
-1.3.2.
+1.3.2, whose SYSMOD is `TFTP132`. The SYSMOD of 1.3.3 is `TFTP133`; the
+measurement for it is still to come.
 
 **On an upgrade the `APPLY` ends `COND CODE 0004` instead, and that is
 correct** — `HMA2461` reporting that the deleted level has no backup entry.
@@ -1003,7 +1007,7 @@ On RAKF 2.0.0 that line is the mapping, and its group must be allowed SVC 244
 
 The complete reference — dataset access levels per FTP command, per-user HLQ
 patterns, RAKFCL equivalents and the reasoning behind the invariant — is
-[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.2/docs/FTPD_RAKF_SETUP.md).
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/docs/FTPD_RAKF_SETUP.md).
 
 ---
 
@@ -1080,9 +1084,9 @@ Three namespaces, selected per session:
   answer `550 UFS service not available`.
 
 The command set and the `SITE` keywords are documented in
-[ZOS_FTP_REFERENCE.md](https://github.com/mvslovers/ftpd/blob/v1.3.2/internals/ZOS_FTP_REFERENCE.md);
+[ZOS_FTP_REFERENCE.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/internals/ZOS_FTP_REFERENCE.md);
 the architecture is in
-[FTPD_CONCEPT.md](https://github.com/mvslovers/ftpd/blob/v1.3.2/internals/FTPD_CONCEPT.md).
+[FTPD_CONCEPT.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/internals/FTPD_CONCEPT.md).
 
 ---
 
@@ -1101,7 +1105,7 @@ with it. A short `UCLIN` job then frees the ids, and a `LIST` proves it. A way
 that uses `UCLIN` alone stays as the fallback.
 
 The full procedure, with the jobs to submit and the messages to check, is in
-[uninstall.md](https://github.com/mvslovers/ftpd/blob/v1.3.2/docs/uninstall.md).
+[uninstall.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/docs/uninstall.md).
 
 **This is for removing FTPD, not for upgrading it.** An upgrade installs over
 the release before it — see sections 2a and 2b — and needs none of this.
@@ -1117,7 +1121,7 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 |---------|--------------|
 | Allocation job fails, dataset already exists | It was already run, or `FTPD.*` exists from an SMP install of 1.2.0. Do not force it — see the warning in step 4 |
 | The install job ends in a JCL error at `APPLYCHK`: `IEF212I ... APPLYCHK LINKLIB - DATA SET NOT FOUND` | `FTPD.LINKLIB` does not exist: the allocation job (step 4) was skipped. This is the MVS/CE case: there the image's FTPD is not an SMP install and `FTPD.*` is not there. Run the allocation job, then resubmit the install job — and read the next row |
-| After the allocation job, the resubmitted install job ends `COND CODE 0008` in `RECV`: `HMA3862 ** SYSMOD TFTP132 ALREADY RECEIVED` | The first run had already received the SYSMOD before it stopped at `APPLYCHK`. The rerun skips `APPLYCHK` (`IEF202I ... NOT RUN BECAUSE OF CONDITION CODES`), then `APPLY` and `ACCEPT` end `COND CODE 0000` and `CLEANUP` runs. The install is complete: look for `HMA2380` and `HMA2270` in the `APPLY` output and check `FTPD.LINKLIB` as in step 6. The dry run did not take place on that run |
+| After the allocation job, the resubmitted install job ends `COND CODE 0008` in `RECV`: `HMA3862 ** SYSMOD TFTP133 ALREADY RECEIVED` | The first run had already received the SYSMOD before it stopped at `APPLYCHK`. The rerun skips `APPLYCHK` (`IEF202I ... NOT RUN BECAUSE OF CONDITION CODES`), then `APPLY` and `ACCEPT` end `COND CODE 0000` and `CLEANUP` runs. The install is complete: look for `HMA2380` and `HMA2270` in the `APPLY` output and check `FTPD.LINKLIB` as in step 6. The dry run did not take place on that run |
 | `IEC031I D37-04 ... SYS1.PARMLIB` (`ABEND SD37`) while copying `FTPDPRM0` — TK5 | `SYS1.PARMLIB` is full. Compress it or use a PARMLIB of your own — step 7 |
 | `RECV1`/`RECV2` fails, target exists | Something else allocated it. RECEIVE refuses to merge; scratch it and re-run |
 | `APPLYCHK` ends non-zero, `APPLY` skipped | Read the SMP output — the check exists to stop before anything is written. A missing DD is the usual cause |
@@ -1142,4 +1146,4 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 | `S0C4` at start, JESMSGLG holds only the `IEF450I` — no `FTPD000I`, no banner | FTPD 1.0.0 started from an **APF-authorised** LINKLIB. The module is then key 0 and the first store into its own storage abends before the first WTO. Upgrade to 1.0.1, or take the APF entry back out and let SVC 244 authorise instead — step 2 |
 
 For the RAKF message reference, see
-[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.2/docs/FTPD_RAKF_SETUP.md).
+[FTPD_RAKF_SETUP.md](https://github.com/mvslovers/ftpd/blob/v1.3.3/docs/FTPD_RAKF_SETUP.md).

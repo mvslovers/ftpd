@@ -3,7 +3,7 @@
 = Installing FTPD <ug-install>
 
 #idx("installation")
-This chapter installs FTPD 1.3.2 on an MVS 3.8j system (TK4-, TK5, MVS/CE or
+This chapter installs FTPD 1.3.3 on an MVS 3.8j system (TK4-, TK5, MVS/CE or
 a Hercules build of your own) from the release package. The installation is
 done by SMP Release 4, the SMP that comes with MVS 3.8j, not SMP/E. SMP keeps
 a record of what was installed, and so there is a defined way to remove it
@@ -26,20 +26,20 @@ the system, follow @ug-remove.
 == What Is in the Package <ug-install-files>
 
 #idx("package", "contents")
-The package #cmd("ftpd-1.3.2-dist.zip") (or #cmd("ftpd-1.3.2-dist.tar.gz")) has
-five files. In their names, 1.3.2 is the release.
+The package #cmd("ftpd-1.3.3-dist.zip") (or #cmd("ftpd-1.3.3-dist.tar.gz")) has
+five files. In their names, 1.3.3 is the release.
 
 #tab(caption: [The files of the installation package])[
   #table(columns: (2.7in, 1fr),
     [File], [What it is],
     [#cmd("README.md")], [The installation guide as a text file.],
-    [#cmd("ftpd-1.3.2-load.xmit")], [The load module, in a form that TSO
+    [#cmd("ftpd-1.3.3-load.xmit")], [The load module, in a form that TSO
       RECEIVE reads.],
-    [#cmd("ftpd-1.3.2-samplib.xmit")], [The sample library: the procedure of
+    [#cmd("ftpd-1.3.3-samplib.xmit")], [The sample library: the procedure of
       the started task and a configuration pattern.],
-    [#cmd("ftpd-1.3.2-alloc.jcl")], [Allocates the data sets SMP installs
+    [#cmd("ftpd-1.3.3-alloc.jcl")], [Allocates the data sets SMP installs
       into. Run once.],
-    [#cmd("ftpd-1.3.2-inst.jcl")], [Receives both XMIT files and installs
+    [#cmd("ftpd-1.3.3-inst.jcl")], [Receives both XMIT files and installs
       them. Can be repeated.],
   )
 ]
@@ -90,7 +90,7 @@ UFS path. On a system without the UFSD started task those commands answer
 
 and everything else works. Install FTPD now and add UFSD later if you want it.
 UFSD has to be running, not just installed: it is a started task that FTPD
-talks to across address spaces. FTPD 1.3.2 carries the client library
+talks to across address spaces. FTPD 1.3.3 carries the client library
 #cmd("libufs") of UFSD 1.5.2, linked into the load module.
 
 #note[*Install UFSD 1.5.2 for the UFS view.* UFSD 1.5.1 and earlier releases
@@ -113,7 +113,7 @@ verified by RAKF, and every data set access is checked against the RAKF class
 configuration option turns that off. @ug-install-rakfsetup says what to set
 up.
 
-FTPD 1.3.2 does not need RAKF 2.0.0 to run. On a RAKF without the class
+FTPD 1.3.3 does not need RAKF 2.0.0 to run. On a RAKF without the class
 #cmd("JESSPOOL") (RAKF 1.2.x has none) it installs and starts, and in the JES
 view every user sees, reads and cancels only the own jobs. To let users see the
 jobs of others you need RAKF 2.0.0 or later, because the profiles of the class
@@ -216,8 +216,8 @@ An example with an FTPD that is already running:
 #screen(```
 ftp -P 2121 your-mvs-host
 > binary
-> put ftpd-1.3.2-load.xmit    'IBMUSER.FTPD.LOAD.XMIT'
-> put ftpd-1.3.2-samplib.xmit 'IBMUSER.FTPD.SAMP.XMIT'
+> put ftpd-1.3.3-load.xmit    'IBMUSER.FTPD.LOAD.XMIT'
+> put ftpd-1.3.3-samplib.xmit 'IBMUSER.FTPD.SAMP.XMIT'
 > quit
 ```)
 
@@ -227,7 +227,7 @@ library ends with an S106 abend (@ug-install-trouble).
 == Allocating the Product Data Sets <ug-install-alloc>
 
 #idx("alloc.jcl")
-Submit #cmd("ftpd-1.3.2-alloc.jcl") as it is. The only things worth a change
+Submit #cmd("ftpd-1.3.3-alloc.jcl") as it is. The only things worth a change
 are the #cmd("UNIT=SYSDA") and the space on each DD statement (and the volume,
 if you use an APF entry, @ug-install-auth).
 
@@ -282,7 +282,7 @@ where it is; the procedure of @ug-install-proc replaces the one that names it.
 == Running the Install Job <ug-install-job>
 
 #idx("inst.jcl")
-Open #cmd("ftpd-1.3.2-inst.jcl") and replace the two placeholder data set
+Open #cmd("ftpd-1.3.3-inst.jcl") and replace the two placeholder data set
 names with the names you sent in @ug-install-upload:
 
 #screen(```
@@ -332,8 +332,10 @@ job; there is no third file to send.
 
 On a new installation, every step ends with #cmd("COND CODE 0000"). The
 screens below are the SMP output of a new installation of release 1.3.2,
-measured on a test system. The SYSMOD is #cmd("TFTP132") and it deletes
-#cmd("TFTP131"). The #cmd("RECV") step receives the SYSMOD:
+measured on a test system. The SYSMOD of that release is #cmd("TFTP132") and
+it deletes #cmd("TFTP131"). The SYSMOD of release 1.3.3 is #cmd("TFTP133") and
+it deletes #cmd("TFTP132"); the screens show no line for it. The #cmd("RECV")
+step receives the SYSMOD:
 
 #screen(raw(read("../ex/ug-install/receive.txt")))
 
@@ -655,7 +657,7 @@ task. With a low identity the switch can only lose authority; with a broad one
 it would be fail-open (@ug-security-stc).]
 
 *Upgrading from 1.2.0 or earlier.* Those releases logged on as #cmd("FTPD") in
-the group #cmd("USER") at the start, whatever RAKF assigned. FTPD 1.3.2 does
+the group #cmd("USER") at the start, whatever RAKF assigned. FTPD 1.3.3 does
 not. On a system whose RAKF has no mapping by the name of the started task,
 such as TK5 before Update 6, the task now runs as #cmd("STC") in
 #cmd("STCGROUP") again, with Operations authority. The line for #cmd("FTPD")
@@ -684,12 +686,12 @@ On MVS/CE, stop the FTPD 1.2.0 that comes with the image first
 A healthy start ends with #cmd("FTPD001I ... READY"):
 
 #screen(```
-FTPD000I FTPD 1.3.2 (A3F2C91) STARTING
+FTPD000I FTPD 1.3.3 (A3F2C91) STARTING
 FTPD005I LIBC370 2.25.1 (FCDE4E8)
 FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)
 FTPD004I STC RUNS AS user/group
 FTPD054I LISTENING ON ANY PORT 2121
-FTPD001I FTPD 1.3.2 READY
+FTPD001I FTPD 1.3.3 READY
 ```)
 
 Two lines identify the build. #cmd("FTPD000I") gives the version and the commit
@@ -723,39 +725,43 @@ FMID owns the module. Run this under the SMP procedure:
 #tab(caption: [What the owner of MOD(FTPD) tells you])[
   #table(columns: (1in, 1fr),
     [Owner], [What to do],
-    [#cmd("TFTP131")], [An upgrade from 1.3.1. Stop FTPD, skip the allocation
+    [#cmd("TFTP132")], [An upgrade from 1.3.2. Stop FTPD, skip the allocation
       job (the data sets exist), run the install job and start FTPD. The data
       sets, the procedure, the APF entry and the member of the configuration
       stay.],
-    [#cmd("TFTP130")], [1.3.0. Upgrade to 1.3.1 first, with the 1.3.1 package
-      from the releases page, then come back here. FTPD 1.3.2 deletes only
-      #cmd("TFTP131"), so on a system where #cmd("TFTP130") owns the module the
+    [#cmd("TFTP131")], [1.3.1. Upgrade to 1.3.2 first, with the 1.3.2 package
+      from the releases page, then come back here. FTPD 1.3.3 deletes only
+      #cmd("TFTP132"), so on a system where #cmd("TFTP131") owns the module the
       install copies nothing and still ends with RC 00: the #cmd("APPLY")
       prints no #cmd("HMA2380"), and its report lists the module as
-      #cmd("NOT SEL"). This was measured with #cmd("TFTP120") as the owner; the
-      SYSMOD is the same for #cmd("TFTP130").],
-    [#cmd("TFTP120")], [1.2.0. Upgrade to 1.3.0 first, then to 1.3.1, each
-      with its package from the releases page, then come back here.],
-    [#cmd("TFTP110")], [1.1.0. Upgrade to 1.2.0 first, then to 1.3.0 and to
-      1.3.1, each with its package from the releases page, then come back
+      #cmd("NOT SEL"). This was measured with #cmd("TFTP120") as the owner of
+      the module and the SYSMOD of 1.3.2; the SYSMOD of 1.3.3 deletes one id
+      in the same way.],
+    [#cmd("TFTP130")], [1.3.0. Upgrade to 1.3.1 first, then to 1.3.2, each with
+      its package from the releases page, then come back here.],
+    [#cmd("TFTP120")], [1.2.0. Upgrade to 1.3.0 first, then to 1.3.1 and to
+      1.3.2, each with its package from the releases page, then come back
+      here.],
+    [#cmd("TFTP110")], [1.1.0. Upgrade to 1.2.0 first, then to 1.3.0, 1.3.1
+      and 1.3.2, each with its package from the releases page, then come back
       here.],
     [#cmd("TFTP100")], [1.0.x. Upgrade to 1.1.0 first (@ug-install-from10),
-      then to 1.2.0, 1.3.0 and 1.3.1, then come back here.],
+      then to 1.2.0, 1.3.0, 1.3.1 and 1.3.2, then come back here.],
     [none], [FTPD is not installed through SMP on this system. This chapter is
       a new installation, allocation job included. This is the case on MVS/CE,
       whose FTPD 1.2.0 comes with the image.],
   )
 ]
 
-For an upgrade from 1.3.1, the steps are the ones of a new installation without
+For an upgrade from 1.3.2, the steps are the ones of a new installation without
 the allocation: stop FTPD (@ug-install-stop), run the install job
 (@ug-install-job) and start FTPD (@ug-install-start). The #cmd("APPLY") ends
 with #cmd("COND CODE 0004") (@ug-install-good). The banner must name the new
-release; #cmd("FTPD000I FTPD 1.3.1") on the first line means that the started
+release; #cmd("FTPD000I FTPD 1.3.2") on the first line means that the started
 task still runs the old load module. Check the member list and look for
 #cmd("HMA2380") in the job log, not the condition codes. This was measured for
 the upgrade from 1.3.1 to 1.3.2 on a test system that carried 1.3.1, installed
-through SMP: the #cmd("APPLY") ended with #cmd("COND CODE 0004") and
+through SMP; the upgrade to 1.3.3 has not been measured yet. The #cmd("APPLY") ended with #cmd("COND CODE 0004") and
 #cmd("HMA2461 SYSMOD TFTP131 NOT FOUND"), and the #cmd("ACCEPT") with 0000. The
 started task then printed the banner of 1.3.2. If the
 configuration member of 1.2.0 still has a line for #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a
@@ -820,7 +826,7 @@ libraries are the way back until the banner says that the new release runs:
       image's FTPD is not an SMP install. Run the allocation job and submit the
       install job again (@ug-install-ce-skip).],
     [After the allocation job, #cmd("RECV") ends with #cmd("COND CODE 0008"):
-      #cmd("HMA3862 SYSMOD TFTP132 ALREADY RECEIVED")], [The earlier run
+      #cmd("HMA3862 SYSMOD TFTP133 ALREADY RECEIVED")], [The earlier run
       received the SYSMOD before it stopped. #cmd("APPLYCHK") is skipped,
       #cmd("APPLY") and #cmd("ACCEPT") end with 0000. The installation is
       complete; check #cmd("HMA2380") (@ug-install-ce-skip).],

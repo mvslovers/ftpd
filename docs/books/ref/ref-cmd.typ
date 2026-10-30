@@ -46,7 +46,7 @@ the user opens a new connection.
       commands between the two lines.],
     [#cmd("NOOP")], [#cmd("200 OK").],
     [#cmd("STAT")], [#cmd("211") and the product name and the version of the
-      build, such as #cmd("211 MVS 3.8j FTPD Server 1.3.2"). There is no form of
+      build, such as #cmd("211 MVS 3.8j FTPD Server 1.3.3"). There is no form of
       the command with a path.],
     [#cmd("AUTH mech")], [#cmd("504 Security mechanism not implemented.")
       FTPD has no TLS.],
