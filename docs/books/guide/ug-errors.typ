@@ -143,7 +143,8 @@ last column is the section with the session.
       [The JOB statement of the job you stored has no room for the comma that
       binds #cmd("USER=") and #cmd("PASSWORD="): the card runs to column 71, a
       card ends in a comma and no continuation follows, the stream ends inside
-      the statement, or the statement has more than 16 cards. No job starts.
+      the statement, a card ends inside a quoted string, or the statement has more
+      than 16 cards. No job starts.
       Shorten the card or continue the operand field on the next card.],
       [@ug-jes-credentials],
     [#cmd("550 Access denied - cannot cancel JOBnnnnn")],

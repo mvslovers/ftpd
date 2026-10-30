@@ -208,8 +208,12 @@ reply says that it has not: the operand field of a card ends in column 71 or
 later\; a card ends with a comma and the next card is no continuation card (it
 does not start with #cmd("// "), or its operand starts after column 16)\; the
 stream ends inside the statement\; the statement has more than 16 cards,
-comment cards between its lines included\; or a parenthesis stays open at the
-end of the operand field. The operand field ends at the first blank outside a
+comment cards between its lines included\; a card ends inside a quoted string
+(an apostrophe is still open at the end of the card), because JES2 does not
+continue a string over two cards of a JOB statement and the cards of the
+credentials would be statements of their own\; or a parenthesis stays open at
+the end of the operand field. A string that is closed on the card is fine, with
+blanks or commas in it, and so is a doubled apostrophe. The operand field ends at the first blank outside a
 quoted string. A comma in the comment field behind it does not continue the
 statement.
 

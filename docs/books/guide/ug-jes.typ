@@ -141,9 +141,9 @@ operand in the columns 4 to 16. Comment cards (#cmd("//*")) between the cards
 of the statement are allowed. A JOB statement may have at most 16 cards,
 comment cards included.
 
-If the statement cannot take the credentials, FTPD does not guess. It puts no
-card of the JOB statement to JES2, so no job starts and nothing of the
-statement reaches the spool, and answers
+If the statement cannot take the credentials, FTPD does not guess. In the cases
+of the table below it puts no card of the JOB statement to JES2, so no job
+starts and nothing of the statement reaches the spool, and it answers
 
 #screen(```
 550 JOB statement cannot be continued with the credentials; job not submitted
@@ -167,6 +167,13 @@ cases:
     [The stream ends inside the JOB statement.],
       [Send the whole job, with its #cmd("EXEC") card.],
     [The statement has more than 16 cards.], [Shorten the operand list.],
+    [A card ends inside a quoted string: an apostrophe is open at the end of
+      the card, also in column 71 or on a continuation card. JES2 does not
+      continue a string over two cards of a JOB statement, so the credentials
+      would stand as statements of their own.],
+      [Close the string on the card, or write it shorter. A string with
+      blanks or commas in it is fine when it is closed on the same card, and so
+      is a doubled apostrophe.],
     [A parenthesis opened on a card is not closed at the end of the operand
       field.], [Close it, or end the card with a comma.],
   )
