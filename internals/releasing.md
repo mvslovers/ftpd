@@ -130,22 +130,24 @@ Before the tag:
 After the tag, with the release page created by the workflow:
 
 ```sh
-SOURCE_DATE_EPOCH=$(git log -1 --format=%ct vX.Y.Z) make -C docs/books
+make -C docs/books
 sha256sum docs/books/ml06-0001-*.pdf docs/books/ml06-0002-*.pdf > SHA256SUMS
 gh release upload vX.Y.Z docs/books/ml06-000[12]-*.pdf SHA256SUMS -R mvslovers/ftpd
 ```
 
 Build from the tagged commit, in a clean checkout with the submodule
-initialised at the pinned commit. `SOURCE_DATE_EPOCH` is not optional: without
-it typst stamps the PDF with the build time (`CreationDate`, `ModDate`, the
-XMP dates) and gives it a fresh instance id, so two builds of the same tag
-differ in a few dozen bytes. With it set to the commit time of the tag, typst
-0.15.1 built `v1.3.0` twice in two clean checkouts, 65 seconds apart, and both
-PDFs were byte-identical (`cmp`). That holds for the same typst version and the
-pinned bookmaster; it was not measured on another version or platform.
-`SHA256SUMS` always describes the uploaded files. A PDF uploaded before 1.4.0
-was built without the variable and cannot be reproduced bit for bit; a rebuild
-of it has the same size and the same text, only the date stamps and the
-instance id differ. Uploading to a release is a publication: it needs the
-maintainer's go-ahead naming the release and the files, like the release
-itself.
+initialised at the pinned commit. No environment variable is needed: the
+Makefile passes `--creation-timestamp 0` to `typst compile`, so the PDF does
+not carry the build time (`CreationDate`, `ModDate`, the XMP dates). The flag
+takes precedence over `SOURCE_DATE_EPOCH`, so that variable has no effect on
+these builds, and the date stamp in the PDF is 1970-01-01 by design. Two plain
+`make -C docs/books` runs a few seconds apart gave byte-identical PDFs
+(`sha256sum` equal) with typst 0.15.1. That holds for the same typst version
+and the pinned bookmaster; it was not measured on another version or platform.
+`SHA256SUMS` always describes the uploaded files. The PDFs attached to v1.3.0
+and v1.3.1 carry their build time and cannot be reproduced bit for bit; a
+rebuild of them has the same size and the same text, only the date stamps and
+the instance id differ. The PDFs attached to v1.3.2 were built with a fixed
+timestamp of 0, as this Makefile does now. Uploading to a release is a
+publication: it needs the maintainer's go-ahead naming the release and the
+files, like the release itself.
