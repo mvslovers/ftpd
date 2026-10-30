@@ -41,8 +41,8 @@
 
 #define CHUNK       FTPD_DATA_BUF_SIZE
 
-static ftpd_server_t    server;
-static ftpd_session_t   sess;
+static ftpd_server_t    t_server;
+static ftpd_session_t   t_sess;
 
 /* The script for the replaced libufs calls. */
 static int      reads_ok;       /* full chunks ufs_fread() returns         */
@@ -159,16 +159,16 @@ tstufr_fclose(UFSFILE **pfp)
 static void
 fresh(void)
 {
-    memset(&server, 0, sizeof(server));
-    memset(&sess, 0, sizeof(sess));
-    sess.server = &server;
-    sess.fsmode = FS_UFS;
-    sess.type = XFER_TYPE_I;
-    sess.ufs = (UFS *)ufs_dummy;
-    sess.data_sock = -1;
-    sess.pasv_sock = -1;
-    strcpy(sess.ufs_cwd, "/");
-    strcpy(sess.user, "IBMUSER");
+    memset(&t_server, 0, sizeof(t_server));
+    memset(&t_sess, 0, sizeof(t_sess));
+    t_sess.server = &t_server;
+    t_sess.fsmode = FS_UFS;
+    t_sess.type = XFER_TYPE_I;
+    t_sess.ufs = (UFS *)ufs_dummy;
+    t_sess.data_sock = -1;
+    t_sess.pasv_sock = -1;
+    strcpy(t_sess.ufs_cwd, "/");
+    strcpy(t_sess.user, "IBMUSER");
 
     reads_ok = 0;
     end_error = 0;
@@ -194,7 +194,7 @@ cleaned_up(const char *round)
 {
     CHECK(close_calls == 1, round);
     CHECK(close_fp == (UFSFILE *)handle, round);
-    CHECK(sess.cur_ufs_file == NULL, round);
+    CHECK(t_sess.cur_ufs_file == NULL, round);
     CHECK(data_closes >= 1, round);
 }
 
@@ -206,10 +206,10 @@ main(void)
     /* 1: a clean transfer is still 226 and counted. */
     fresh();
     reads_ok = 2;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_226, "round 1: clean transfer is 226");
     CHECK(sent_bytes == 2L * CHUNK, "round 1: both chunks were sent");
-    CHECK(sess.xfer_count == 1, "round 1: the transfer is counted");
+    CHECK(t_sess.xfer_count == 1, "round 1: the transfer is counted");
     cleaned_up("round 1: handle closed, recovery clear, data closed");
 
     /* 2: the read after the first chunks fails and returns 0. */
@@ -217,10 +217,10 @@ main(void)
     reads_ok = 2;
     end_error = 1;
     err_rc = UFSD_RC_IO;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_451, "round 2: a read error is 451, not 226");
     CHECK(sent_bytes == 2L * CHUNK, "round 2: what was read was sent");
-    CHECK(sess.xfer_count == 0, "round 2: the transfer is not counted");
+    CHECK(t_sess.xfer_count == 0, "round 2: the transfer is not counted");
     CHECK(strstr(last_text, "incomplete") != NULL,
           "round 2: the text says the file is incomplete");
     cleaned_up("round 2: handle closed, recovery clear, data closed");
@@ -231,7 +231,7 @@ main(void)
     end_error = 1;
     partial = 100;
     err_rc = UFSD_RC_IO;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_451, "round 3: a partial read then error is 451");
     CHECK(sent_bytes == (long)CHUNK + 100, "round 3: the partial was sent");
     cleaned_up("round 3: handle closed, recovery clear, data closed");
@@ -241,7 +241,7 @@ main(void)
     reads_ok = 0;
     end_error = 1;
     err_rc = -1;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_451, "round 4: ferror -1 is 451, not 226");
     cleaned_up("round 4: handle closed, recovery clear, data closed");
 
@@ -249,10 +249,10 @@ main(void)
     fresh();
     reads_ok = 5;
     send_fail_call = 2;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_426,
           "round 5: a lost data connection is 426, not 226");
-    CHECK(sess.xfer_count == 0, "round 5: the transfer is not counted");
+    CHECK(t_sess.xfer_count == 0, "round 5: the transfer is not counted");
     cleaned_up("round 5: handle closed, recovery clear, data closed");
 
     /* 6: both at once: the connection is what the client sees first. */
@@ -262,16 +262,16 @@ main(void)
     partial = 100;
     err_rc = UFSD_RC_IO;
     send_fail_call = 2;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_426, "round 6: lost connection wins: 426");
     cleaned_up("round 6: handle closed, recovery clear, data closed");
 
     /* 7: refused data connection is unchanged. */
     fresh();
     data_open_rc = -1;
-    ftpd_ufs_retr(&sess, "/tmp/f");
+    ftpd_ufs_retr(&t_sess, "/data/f");
     CHECK(last_code == FTP_425, "round 7: 425 Cannot open data connection");
-    CHECK(close_calls == 1 && sess.cur_ufs_file == NULL,
+    CHECK(close_calls == 1 && t_sess.cur_ufs_file == NULL,
           "round 7: handle closed, recovery clear");
 
     return mbt_test_summary("TSTUFR");
