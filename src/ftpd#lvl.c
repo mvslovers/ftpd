@@ -168,3 +168,17 @@ ftpd_lvl_keep(const char *filter, int has_wildcard, const char *dsn)
     return strcmp(filter, dsn) == 0 ||
            (strncmp(filter, dsn, len) == 0 && dsn[len] == '.');
 }
+
+int
+ftpd_lvl_first(const char *filter, int has_wildcard,
+               const char *(*name_at)(void *ctx, int i), void *ctx)
+{
+    const char *dsn;
+    int i;
+
+    for (i = 0; (dsn = name_at(ctx, i)) != NULL; i++) {
+        if (ftpd_lvl_keep(filter, has_wildcard, dsn))
+            return i;
+    }
+    return -1;
+}
