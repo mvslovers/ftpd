@@ -6,7 +6,7 @@ local: bad.jcl remote: bad.jcl
 125 Sending Job to JES internal reader FIXrecfm 80
 250-It is known to JES as JOB00037
 250 Transfer completed successfully.
-83 bytes sent in 00:00 (1.81 KiB/s)
+81 bytes sent in 00:00 (1.84 KiB/s)
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=IBMUSER
@@ -24,9 +24,11 @@ JOBNAME  JOBID    OWNER    STATUS CLASS
 ftp> site jesstatus=all
 200 SITE command was accepted
 ftp> site jesowner=nobody
-501 JESOWNER is not permitted
+200-User IBMUSER is not authorized to filter on JESOWNER, JESOWNER remains IBMUSER
+200 SITE command was accepted
 ftp> site jesowner=*
-501 JESOWNER is not permitted
+200-User IBMUSER is not authorized to filter on JESOWNER, JESOWNER remains IBMUSER
+200 SITE command was accepted
 ftp> site jesowner=IBMUSER
 200 SITE command was accepted
 ftp> dir

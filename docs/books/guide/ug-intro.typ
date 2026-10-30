@@ -280,10 +280,13 @@ the book explains the subject:
       others.],
       [@ug-jes-others, @ug-security-jesspool],
     [#cmd("SITE JESOWNER") with another user ID or #cmd("*") needs the same
-      right, and answers #cmd("501 JESOWNER is not permitted") without it.
-      Before, it answered #cmd("200") for any value, and the owner was compared
-      as a prefix. Now the whole owner is compared, and a value that is longer
-      than eight characters is refused, not cut.], [@ug-jes-list],
+      right. Without it the reply is #cmd("200-User X is not authorized to
+      filter on JESOWNER, JESOWNER remains X") and #cmd("200 SITE command was
+      accepted"), and the user sees the own jobs. FTPD 1.3.0 to 1.3.2 answered
+      #cmd("501 JESOWNER is not permitted") here. Before 1.3, the value was
+      accepted and the owner was compared as a prefix. Now the whole owner is
+      compared, and a value that is longer than eight characters is refused
+      with #cmd("501 JESOWNER is not permitted"), not cut.], [@ug-jes-list],
     [The values of #cmd("SITE JESJOBNAME"), #cmd("JESOWNER") and
       #cmd("JESSTATUS") are upper case whatever the client typed.],
       [@ug-site-case],

@@ -14,7 +14,7 @@ local: hello.jcl remote: hello.jcl
 125 Sending Job to JES internal reader FIXrecfm 80
 250-It is known to JES as JOB00039
 250 Transfer completed successfully.
-211 bytes sent in 00:00 (3.14 KiB/s)
+211 bytes sent in 00:00 (5.01 KiB/s)
 ftp> dir
 229 Entering Extended Passive Mode (|||22000|)
 125 List started OK for JESJOBNAME=*, JESSTATUS=ALL and JESOWNER=BOB
@@ -22,9 +22,11 @@ JOBNAME  JOBID    OWNER    STATUS CLASS
 FTPHELLO JOB00039 BOB      OUTPUT  A   RC=0000
 250 List completed successfully.
 ftp> site jesowner=ALICE
-501 JESOWNER is not permitted
+200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains BOB
+200 SITE command was accepted
 ftp> site jesowner=*
-501 JESOWNER is not permitted
+200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains BOB
+200 SITE command was accepted
 ftp> dir JOB00038
 229 Entering Extended Passive Mode (|||22000|)
 550 Jobid JOB00038 not found for JESJOBNAME=*, JESSTATUS=ALL, JESOWNER=BOB

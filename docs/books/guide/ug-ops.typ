@@ -392,20 +392,11 @@ view against the profiles of the class #cmd("JESSPOOL")
 are:
 
 #screen(```
-[WARN ] SITE JESOWNER refused: user=BOB value=ALICE rc=4
 [WARN ] JES LISTJOB denied: user=BOB job=JOB00038 reason=NOPROFILE rc=4
 [WARN ] JES DELE denied: user=AUDIT1 job=JOB00038 reason=NOCANCEL rc=8
 [INFO ] JES LIST: 4 jobs, 0 own, 21 hidden, 0 ERR, 11 RACF calls
 ```)
 
-- *#cmd("SITE JESOWNER refused"):* a #cmd("SITE JESOWNER") that the client got a
-  #cmd("501") for. #cmd("value") is what the client sent in upper case, with
-  each character other than a letter, a digit, #cmd("$"), #cmd("#") or
-  #cmd("@") shown as #cmd("?") and cut after eight characters, so #cmd("*")
-  reads #cmd("?").
-  #cmd("rc") is the return code of RAKF: 4 when no profile covers the user ID
-  and 8 when a profile gives no READ. It is #cmd("-") when FTPD did not ask
-  RAKF, as for #cmd("ABC*"), and the log has #cmd("value=ABC?").
 - *#cmd("JES op denied"):* a job that FTPD hid from the user or refused to
   cancel. #cmd("op") is #cmd("LISTJOB") for #cmd("dir JOBnnnnn"), #cmd("RETR")
   or #cmd("DELE"). #cmd("reason=NOPROFILE") means that no profile covers the
@@ -432,11 +423,16 @@ The console stays quiet about these refusals. FTPD asks RAKF with the flag
 (@ug-jes-sample has the measurement and the sources). Look for a refusal in
 this log, not on the console.
 
+A #cmd("SITE JESOWNER") that the user may not use writes no line to this log,
+and neither does one with a value that is no owner (the client gets the
+notice or the #cmd("501") in its reply). The filter stays as it was, and the
+jobs are still decided one by one.
+
 FTPD writes at most 16 lines of the form #cmd("denied") for a session, so that
 a client cannot fill the log. When it left more out, it writes
 #cmd("JES denied: user=USERID and n more denied") when the session ends. The
-line #cmd("SITE JESOWNER refused") counts in the same 16. The line with
-#cmd("reason=NOACEE") does not: FTPD writes it once for each command.
+line with #cmd("reason=NOACEE") does not count in it: FTPD writes it once for
+each command.
 
 The lines with #cmd("reason=ERR") of #cmd("dir JOBnnnnn"), #cmd("RETR") and
 #cmd("DELE") have their own limit of 16 for a session, which comes after the

@@ -166,11 +166,14 @@ causes are:
   as #cmd("JOB*") is one case. For #cmd("RETR") the number of a spool file may
   follow a point (#cmd("JOB00042.3")); for #cmd("DELE") a point makes the ID
   invalid. FTPD does not ask JES2. Since FTPD 1.3.0.
-- #cmd("501 JESOWNER is not permitted"): #cmd("SITE JESOWNER") with a user ID
-  or #cmd("*") that the session may not read, or with a value that is not
-  allowed. With more words on the line the reply is #cmd("501-JESOWNER is not permitted")
+- #cmd("501 JESOWNER is not permitted"): #cmd("SITE JESOWNER") with a value
+  that is no owner: a pattern, more than eight characters or a character that
+  is not allowed. With more words on the line the reply is
+  #cmd("501-JESOWNER is not permitted")
   and #cmd("501 Other parameters on this command were applied.")
-  (@ref-site-jesowner).
+  (@ref-site-jesowner). A user ID or #cmd("*") that the session may not read
+  gets no 501 but #cmd("200-User X is not authorized to filter on JESOWNER,
+  JESOWNER remains X") and #cmd("200 SITE command was accepted").
 - #cmd("501 PORT not allowed after EPSV ALL"), #cmd("501 PASV not allowed after EPSV ALL"), #cmd("501 Syntax error in PORT parameters"): see @ref-cmd.
 - #cmd("501-missing type parameter"), #cmd("501-unknown type ..."): see
   @ref-cmd-type.

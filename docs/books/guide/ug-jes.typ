@@ -221,14 +221,18 @@ statement). The filters are:
   owner of each job with the value: #cmd("ABC") does not match a job of
   #cmd("ABCD"). #cmd("site jesowner=*") lists the jobs of all users. The
   filter only narrows the view. A user ID other than the own one and #cmd("*")
-  need the right to read those jobs (@ug-jes-others). Without it the reply is
-  #cmd("501 JESOWNER is not permitted") and the filter stays as it was, as
-  the two attempts of the session show. The reply does not say why and does
-  not repeat the value. A pattern such as #cmd("ABC*"), a value of more than
-  eight characters and a character other than a letter, a digit, #cmd("$"),
-  #cmd("#") or #cmd("@") are refused in the same way, and FTPD never cuts a
-  value to eight characters. The own user ID is always accepted. The header
-  #cmd("125") names the filter that applies.
+  need the right to read those jobs (@ug-jes-others). Without it FTPD does
+  not refuse the command. The reply is the pair #cmd("200-User IBMUSER is not
+  authorized to filter on JESOWNER, JESOWNER remains IBMUSER") and
+  #cmd("200 SITE command was accepted"), and the filter stays as it was, as
+  the two attempts of the session show. The notice names the user and the
+  owner that applies and does not repeat the value, and no log line is
+  written. A client that sends #cmd("JESOWNER=*") with every request goes on.
+  A pattern such as #cmd("ABC*"), a value of more than eight characters and a
+  character other than a letter, a digit, #cmd("$"), #cmd("#") or #cmd("@") are
+  a syntax error and get #cmd("501 JESOWNER is not permitted"), and FTPD never
+  cuts a value to eight characters. The own user ID is always accepted. The
+  header #cmd("125") names the filter that applies.
 - *The job name:* #cmd("site jesjobname=name") limits the list to the jobs
   with this name. The session used #cmd("FTPH*"), and the list had only the job
   of the first session.
@@ -324,14 +328,20 @@ and the end by the line #cmd("N spool files"). The commands that take a job ID
 (#cmd("list spool-files-by-jobid"), #cmd("view job-status-by-jobid"),
 #cmd("view all-spool-by-jobid"), #cmd("view spool-file-by-id") and
 #cmd("download all-spool-by-jobid")) first send
-#cmd("SITE FILETYPE=JES SBSENDEOL=CRLF JESJOBNAME=* JESOWNER=*"). FTPD accepts
+#cmd("SITE FILETYPE=JES SBSENDEOL=CRLF JESJOBNAME=* JESOWNER=*"). FTPD applies
 #cmd("JESOWNER=*") only for a user who has READ on the entity #cmd("..") in the
 class #cmd("JESSPOOL") (@ug-jes-others, the Reference has the table of the
-values of #cmd("JESOWNER")). For any other user the reply is
-#cmd("501 JESOWNER is not permitted"), and the plug-in stops with that error.
-The first run is a user with READ on #cmd("..") (IBMUSER, a member of
-#cmd("ADMIN")), the second one a user without it (BOB). The options of the
-connection (host, port, user and password) are left out:
+values of #cmd("JESOWNER")). For any other user the reply is the notice
+#cmd("200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains
+BOB") with #cmd("200 SITE command was accepted"), the owner stays the user ID
+of the session, and the plug-in goes on: it sees the own jobs of the user and
+no more. The first run is a user with READ on #cmd("..") (IBMUSER, a member of
+#cmd("ADMIN")) and a job of that user. The second and the third run are of a
+user without it (BOB): the second asks for the own job and gets the list. The
+third asks for the job of ALICE and fails with the error of the plug-in, which
+repeats the reply #cmd("550 Jobid JOB00038 not found ...") (@ug-jes-others).
+The options of the connection (host, port, user and password) are left
+out:
 
 #screen(raw(read("../ex/ug-jes/j-zowe.txt"), block: true))
 
@@ -431,8 +441,10 @@ others. BOB has the job #cmd("JOB00039"), and ALICE the job #cmd("JOB00038"):
 
 - #cmd("dir") lists the job of BOB and no other. The header names
   #cmd("JESOWNER=BOB").
-- #cmd("site jesowner=ALICE") and #cmd("site jesowner=*") are refused with
-  #cmd("501 JESOWNER is not permitted"). The filter stays as it was.
+- #cmd("site jesowner=ALICE") and #cmd("site jesowner=*") get the notice
+  #cmd("200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains
+  BOB") and #cmd("200 SITE command was accepted"). The filter stays as it
+  was.
 - #cmd("dir JOB00038"), #cmd("get JOB00038") and #cmd("delete JOB00038") get
   #cmd("550 Jobid JOB00038 not found ..."), the reply for a job that does not
   exist. The reply does not tell BOB whether the job exists, and the owner
@@ -578,10 +590,11 @@ tries first:
 
 #screen(raw(read("../ex/ug-jes/j-sample-bob.txt"), block: true))
 
-- #cmd("site jesowner=ALICE") and #cmd("site jesowner=*") are refused with
-  #cmd("501 JESOWNER is not permitted"). BOB has no READ on the jobs of ALICE
-  or of all users, so the filter stays at #cmd("BOB"): the next list is the
-  one of his own jobs. This is the check of @ug-jes-list.
+- #cmd("site jesowner=ALICE") and #cmd("site jesowner=*") get the notice
+  #cmd("200-User BOB is not authorized to filter on JESOWNER, JESOWNER remains
+  BOB") and #cmd("200 SITE command was accepted"). BOB has no READ on the jobs
+  of ALICE or of all users, so the filter stays at #cmd("BOB"): the next list
+  is the one of his own jobs. This is the check of @ug-jes-list.
 - #cmd("dir JOB00038"), #cmd("get JOB00038") and #cmd("delete JOB00038") all
   get #cmd("550 Jobid JOB00038 not found ..."), the reply for a job that
   does not exist. The job is there, and BOB is told no more than that he cannot
@@ -634,7 +647,7 @@ the console. The console of the test system was read from the first job to the
 end of the sessions. It had the lines of JES2 for the jobs and the lines of
 the RAKF procedures that loaded the tables (#cmd("RAKFUIDS4  USER TABLE UPDATED"),
 #cmd("RAKFPROF7  RAKF PROFILES UPDATED")), and no line from RAKF for the
-refused #cmd("site jesowner"), the hidden jobs, or the login of CAROL. That is
+denied #cmd("site jesowner"), the hidden jobs, or the login of CAROL. That is
 by design, not an oversight, and it comes from two places:
 
 - FTPD asks RAKF through the library routine #cmd("racf_auth()") of LIBC/370,

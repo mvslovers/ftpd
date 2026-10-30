@@ -44,6 +44,12 @@ SITE [keyword[=value] ...]
     [#cmd("200-text") and #cmd("200 SITE command was accepted")], [A value was
       out of range or refused. The text names the first problem
       (@ref-site-keys).],
+    [#cmd("200-User X is not authorized to filter on JESOWNER, JESOWNER remains X") and
+      #cmd("200 SITE command was accepted")], [#cmd("JESOWNER") names a user
+      or #cmd("*") that the session has no right to read (@ref-site-jesowner).
+      X is the user ID of the session in the first place, and the owner that
+      applies in the second. It is the notice of z/OS, and it is not an
+      error: the other words apply, and the owner stays as it was.],
     [#cmd("501 RETPD=n exceeds the server limit of N days; keeping the current value")],
       [#cmd("RETPD") asks for more days than #cmd("MAXRETPD") allows
       (@ref-site-retpd-limit), and it is the only word of the command.],
@@ -59,10 +65,10 @@ SITE [keyword[=value] ...]
     [#cmd("501 DCBDSN: ... keeping the current values")], [#cmd("DCBDSN") names
       a data set that FTPD cannot use as a model, and it is the only word
       (@ref-site-dcbdsn).],
-    [#cmd("501 JESOWNER is not permitted")], [#cmd("JESOWNER") names a user
-      or #cmd("*") that the session has no right to read, or the value is not
-      allowed (@ref-site-jesowner), and it is the only word. The text does not
-      name the value.],
+    [#cmd("501 JESOWNER is not permitted")], [The value of #cmd("JESOWNER") is not
+      an owner: a pattern, more than eight characters or a character that is
+      not allowed (@ref-site-jesowner), and it is the only word. The text does
+      not name the value.],
     [#cmd("501-text") and
       #cmd("501 Other parameters on this command were applied.")], [One of the
       five #cmd("501") cases above, with more than one word on the line.],
@@ -70,10 +76,10 @@ SITE [keyword[=value] ...]
   )
 ]
 
-The code is #cmd("200") in the first three cases, #cmd("501") when #cmd("RETPD")
+The code is #cmd("200") in the first four cases, #cmd("501") when #cmd("RETPD")
 is above the limit, when the line has #cmd("RDW") or a #cmd("SBSENDEOL") that
 FTPD does not handle, a #cmd("DCBDSN") that FTPD refuses or a #cmd("JESOWNER")
-that is not permitted, and #cmd("202") for no word. A script must read the first
+that is no owner, and #cmd("202") for no word. A script must read the first
 line.
 
 The #cmd("501") takes the place of the other replies. If the same line has a
@@ -202,8 +208,9 @@ of the full names, and still work.
     [#cmd("JESOWNER=n")], [The owner for the job list. Upper case. Without it,
       and with no value, the owner is the user of the session. #cmd("*") means
       all owners. Another user ID and #cmd("*") need the right to read those
-      jobs, and the reply is #cmd("501 JESOWNER is not permitted") without it
-      (@ref-site-jesowner).],
+      jobs. Without it the reply is the notice
+      #cmd("200-User X is not authorized to filter on JESOWNER, JESOWNER remains
+      X") and the owner stays as it was (@ref-site-jesowner).],
     [#cmd("JESSTATUS=s")], [The status filter of the JES view: #cmd("ALL"),
       #cmd("INPUT"), #cmd("ACTIVE") or #cmd("OUTPUT"), in any case, stored in
       upper case. No value: #cmd("ALL"), which is also the value at the start.
@@ -383,20 +390,32 @@ the value:
       that owner that the session may read.],
     [#cmd("*")], [Accepted when RAKF gives READ on the entity #cmd("..").
       The list shows every job that the session may read.],
+    [a user ID or #cmd("*") without that right], [Ignored. The reply is
+      #cmd("200-User X is not authorized to filter on JESOWNER, JESOWNER remains X")
+      and #cmd("200 SITE command was accepted"). The owner stays as it was.],
     [anything else], [#cmd("501 JESOWNER is not permitted").],
   )
 ]
 
-*What is refused with the 501:* a user ID or #cmd("*") without the right to
-read, a pattern such as #cmd("ABC*"), a value of more than eight characters and
-a value with a character other than a letter, a digit, #cmd("$"),
-#cmd("#") and #cmd("@"). FTPD does not cut a long value to
-eight characters. The text is the same for every cause and does not repeat the
+*The notice.* A well formed value without the right is not an error, so a
+client that sends #cmd("JESOWNER=*") with every request, such as the Zowe CLI
+plug-in for z/OS FTP, is not stopped. The first X in the notice is the user ID
+of the session, the second one is the owner that applies: the user ID, or the
+owner that an earlier #cmd("SITE JESOWNER") set. The text does not repeat the
 value, so that the reply does not tell a client which user IDs exist. The
-filter stays as it was. The other words on the line are applied, and the reply
-then has the two lines #cmd("501-JESOWNER is not permitted") and
+other words on the line are applied. The reply carries one text for the
+whole line, the first problem from the left. The log has no line for it. FTPD 1.3.0 to 1.3.2
+answered #cmd("501 JESOWNER is not permitted") in this case.
+
+*What is refused with the 501:* a pattern such as #cmd("ABC*"), a value of
+more than eight characters and a value with a character other than a letter,
+a digit, #cmd("$"), #cmd("#") and #cmd("@"). FTPD does not cut a long value
+to eight characters. The text is #cmd("JESOWNER is not permitted") and does
+not repeat the value. The filter stays as it was. The other words on the line
+are applied, and the reply then has the two lines
+#cmd("501-JESOWNER is not permitted") and
 #cmd("501 Other parameters on this command were applied.") (@ref-site-reply).
-The log has a line at the level WARN (_FTPD User's Guide_, "Reading the Log").
+The log has no line for it either.
 
 The owner of a job is compared whole with the value: #cmd("ABC") does not match
 a job of #cmd("ABCD"). The filter acts on #cmd("LIST") and #cmd("NLST"). It has
