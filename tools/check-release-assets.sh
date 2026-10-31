@@ -1,7 +1,8 @@
 #!/bin/sh
 # Checks the assets of a published GitHub release of ftpd. Read-only.
 #
-#   tools/check-release-assets.sh vX.Y.Z [NOTES_FILE]
+#   tools/check-release-assets.sh vX.Y.Z [NOTES_FILE]    all three checks
+#   tools/check-release-assets.sh --assets-only vX.Y.Z   checks 1 and 3 only
 #
 # 1. The release must carry the SMP files (ftpd-X.Y.Z-dist.tar.gz, -dist.zip,
 #    -load.xmit), one PDF of each book (ml06-0001-*.pdf, ml06-0002-*.pdf) and
@@ -12,10 +13,24 @@
 # 3. SHA256SUMS must list exactly the other assets, and every sum must match the
 #    file as downloaded from the release.
 #
-# Exit 0 only when all three hold; anything else stops the release.
+# The release workflow runs --assets-only: when its job runs, the page still
+# has the generated notes of mbt's release3.yml, which name no asset. The text
+# comparison (2) is for the approved page text, before it is put on the page,
+# and for the page as published (internals/releasing.md).
+#
+# Exit 0 only when every check that was asked for holds; anything else stops
+# the release.
 set -eu
 
-[ $# -ge 1 ] && [ $# -le 2 ] || { echo "usage: $0 vX.Y.Z [NOTES_FILE]" >&2; exit 2; }
+usage() { echo "usage: $0 vX.Y.Z [NOTES_FILE] | $0 --assets-only vX.Y.Z" >&2; exit 2; }
+assets_only=0
+if [ "${1:-}" = --assets-only ]; then
+    assets_only=1
+    shift
+    [ $# -eq 1 ] || usage
+elif [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    usage
+fi
 tag=$1
 notes=${2:-}
 ver=${tag#v}
@@ -36,18 +51,20 @@ for b in ml06-0001 ml06-0002; do
     grep -q "^$b-[0-9]*\.pdf\$" "$tmp/assets" || bad "$tag lacks a PDF of $b"
 done
 
-if [ -n "$notes" ]; then
-    cp "$notes" "$tmp/text" || exit 2
-else
-    gh release view "$tag" -R "$repo" --json body --jq .body > "$tmp/text"
+if [ "$assets_only" -eq 0 ]; then
+    if [ -n "$notes" ]; then
+        cp "$notes" "$tmp/text" || exit 2
+    else
+        gh release view "$tag" -R "$repo" --json body --jq .body > "$tmp/text"
+    fi
+    grep -o '[A-Za-z0-9][A-Za-z0-9._-]*\.\(tar\.gz\|zip\|xmit\|pdf\)\|SHA256SUMS' "$tmp/text" | sort -u > "$tmp/named"
+    while read -r n; do
+        grep -qx "$n" "$tmp/assets" || bad "the release text names $n, which is not an asset of $tag"
+    done < "$tmp/named"
+    while read -r a; do
+        grep -qx "$a" "$tmp/named" || bad "the asset $a of $tag is not named in the release text"
+    done < "$tmp/assets"
 fi
-grep -o '[A-Za-z0-9][A-Za-z0-9._-]*\.\(tar\.gz\|zip\|xmit\|pdf\)\|SHA256SUMS' "$tmp/text" | sort -u > "$tmp/named"
-while read -r n; do
-    grep -qx "$n" "$tmp/assets" || bad "the release text names $n, which is not an asset of $tag"
-done < "$tmp/named"
-while read -r a; do
-    grep -qx "$a" "$tmp/named" || bad "the asset $a of $tag is not named in the release text"
-done < "$tmp/assets"
 
 if grep -qx SHA256SUMS "$tmp/assets"; then
     mkdir "$tmp/dl"
@@ -62,4 +79,8 @@ if [ "$fail" -ne 0 ]; then
     echo "[check-release-assets] $tag: STOP. Do not publish the page; see internals/releasing.md." >&2
     exit 1
 fi
-echo "[check-release-assets] $tag: $(wc -l < "$tmp/assets" | tr -d ' ') assets, text and SHA256SUMS agree."
+if [ "$assets_only" -eq 1 ]; then
+    echo "[check-release-assets] $tag: $(wc -l < "$tmp/assets" | tr -d ' ') assets, SHA256SUMS agrees (text not compared)."
+else
+    echo "[check-release-assets] $tag: $(wc -l < "$tmp/assets" | tr -d ' ') assets, text and SHA256SUMS agree."
+fi

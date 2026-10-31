@@ -14,7 +14,9 @@ jobs:
   # nothing else, and it replaces an existing release of the same tag. The
   # books (ML06-0001, ML06-0002) and SHA256SUMS are attached here, so a release
   # cannot be left without them; the last step fails the run if any asset the
-  # release must carry is missing. Re-running the job is safe (--clobber).
+  # release must carry is missing. It does not compare the page text: at this
+  # point the page still has the generated notes of release3.yml. Re-running the
+  # job is safe (--clobber).
   books:
     needs: release
     runs-on: ubuntu-latest
@@ -47,4 +49,4 @@ jobs:
             out/ml06-0001-*.pdf out/ml06-0002-*.pdf SHA256SUMS
 
       - name: Check the assets of the release
-        run: tools/check-release-assets.sh "$GITHUB_REF_NAME"
+        run: tools/check-release-assets.sh --assets-only "$GITHUB_REF_NAME"

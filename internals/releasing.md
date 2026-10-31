@@ -100,8 +100,11 @@ tag first, with every asset on it. The second job, `books`, runs after it
 (`.github/actions/install-typst`, the same pin as the `books` CI job), takes the
 SMP files from the release as published, writes `SHA256SUMS` over those and the
 PDFs, uploads PDFs and `SHA256SUMS`, and ends with
-`tools/check-release-assets.sh`, so a release that lacks any of them makes the
-run fail. The job needs no `SOURCE_DATE_EPOCH`: the Makefile fixes the PDF
+`tools/check-release-assets.sh --assets-only`, so a release that lacks any of
+them makes the run fail. That mode does not compare the page text: while the
+job runs, the page still has the generated notes of `release3.yml`, which name
+no asset. The first real run of the job is the next release; whoever cuts it
+watches that run to the end. The job needs no `SOURCE_DATE_EPOCH`: the Makefile fixes the PDF
 creation date at 0 (below).
 
 Before the tag:
@@ -187,6 +190,9 @@ carries:
 tools/check-release-assets.sh vX.Y.Z approved-page.md   # the approved text, before it is put on the page
 tools/check-release-assets.sh vX.Y.Z                    # the page as published
 ```
+
+`--assets-only` (before the version) skips the comparison with the text; the
+`books` job uses it.
 
 The script (read-only; needs `gh`) compares `gh release view --json assets`
 with the file names in the page's asset tables: every name in the text must be
