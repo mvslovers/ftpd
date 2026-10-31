@@ -32,8 +32,9 @@
 #       SBSENDEOL refused, SITE JESSTATUS filters the JES listing
 #   17. SITE DCBDSN: RECFM, LRECL and BLKSIZE taken from a model data set
 #   18. JES spool authorization (#90): who sees, reads and deletes which
-#       job (22 cases, RACF class JESSPOOL; needs RAKF 2.0.0 and a RAKF
-#       administrator as test user, see the comment of Test 18)
+#       job (22 cases, RACF class JESSPOOL; needs RAKF 2.0.0, skipped where
+#       that is not installed, and a RAKF administrator as test user, see
+#       the comment of Test 18)
 #   19. LIST and NLST of 'DSN(pattern)' (#302)
 #   20. LIST and NLST of an absolute name or pattern, outside the working
 #       directory: 'SYS1.PROCLIB', 'SYS1.**' (#331)
@@ -2403,7 +2404,8 @@ delete '$DCB_NEW'" /dev/null
 # deletes, no profile or no READ hides the job behind the same 550 that a
 # missing job gets.
 #
-# Needs RAKF 2.0.0 (the test refuses to run a gate on anything else) and a
+# Needs RAKF 2.0.0 (a gate fails on anything else, a development run reports
+# the test as SKIPPED and leaves the system alone, for example on TK5) and a
 # test user that is a RAKF administrator (group RAKFADM, SPECIAL), such as
 # the IBMUSER of an mvsce container: the test creates its own users and
 # JESSPOOL profiles and puts SYS1.SECURE.CNTL(PROFILES) and (USERS) back the
@@ -2424,9 +2426,9 @@ delete '$DCB_NEW'" /dev/null
 #   FTPD_RDR          host:port of the card reader, for the job without owner
 #   FTPD_CONSOLE      as for Test 13; also checks the console reload (22)
 #
-# Case 1 (empty JESSPOOL class) runs on every RAKF level and before every
-# libc370 raise: if racf_auth() answers 0 for a class without profiles, the
-# foreign jobs are open, and that is a blocker the table must not paper over.
+# Case 1 (empty JESSPOOL class) runs before every libc370 raise: if
+# racf_auth() answers 0 for a class without profiles, the foreign jobs are
+# open, and that is a blocker the table must not paper over.
 # Case 8 is the first part (M1): a job ID is matched exactly.
 # ============================================================
 section "Test 18: JES spool authorization"
@@ -2607,6 +2609,8 @@ elif [ "$JW_GATE" = 1 ]; then
     JW_READY=0
 else
     info "RAKF level $JW_RAKF is not V2R0M0: development run, not a gate"
+    jw_skip "Test 18 needs RAKF 2.0.0 (found: $JW_RAKF): none of its cases ran"
+    JW_READY=0
 fi
 if [ "$JW_GATE" = 1 ]; then
     [ -n "$JW_LIBC" ]      || fail "gate: the libc370 version is not known"
