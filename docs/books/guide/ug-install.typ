@@ -333,9 +333,11 @@ job; there is no third file to send.
 On a new installation, every step ends with #cmd("COND CODE 0000"). The
 screens below are the SMP output of a new installation of release 1.3.3,
 measured on a test system with the package of the release candidate. The
-package was built from #cmd("main") under a development name, so a start prints
-#cmd("1.3.3-DEV") in the banner; it carries the same FMID, #cmd("TFTP133"), as
-the release. The SYSMOD of release 1.3.3 is #cmd("TFTP133") and it deletes
+release package carries the same FMID, #cmd("TFTP133"), and a start prints
+#cmd("1.3.3") in the banner. The candidate was built from #cmd("main") under a
+development name, so its banner said #cmd("1.3.3-DEV"); it differs from the
+release package in its names and time stamps, not in the module that SMP
+installs. The SYSMOD of release 1.3.3 is #cmd("TFTP133") and it deletes
 #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"). The #cmd("RECV")
 step receives the SYSMOD:
 
