@@ -336,8 +336,8 @@ measured on a test system with the package of the release candidate. The
 release package carries the same FMID, #cmd("TFTP133"), and a start prints
 #cmd("1.3.3") in the banner. The candidate was built from #cmd("main") under a
 development name, so its banner said #cmd("1.3.3-DEV"); it differs from the
-release package in its names and time stamps, not in the module that SMP
-installs. The SYSMOD of release 1.3.3 is #cmd("TFTP133") and it deletes
+release package in its names, its time stamps and the version in the banner.
+The SYSMOD of release 1.3.3 is #cmd("TFTP133") and it deletes
 #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"). The #cmd("RECV")
 step receives the SYSMOD:
 
