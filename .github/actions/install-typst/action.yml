@@ -1,0 +1,20 @@
+# typst pinned by version AND sha256. Used by books.yml (every PR) and by
+# release.yml (the books of a release), so the PDFs a release publishes are
+# built with the typst the CI checked them with.
+name: Install typst (pinned)
+description: Installs the pinned typst release into /usr/local/bin.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TYPST_VERSION: 0.15.1
+        TYPST_SHA256: a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c
+      run: |
+        f=typst-x86_64-unknown-linux-musl.tar.xz
+        curl -fsSL --proto "=https" --tlsv1.2 -O "https://github.com/typst/typst/releases/download/v$TYPST_VERSION/$f"
+        echo "$TYPST_SHA256  $f" | sha256sum -c -
+        tar xf "$f"
+        sudo install -m 755 typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
+        typst --version

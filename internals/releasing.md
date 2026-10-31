@@ -91,9 +91,18 @@ registered in the README of `mvslovers/bookmaster`. A release attaches both
 PDFs to its release page with their `SHA256SUMS` lines (the rule agreed for
 all products in `~/repos/mvs/.workspace/context/books.md`).
 
-The release workflow (`.github/workflows/release.yml`, mbt's `release3.yml`)
-builds and publishes the SMP package only. It does not build or attach the
-books; that is a manual step after the tag exists.
+The release workflow (`.github/workflows/release.yml`) has two jobs. The first
+is mbt's `release3.yml`: it builds the SMP package and publishes the release
+page at once (not as a draft), and it deletes an existing release of the same
+tag first, with every asset on it. The second job, `books`, runs after it
+(`needs: release`): in a clean checkout of the tagged commit with the
+`bookmaster` submodule, it builds both PDFs with the pinned typst
+(`.github/actions/install-typst`, the same pin as the `books` CI job), takes the
+SMP files from the release as published, writes `SHA256SUMS` over those and the
+PDFs, uploads PDFs and `SHA256SUMS`, and ends with
+`tools/check-release-assets.sh`, so a release that lacks any of them makes the
+run fail. The job needs no `SOURCE_DATE_EPOCH`: the Makefile fixes the PDF
+creation date at 0 (below).
 
 Before the tag:
 
@@ -133,17 +142,24 @@ Before the tag:
    show. Do the same for the inline captures of `docs/uninstall.md` and
    `docs/installation.md`.
 
-After the tag, with the release page created by the workflow:
+After the tag, the `books` job has attached the books. Wait for the whole
+run to be green; a red `books` job means the release is incomplete, whatever
+the page says. If the job failed for a reason outside the repository, re-run
+it (it is safe to run again). Only when it cannot run, attach the files by
+hand, from the tagged commit:
 
 ```sh
 make -C docs/books
-sha256sum docs/books/ml06-0001-*.pdf docs/books/ml06-0002-*.pdf > SHA256SUMS
-gh release upload vX.Y.Z docs/books/ml06-000[12]-*.pdf SHA256SUMS -R mvslovers/ftpd
+mkdir out
+gh release download vX.Y.Z -R mvslovers/ftpd -p 'ftpd-*' -D out
+cp docs/books/ml06-000[12]-*.pdf out/
+(cd out && sha256sum * > ../SHA256SUMS)
+gh release upload vX.Y.Z out/ml06-000[12]-*.pdf SHA256SUMS -R mvslovers/ftpd
 ```
 
-Build from the tagged commit, in a clean checkout with the submodule
-initialised at the pinned commit. No environment variable is needed: the
-Makefile passes `--creation-timestamp 0` to `typst compile`, so the PDF does
+A manual build is from the tagged commit, in a clean checkout with the
+submodule initialised at the pinned commit. No environment variable is needed:
+the Makefile passes `--creation-timestamp 0` to `typst compile`, so the PDF does
 not carry the build time (`CreationDate`, `ModDate`, the XMP dates). The flag
 takes precedence over `SOURCE_DATE_EPOCH`, so that variable has no effect on
 these builds, and the date stamp in the PDF is 1970-01-01 by design. Two plain
@@ -154,6 +170,34 @@ and the pinned bookmaster; it was not measured on another version or platform.
 and v1.3.1 carry their build time and cannot be reproduced bit for bit; a
 rebuild of them has the same size and the same text, only the date stamps and
 the instance id differ. The PDFs attached to v1.3.2 were built with a fixed
-timestamp of 0, as this Makefile does now. Uploading to a release is a
-publication: it needs the maintainer's go-ahead naming the release and the
-files, like the release itself.
+timestamp of 0, as this Makefile does now. The upload by the `books`
+job is part of the release the maintainer approved with the tag. A manual
+upload is a publication of its own: it needs the maintainer's go-ahead naming
+the release and the files.
+
+## Before the release page is published
+
+The release page is live as soon as the tag has been pushed, with the SMP
+package; the `books` job adds the books and `SHA256SUMS` a few minutes later.
+The page text that the maintainer approved is put on it after the whole run is
+green. Before that, and again afterwards, compare it with what the release
+carries:
+
+```sh
+tools/check-release-assets.sh vX.Y.Z approved-page.md   # the approved text, before it is put on the page
+tools/check-release-assets.sh vX.Y.Z                    # the page as published
+```
+
+The script (read-only; needs `gh`) compares `gh release view --json assets`
+with the file names in the page's asset tables: every name in the text must be
+an asset, and every asset must be named in the text. It also requires the
+three SMP files, one PDF of each book and `SHA256SUMS`, that `SHA256SUMS` lists
+exactly the other assets, and that every sum matches the file as downloaded.
+Any deviation is a stop: do not publish the page. Attach what is missing, or
+send the release back (below); do not cut the page to make the check pass.
+
+**A page the maintainer has approved is not shortened.** If something it
+names cannot be delivered (a book that does not build, an asset that is not
+there), the release goes back to the maintainer with what is missing. The
+page is neither cut nor published as it is. v1.3.3 was published without its
+books and `SHA256SUMS`, and nothing compared the page and the assets.
