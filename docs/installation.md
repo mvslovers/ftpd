@@ -525,12 +525,13 @@ HMA2461    SYSMOD TFTP132 NOT FOUND ON SMPSCDS LIBRARY
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
-The excerpt was measured on the upgrade from 1.3.2 to 1.3.3 with the package of
-the release candidate. On the upgrades from 1.3.1 and from 1.3.0 the `APPLY`
+The excerpt was measured on the upgrade from 1.3.2 to 1.3.3 with the package
+built from the source of the release before it was published. On the upgrades from 1.3.1 and from 1.3.0 the `APPLY`
 also ended with `COND CODE 0004`, and `HMA2461` named `TFTP131` and `TFTP130`
 (one test system for each of the three; the `ACCEPT` ended with 0000 on each).
-The released package has not been measured; the candidate differs from it in
-its names and time stamps. `HMA2240` is the old module being deleted from
+The published package was not used for the upgrades; the package that was
+measured differs from it in its version name and time stamps, not in the
+source. `HMA2240` is the old module being deleted from
 `FTPD.LINKLIB` before the new one is copied.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
@@ -723,10 +724,11 @@ HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFT
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
-These lines were measured on a test system with the SMP package of the release
-candidate of 1.3.3, whose SYSMOD is `TFTP133`. The candidate was built from
-`main` under a development name (its banner says `1.3.3-DEV`) and carries the
-FMID of the release; the released package has not been measured. All eight
+These lines were measured on a test system with the SMP package of 1.3.3 that
+was built from the source of the release before it was published; its SYSMOD is
+`TFTP133`. That package was built under a development name (its banner says
+`1.3.3-DEV`) and carries the FMID of the release; it differs from the
+published package in the version name and time stamps, not in the source. All eight
 steps of the install job ended with `COND CODE 0000`.
 
 **On an upgrade the `APPLY` ends `COND CODE 0004` instead, and that is
@@ -1060,7 +1062,8 @@ FTPD054I LISTENING ON ANY PORT 2121
 FTPD001I FTPD <version> READY
 ```
 
-This is a start of the 1.3.3 release candidate on a test system; the hash and
+This is a start of 1.3.3 on a test system (the package built from the source of
+the release before it was published); the hash and
 the identity in the fourth line are those of your own setup. If your parameter
 file still has settings that no longer have an effect, `FTPD062W` appears before
 `FTPD054I`.

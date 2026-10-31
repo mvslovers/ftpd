@@ -186,10 +186,11 @@ the output of the failed step; do not repeat the job before you know what it
 did.
 
 *What has been measured.* The jobs of steps 2 to 5 were run on test systems
-(containers) with the package of the release candidate of 1.3.3, which carries
-the FMID #cmd("TFTP133"). The package was built from #cmd("main") under a
-development name, so its banner says #cmd("1.3.3-DEV"); it differs from the
-release in the names and time stamps, not in the module that SMP installs. The
+(containers) with the package of 1.3.3 that was built from the source of the
+release before it was published. It carries the FMID #cmd("TFTP133"). It was
+built under a development name, so its banner says #cmd("1.3.3-DEV"); it
+differs from the published package in the names and time stamps, not in the
+source. The
 screens of this chapter are from the run on a system that started from the TK5
 image with 1.2.0 and had gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3 by
 upgrades through SMP. A system that had gone through 1.3.0 and 1.3.1 only gave
@@ -744,7 +745,7 @@ banner show this. The return codes do not.
 system, for example one that holds ids from earlier releases that SMP lost
 track of. A development build of 1.3.3-dev (#cmd("TFTP133")) has not been installed or
 removed with the steps of this section, and the release has not been installed
-over one. The release candidate of 1.3.3 carries the same id, but it is a
+over one. The package of 1.3.3 that was measured carries the same id, but it is a
 package, not a development build: it was removed with the main way of this
 chapter (steps 1 to 5), not with the steps of this section. A
 second development build installed over the first has not been

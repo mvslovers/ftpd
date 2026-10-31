@@ -5,17 +5,15 @@
   subtitle: "Reference",
   short-title: "FTPD Reference",
   product: "FTPD",
-  number: "ML06-0002-0",
+  number: "ML06-0002-1",
   date: "October 2026",
   authors: ("Mike Großmann",),
   edition: [
-    #text(font: head-font, weight: "bold", size: 11pt)[Draft Edition (October 2026)]
+    #text(font: head-font, weight: "bold", size: 11pt)[First Edition (October 2026)]
 
     This edition applies to Version 1 Release 3 of FTPD, the FTP server for
     MVS 3.8j (ftpd 1.3.3), and to all subsequent releases and modifications
     until otherwise indicated in new editions.
-
-    *Draft.* This book is a draft edition.
 
     Comments on this book may be addressed to the issue tracker of the
     mvslovers/ftpd repository on GitHub.

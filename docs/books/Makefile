@@ -3,10 +3,10 @@
 
 TYPST ?= typst
 BM    := bookmaster
-# The PDF carries the edition: ml06-0001-0.pdf is the Draft of ML06-0001.
+# The PDF carries the edition: ml06-0001-1.pdf is the First Edition of ML06-0001.
 # The creation date is fixed at 0 so that a build does not depend on the clock
 # or on SOURCE_DATE_EPOCH: the same commit and typst give the same PDF.
-BOOKS := ml06-0001-0.pdf ml06-0002-0.pdf
+BOOKS := ml06-0001-1.pdf ml06-0002-1.pdf
 
 .PHONY: all clean site
 
