@@ -163,9 +163,9 @@ Read the three SMP steps one by one. The receive ends with return code 04:
 
 The apply deletes the load module from the target library. It also ends with
 return code 04, because SMP does not find the release that you remove in the
-restore data set (#cmd("HMA2461")). The output below comes from a system with
-release 1.3.2, so the message names #cmd("TFTP132"), the release that you
-remove:
+restore data set (#cmd("HMA2461")). The output below comes from a system that
+had been upgraded to 1.3.3 through SMP, so the message names #cmd("TFTP133"),
+the release that you remove:
 
 #screen(raw(read("../ex/ug-remove/dummy-apply.txt")))
 
@@ -185,20 +185,25 @@ step does not run; the last step does, and shows what is still there. Read
 the output of the failed step; do not repeat the job before you know what it
 did.
 
-*What has been measured.* The job was run on a test system with a new
-SMP installation of release 1.3.2; the screens of this chapter are from that
-run. It was run a second time on a system that carried 1.2.0 through SMP and
-had received the install job of 1.3.2 on top of it. That job copies nothing
-(@ug-install-upgrade), so #cmd("TFTP120") still owned the module. The return
-codes were the same, and both libraries were empty afterwards. The only
+*What has been measured.* The jobs of steps 2 to 5 were run on test systems
+(containers) with the package of the release candidate of 1.3.3, which carries
+the FMID #cmd("TFTP133"). The package was built from #cmd("main") under a
+development name, so its banner says #cmd("1.3.3-DEV"); it differs from the
+release in the names and time stamps, not in the module that SMP installs. The
+screens of this chapter are from the run on a system that started from the TK5
+image with 1.2.0 and had gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3 by
+upgrades through SMP. A system that had gone through 1.3.0 and 1.3.1 only gave
+the same return codes, and so did one that carried 1.2.0 through SMP and had
+received the install job of 1.3.3 on top of it. That
+job copies nothing (@ug-install-upgrade), so #cmd("TFTP120") still owned the
+module. The return codes were the same there, too (04, 04, 00, 00 for the four
+steps of step 2), and both libraries were empty afterwards. The only
 difference is in the #cmd("APPLY"): it printed #cmd("HMA2461") twice, once for
-#cmd("TFTP120") and once for #cmd("TFTP132"). A system whose data sets carry
-the patch level in their names, and a dummy function with a #cmd("++MAC")
-element instead of none, have not been measured. Whatever the system, the
-#cmd("LIST") in step 4 is the proof. The screens of this chapter were taken with
-the lists of release 1.3.2, which end with #cmd("TFTP132"). They show no line
-for #cmd("TFTP133")\; the counts in the text are those of the jobs as printed
-here.
+#cmd("TFTP120") and once for #cmd("TFTP133"). A system with a new installation
+of 1.3.3 and no upgrade before it was not removed in this run. A system whose
+data sets carry the patch level in their names, and a dummy function with a
+#cmd("++MAC") element instead of none, have not been measured. Whatever the
+system, the #cmd("LIST") in step 4 is the proof.
 
 == Step 3: Free the Ids <ug-remove-free>
 
@@ -297,7 +302,11 @@ statements, and all sixteen must show the id as not found. A stanza that names
 #cmd("TYPE = FUNCTION") is an entry that is still there, whether it shows the
 status #cmd("REC APP ACC") or only a #cmd("DELBY") of its successor. This is
 what the statements #cmd("LIST CDS SYSMOD(TFTP132)") and
-#cmd("LIST CDS SYSMOD(TFTPDEL)") print after step 2, before step 3 has run:
+#cmd("LIST CDS SYSMOD(TFTPDEL)") print after step 2, before step 3 has run.
+The screen was taken with release 1.3.2 and the dummy function of that release,
+which ended with #cmd("TFTP132"); it was not taken again with 1.3.3. The
+stanzas have the same form, and with the job of this chapter the
+#cmd("DELETE") line of #cmd("TFTPDEL") ends with #cmd("TFTP133"):
 
 #screen(raw(read("../ex/ug-remove/list-present.txt")))
 
@@ -398,10 +407,12 @@ the ids your system never had; the statements after it are still processed. It
 is no sign that a line did what you wanted, and a step that ends with return
 code 08 can also hide a statement that failed for another reason. Read every
 message, and take the #cmd("LIST") as the only proof. This is the output of the
-step #cmd("UCLCDS") on a system with a new installation of release 1.3.2.
-#cmd("TFTP131") is in the zone as the mark that the install left;
-#cmd("TFTP130"), #cmd("TFTP120"), #cmd("TFTP110") and #cmd("TFTP100") were
-never in it:
+step #cmd("UCLCDS") on a system with a new installation of release 1.3.2,
+with the job of that release, which named #cmd("TFTP132") where the job above
+names #cmd("TFTP133") and had no line for #cmd("TFTP133"). The fallback was not
+run again with 1.3.3. #cmd("TFTP131") is in the zone as the mark that the
+install left; #cmd("TFTP130"), #cmd("TFTP120"), #cmd("TFTP110") and
+#cmd("TFTP100") were never in it:
 
 #screen(raw(read("../ex/ug-remove/uclcds.txt")))
 
@@ -412,7 +423,8 @@ return code 08, SMP does not execute the next #cmd("UCLIN") of the same
 step: it answers #cmd("HMA2293 ** CONTROL STATEMENT IGNORED DUE TO PREVIOUS
 ERROR") and does nothing. With both blocks in one step, the ids that the
 system never had would leave the ACDS untouched. Measured on a system with
-a new installation of 1.3.2, with both blocks of the job above in one step:
+a new installation of 1.3.2 (not repeated with 1.3.3), with both blocks of the
+job above in one step:
 the #cmd("UCLIN CDS") block ended with return code 08 at
 #cmd("DEL SYSMOD(TFTP130)"), the #cmd("UCLIN ACDS") block that followed was
 ignored, the step ended with return code 12, and
@@ -711,6 +723,12 @@ Where this section speaks of release 1.3.2, the runs used the package of its
 release candidate. It carries the same FMID, #cmd("TFTP132"), and the source of
 the module did not change between the candidate and the release. The banner
 hash is that of the candidate, and the screen shows a placeholder for it.
+*This section was not run again for 1.3.3.* The screens of the release step
+and of the check after it are those of 1.3.2 with #cmd("TFTP132") in them; with
+1.3.3 the same lines name #cmd("TFTP133") and 1.3.3. The case that the release
+#cmd("TFTP133") is installed over a development build of 1.3.3 that carries the
+same id was not measured at all, which is why this section tells you to remove
+the development build first.
 
 *The development id keeps the module.* The check was to install the 1.3.2
 package over the development build without this section. #cmd("RECEIVE"),
@@ -725,7 +743,10 @@ banner show this. The return codes do not.
 *What has not been measured.* A system with a longer history than the TK5
 system, for example one that holds ids from earlier releases that SMP lost
 track of. A development build of 1.3.3-dev (#cmd("TFTP133")) has not been installed or
-removed with these steps, and the release has not been installed over one. A
+removed with the steps of this section, and the release has not been installed
+over one. The release candidate of 1.3.3 carries the same id, but it is a
+package, not a development build: it was removed with the main way of this
+chapter (steps 1 to 5), not with the steps of this section. A
 second development build installed over the first has not been
 measured with FTPD either. A test with another product that is built the same
 way showed that installing the same development id again ends with return code
@@ -756,6 +777,10 @@ The install job accepts the FMID in the same run in which it applies it. That
 closes both of the usual ways back:
 
 #screen(raw(read("../ex/ug-remove/restore-reject.txt")))
+
+This screen is from release 1.3.2 and names #cmd("TFTP132"). It was not taken
+again with 1.3.3; with 1.3.3 the same two lines are expected to name
+#cmd("TFTP133"), but that has not been measured.
 
 #cmd("RESTORE") refuses a SYSMOD that has been accepted
 (#cmd("HMA2452"), return code 12). #cmd("REJECT") then fails for a reason that

@@ -331,11 +331,12 @@ job; there is no third file to send.
 === What a Good Run Looks Like <ug-install-good>
 
 On a new installation, every step ends with #cmd("COND CODE 0000"). The
-screens below are the SMP output of a new installation of release 1.3.2,
-measured on a test system. The SYSMOD of that release is #cmd("TFTP132") and
-it deletes #cmd("TFTP131"). The SYSMOD of release 1.3.3 is #cmd("TFTP133") and
-it deletes #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"); the screens
-show no line for it. The #cmd("RECV")
+screens below are the SMP output of a new installation of release 1.3.3,
+measured on a test system with the package of the release candidate. The
+package was built from #cmd("main") under a development name, so a start prints
+#cmd("1.3.3-DEV") in the banner; it carries the same FMID, #cmd("TFTP133"), as
+the release. The SYSMOD of release 1.3.3 is #cmd("TFTP133") and it deletes
+#cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"). The #cmd("RECV")
 step receives the SYSMOD:
 
 #screen(raw(read("../ex/ug-install/receive.txt")))
@@ -357,13 +358,10 @@ that is correct.* The message #cmd("HMA2461") says that the deleted level has
 no backup entry to keep; it never will, because it was deleted rather than
 superseded:
 
-#screen(```
-HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - ...
-HMA2270 APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP132
-HMA2461 SYSMOD TFTP131 NOT FOUND ON SMPSCDS LIBRARY
-HMA2050 APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
-```)
+#screen(raw(read("../ex/ug-install/apply-upgrade.txt")))
 
+The screen is the upgrade from 1.3.2. The line #cmd("HMA2240") is the old
+module being deleted from #cmd("FTPD.LINKLIB") before the new one is copied.
 #cmd("HMA2270") is the line that says the #cmd("APPLY") worked; the return
 code is not. The install job expects the 0004: its #cmd("ACCEPT") step is
 gated by #cmd("COND=(4,LT,APPLY.HMASMP)") and not by #cmd("COND=(0,NE,...)"),
@@ -423,11 +421,18 @@ the SYSMOD is in the SMP inventory:
 
 #screen(raw(read("../ex/ug-install/ce-jclerr.txt")))
 
+This screen was taken on an MVS/CE system with release 1.3.2. It shows no
+release id, and it was not taken again with 1.3.3.
+
 Run the allocation job and submit the install job again. This time #cmd("RECV")
 ends with #cmd("COND CODE 0008"), because the SYSMOD is already received. The
 job skips the dry run, and #cmd("APPLY") and #cmd("ACCEPT") end with 0000:
 
 #screen(raw(read("../ex/ug-install/ce-rerun.txt")))
+
+This screen is also from 1.3.2 and shows #cmd("TFTP132") in the message that
+the SYSMOD was already received. With 1.3.3 the message names #cmd("TFTP133");
+that has not been measured.
 
 The installation is complete. #cmd("HMA2380") and #cmd("HMA2270") in the output
 of the #cmd("APPLY") say so (@ug-install-verify). The only thing missing is the
@@ -690,11 +695,30 @@ A healthy start ends with #cmd("FTPD001I ... READY"):
 #screen(```
 FTPD000I FTPD 1.3.3 (A3F2C91) STARTING
 FTPD005I LIBC370 2.25.1 (FCDE4E8)
-FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)
+FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC RUNS AS user/group
+RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
 FTPD054I LISTENING ON ANY PORT 2121
 FTPD001I FTPD 1.3.3 READY
 ```)
+
+The listing is a start of the release candidate of 1.3.3 on a test system, with
+the commit hash of the release as a placeholder and the identity of your own
+setup in the fourth line. The test systems started by the SVC route, so
+#cmd("FTPD008I") says #cmd("SVC (MODULE KEY 8)"); on a system with the load
+library in the APF list it says #cmd("LIBRARY (MODULE KEY 0)")
+(@ug-install-auth). If your parameter file still has settings that no longer
+have an effect, the start also prints #cmd("FTPD062W") before the line
+#cmd("FTPD054I").
+
+*The #cmd("RAKF0004") line is expected.* It comes from RAKF and not from FTPD:
+FTPD logs in a user ID that cannot be valid, to see that RAKF refuses it, and
+RAKF reports the refusal. One such line per start is part of a healthy start
+(@ug-ops-check). The user ID is #cmd("?FTPDPRB"). RAKF may print one more
+character behind it (#cmd("?FTPDPRBO") above), so a rule that looks for the line
+has to match the prefix. If you see two lines #cmd("FTPD004E") in this place instead,
+the check has failed, and nobody can log in until the security tables are
+corrected and FTPD is started again (@ug-security-check).
 
 Two lines identify the build. #cmd("FTPD000I") gives the version and the commit
 that the module was built from. #cmd("FTPD005I") gives the version of LIBC/370
@@ -740,7 +764,7 @@ which FMID owns the module. Run this under the SMP procedure:
       install copies nothing and still ends with RC 00: the #cmd("APPLY")
       prints no #cmd("HMA2380"), and its report lists the module as
       #cmd("NOT SEL"). This was measured with #cmd("TFTP120") as the owner of
-      the module and the SYSMOD of 1.3.1, of 1.3.2 and of a 1.3.3 candidate.],
+      the module and the SYSMOD of 1.3.1, of 1.3.2 and of the release candidate of 1.3.3.],
     [#cmd("TFTP110")], [1.1.0. Upgrade to 1.2.0 first, then to 1.3.0, each with
       its package from the releases page, then come back here.],
     [#cmd("TFTP100")], [1.0.x. Upgrade to 1.1.0 first (@ug-install-from10),
@@ -760,14 +784,14 @@ in the job log. The banner must name the new release;
 #cmd("FTPD000I FTPD 1.3.0"), #cmd("1.3.1") or #cmd("1.3.2") on the first line
 means that the started task still runs the old load module.
 
-The upgrade from 1.3.1 to 1.3.2 was measured on a test system that carried
-1.3.1, installed through SMP. The #cmd("APPLY") ended with
-#cmd("COND CODE 0004") and #cmd("HMA2461 SYSMOD TFTP131 NOT FOUND"), and the
-#cmd("ACCEPT") with 0000. The started task then printed the banner of 1.3.2.
-The upgrade to 1.3.3 gives the same picture, with #cmd("HMA2461") naming the id
-that was installed (#cmd("TFTP130"), #cmd("TFTP131") or #cmd("TFTP132")). That
-was measured with a candidate package of 1.3.3 on three test systems, one on
-each of the three releases; the released package has not been measured.
+The upgrade to 1.3.3 was measured with the package of the release candidate on
+three test systems, one on each of the three releases, each installed through
+SMP. On each, the #cmd("APPLY") ended with #cmd("COND CODE 0004") and
+#cmd("HMA2461") named the id that was installed (#cmd("TFTP130"),
+#cmd("TFTP131") or #cmd("TFTP132")), and the #cmd("ACCEPT") ended with 0000.
+The started task then printed the banner of the new release. The released
+package has not been measured; the candidate differs from it in its names and
+time stamps. The upgrade to 1.3.2 was measured before, with the same result.
 
 If the configuration member of 1.2.0 still has a line for
 #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a volume, the start also prints

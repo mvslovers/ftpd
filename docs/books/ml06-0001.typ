@@ -16,7 +16,10 @@
     until otherwise indicated in new editions.
 
     *Draft.* This book is a draft edition. The chapters on installing and
-    removing FTPD were measured on a test system with release 1.3.1.
+    removing FTPD were measured on test systems (containers) with the package
+    of the release candidate of 1.3.3, which carries a development name. The
+    chapters say where a screen was taken with an earlier release, or not at
+    all; the sessions of the data-transfer chapters were not run again.
 
     Comments on this book may be addressed to the issue tracker of the
     mvslovers/ftpd repository on GitHub.

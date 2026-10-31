@@ -118,14 +118,20 @@ Before the tag:
    statements. When a new id makes the `++VER(Z038) DELETE(...)` control card exceed column 71, wrap the operand after a comma and continue it on the next card line (as in the development-build example in `docs/uninstall.md`); keep every line within column 71 in both `docs/uninstall.md` and `ug-remove.typ`. On the release candidate, run the removal job and confirm `RECEIVE` completes with RC 04, not RC 08, before proceeding to `UCLIN`. The book chapters `ug-install` and `ug-remove` repeat the same
    jobs: change them in the same commit, together with the FMID table, the
    file names (`ftpd-X.Y.Z-*`) and the captures under `docs/books/ex/ug-install/`
-   and `docs/books/ex/ug-remove/`. The jobs and captures were measured on
-   1.3.1 (the edition notice says so); run them once on a throwaway container
-   with the release candidate installed from the SMP package, replace the
-   captures with that output, compare it with the text, and name the release
-   they were measured with in the notice. The captures of a LIST or NLST
-   session (`docs/books/ex/ug-data/`) are re-run against the release candidate
-   in the same way. Do the same for the inline captures of `docs/uninstall.md`
-   and `docs/installation.md`.
+   and `docs/books/ex/ug-remove/`. The jobs and captures were last measured on
+   the release candidate of 1.3.3 (the edition notice says so); run them once
+   on a throwaway container with the release candidate installed from the SMP
+   package, replace the captures with that output, compare it with the text,
+   and name the release they were measured with in the notice. Where a screen
+   was not measured again, the text must say which release it comes from. The
+   1.3.3 run did not cover the LIST and NLST sessions
+   (`docs/books/ex/ug-data/`), the fallback `UCLIN` job, the development-build
+   section of `docs/uninstall.md` and `ug-remove`, the `RESTORE`/`REJECT`
+   refusal, or the two MVS/CE screens `ce-jclerr.txt` and `ce-rerun.txt` of
+   `ug-install` (job skipped, then rerun); they are still from 1.3.2 or earlier, and so are the "measured on
+   1.3.2" notes next to them. Re-run them when a release changes what they
+   show. Do the same for the inline captures of `docs/uninstall.md` and
+   `docs/installation.md`.
 
 After the tag, with the release page created by the workflow:
 

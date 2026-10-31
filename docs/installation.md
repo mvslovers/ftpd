@@ -517,16 +517,21 @@ SMP's `COPY`, so the library only needs to be APF-authorised.
 On an upgrade the `APPLY` step ends **`COND CODE 0004`**, not `0000`:
 
 ```
-HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - ...
-HMA2270 APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP132
-HMA2461 SYSMOD TFTP131 NOT FOUND ON SMPSCDS LIBRARY
-HMA2050 APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
+HMA2240    SUCCESSFULLY DELETED LMOD FTPD ON LINKLIB LIBRARY
+HMA4180    INLINE JCLIN PROCESSING SUCCESSFUL FOR SYSMOD=TFTP133
+HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP133 - RETURN CODE=00
+HMA2270    APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP133
+HMA2461    SYSMOD TFTP132 NOT FOUND ON SMPSCDS LIBRARY
+HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
-The excerpt was measured on the upgrade from 1.3.1 to 1.3.2. The upgrade to
-1.3.3 gives the same picture and names the id that was installed: `TFTP130`,
-`TFTP131` or `TFTP132`. That was measured with a candidate package of 1.3.3,
-one system on each of the three; the released package has not been measured.
+The excerpt was measured on the upgrade from 1.3.2 to 1.3.3 with the package of
+the release candidate. On the upgrades from 1.3.1 and from 1.3.0 the `APPLY`
+also ended with `COND CODE 0004`, and `HMA2461` named `TFTP131` and `TFTP130`
+(one test system for each of the three; the `ACCEPT` ended with 0000 on each).
+The released package has not been measured; the candidate differs from it in
+its names and time stamps. `HMA2240` is the old module being deleted from
+`FTPD.LINKLIB` before the new one is copied.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
 never will, because it was deleted rather than superseded. The `APPLY` itself
@@ -713,15 +718,16 @@ The SYSMOD travels inline in the job — there is no third file to upload.
 0000`, and in the SMP output:
 
 ```
-HMA3930    SYSMOD TFTP132 SUCCESSFULLY RECEIVED
-HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB
-           - SYSMOD=TFTP132 - RETURN CODE=00
+HMA3930    SYSMOD TFTP133 SUCCESSFULLY RECEIVED
+HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP133 - RETURN CODE=00
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
-These lines were measured on a test system with the SMP package of release
-1.3.2, whose SYSMOD is `TFTP132`. The SYSMOD of 1.3.3 is `TFTP133`; the
-measurement for it is still to come.
+These lines were measured on a test system with the SMP package of the release
+candidate of 1.3.3, whose SYSMOD is `TFTP133`. The candidate was built from
+`main` under a development name (its banner says `1.3.3-DEV`) and carries the
+FMID of the release; the released package has not been measured. All eight
+steps of the install job ended with `COND CODE 0000`.
 
 **On an upgrade the `APPLY` ends `COND CODE 0004` instead, and that is
 correct** — `HMA2461` reporting that the deleted level has no backup entry.
@@ -1047,12 +1053,17 @@ A healthy start ends in `FTPD001I … READY`:
 ```
 FTPD000I FTPD <version> (A3F2C91) STARTING
 FTPD005I LIBC370 2.25.1 (FCDE4E8)
-FTPD008I AUTHORIZED BY LIBRARY (MODULE KEY 0)
+FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC RUNS AS <user>/<group>
 RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
 FTPD054I LISTENING ON ANY PORT 2121
 FTPD001I FTPD <version> READY
 ```
+
+This is a start of the 1.3.3 release candidate on a test system; the hash and
+the identity in the fourth line are those of your own setup. If your parameter
+file still has settings that no longer have an effect, `FTPD062W` appears before
+`FTPD054I`.
 
 `FTPD004I` names the identity RAKF gave the started task: the one you mapped
 the name `FTPD` to, or `STC`/`STCGROUP` where RAKF has no mapping (step 8).
