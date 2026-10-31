@@ -3,7 +3,7 @@
 Changes that matter to someone who installs or runs FTPD. The notes for earlier
 releases are on their [release pages](https://github.com/mvslovers/ftpd/releases).
 
-## 1.3.3 — unreleased
+## 1.3.3 — 2026-10-31
 
 A patch release for 1.3.2: fixes only, no new function. It is cut from `main`.
 SMP FMID `TFTP133`, which deletes `TFTP132`, `TFTP131` and `TFTP130`: a system

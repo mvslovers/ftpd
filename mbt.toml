@@ -2,7 +2,7 @@ schema = 3
 
 [project]
 name = "ftpd"
-version = "1.3.3-dev"
+version = "1.3.3"
 kind = "application"
 
 [toolchain]
