@@ -19,7 +19,7 @@
     measured on test systems (containers) with the package of 1.3.3 that was
     built from the source of the release before it was published; the
     published package differs from it in the version name and the time stamps,
-    not in the module that SMP installs. The chapters say where a screen was
+    not in the source. The chapters say where a screen was
     taken with an earlier release, or not at all; the sessions of the
     data-transfer chapters were not run again.
 

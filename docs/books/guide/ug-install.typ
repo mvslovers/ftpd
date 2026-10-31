@@ -797,7 +797,7 @@ SMP. On each, the #cmd("APPLY") ended with #cmd("COND CODE 0004") and
 #cmd("TFTP131") or #cmd("TFTP132")), and the #cmd("ACCEPT") ended with 0000.
 The started task then printed the banner of the new release. The published
 package was not used for the upgrades; the package that was measured differs
-from it in its version name and time stamps, not in the module. The upgrade to 1.3.2 was measured before, with the same result.
+from it in its version name and time stamps, not in the source. The upgrade to 1.3.2 was measured before, with the same result.
 
 If the configuration member of 1.2.0 still has a line for
 #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a volume, the start also prints

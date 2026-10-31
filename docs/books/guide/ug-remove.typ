@@ -190,7 +190,7 @@ did.
 release before it was published. It carries the FMID #cmd("TFTP133"). It was
 built under a development name, so its banner says #cmd("1.3.3-DEV"); it
 differs from the published package in the names and time stamps, not in the
-module that SMP installs. The
+source. The
 screens of this chapter are from the run on a system that started from the TK5
 image with 1.2.0 and had gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3 by
 upgrades through SMP. A system that had gone through 1.3.0 and 1.3.1 only gave
