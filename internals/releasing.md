@@ -119,7 +119,7 @@ Before the tag:
    jobs: change them in the same commit, together with the FMID table, the
    file names (`ftpd-X.Y.Z-*`) and the captures under `docs/books/ex/ug-install/`
    and `docs/books/ex/ug-remove/`. The jobs and captures were last measured on
-   the release candidate of 1.3.3 (the edition notice says so); run them once
+   the package of 1.3.3 built before the release (the edition notice says so); run them once
    on a throwaway container with the release candidate installed from the SMP
    package, replace the captures with that output, compare it with the text,
    and name the release they were measured with in the notice. Where a screen

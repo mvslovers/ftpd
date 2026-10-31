@@ -332,8 +332,9 @@ job; there is no third file to send.
 
 On a new installation, every step ends with #cmd("COND CODE 0000"). The
 screens below are the SMP output of a new installation of release 1.3.3. They
-were measured on a test system with the package of the release candidate, which
-carries the same FMID, #cmd("TFTP133"), as the release. The SYSMOD of release
+were measured on a test system with the package of 1.3.3 that was built from the
+source of the release before it was published. It carries the same FMID,
+#cmd("TFTP133"), as the release. The SYSMOD of release
 1.3.3 is #cmd("TFTP133") and it deletes #cmd("TFTP132"), #cmd("TFTP131") and
 #cmd("TFTP130"). The #cmd("RECV") step receives the SYSMOD:
 
@@ -369,10 +370,11 @@ installation has nothing to delete and ends with 00.
 SMP copies the module and does not link it again, so the link attributes
 (among them AC(1)) are exactly those of the build.
 
-#note[*Release-candidate builds.* A build of the release candidate was made
-from #cmd("main") under a development name and prints #cmd("1.3.3-DEV") in the
-banner. The package of release 1.3.3 prints #cmd("1.3.3"), as the start listing
-in @ug-install-start shows.]
+#note[*Development builds.* A build made from #cmd("main") between two releases
+carries a development name and prints it in the banner, for example
+#cmd("1.3.3-DEV") for a build made on the way to release 1.3.3. The package of
+release 1.3.3 prints #cmd("1.3.3"), as the start listing in @ug-install-start
+shows.]
 
 === List the Members <ug-install-verify>
 
@@ -705,7 +707,8 @@ FTPD054I LISTENING ON ANY PORT 2121
 FTPD001I FTPD 1.3.3 READY
 ```)
 
-The listing is a start of the release candidate of 1.3.3 on a test system, with
+The listing is a start of 1.3.3 on a test system (the package built from the
+source of the release before it was published), with
 the commit hash of the release as a placeholder and the identity of your own
 setup in the fourth line. The test systems started by the SVC route, so
 #cmd("FTPD008I") says #cmd("SVC (MODULE KEY 8)"); on a system with the load
@@ -767,7 +770,7 @@ which FMID owns the module. Run this under the SMP procedure:
       install copies nothing and still ends with RC 00: the #cmd("APPLY")
       prints no #cmd("HMA2380"), and its report lists the module as
       #cmd("NOT SEL"). This was measured with #cmd("TFTP120") as the owner of
-      the module and the SYSMOD of 1.3.1, of 1.3.2 and of the release candidate of 1.3.3.],
+      the module and the SYSMOD of 1.3.1, of 1.3.2 and of 1.3.3.],
     [#cmd("TFTP110")], [1.1.0. Upgrade to 1.2.0 first, then to 1.3.0, each with
       its package from the releases page, then come back here.],
     [#cmd("TFTP100")], [1.0.x. Upgrade to 1.1.0 first (@ug-install-from10),
@@ -787,14 +790,14 @@ in the job log. The banner must name the new release;
 #cmd("FTPD000I FTPD 1.3.0"), #cmd("1.3.1") or #cmd("1.3.2") on the first line
 means that the started task still runs the old load module.
 
-The upgrade to 1.3.3 was measured with the package of the release candidate on
-three test systems, one on each of the three releases, each installed through
+The upgrade to 1.3.3 was measured with the package built from the source of the
+release before it was published, on three test systems, one on each of the three releases, each installed through
 SMP. On each, the #cmd("APPLY") ended with #cmd("COND CODE 0004") and
 #cmd("HMA2461") named the id that was installed (#cmd("TFTP130"),
 #cmd("TFTP131") or #cmd("TFTP132")), and the #cmd("ACCEPT") ended with 0000.
-The started task then printed the banner of the new release. The released
-package has not been measured; the candidate differs from it in its names and
-time stamps. The upgrade to 1.3.2 was measured before, with the same result.
+The started task then printed the banner of the new release. The published
+package was not used for the upgrades; the package that was measured differs
+from it in its version name and time stamps, not in the module. The upgrade to 1.3.2 was measured before, with the same result.
 
 If the configuration member of 1.2.0 still has a line for
 #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a volume, the start also prints

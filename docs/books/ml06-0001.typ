@@ -5,21 +5,23 @@
   subtitle: "User's Guide",
   short-title: "FTPD User's Guide",
   product: "FTPD",
-  number: "ML06-0001-0",
+  number: "ML06-0001-1",
   date: "October 2026",
   authors: ("Mike Großmann",),
   edition: [
-    #text(font: head-font, weight: "bold", size: 11pt)[Draft Edition (October 2026)]
+    #text(font: head-font, weight: "bold", size: 11pt)[First Edition (October 2026)]
 
     This edition applies to Version 1 Release 3 of FTPD, the FTP server for
     MVS 3.8j (ftpd 1.3.3), and to all subsequent releases and modifications
     until otherwise indicated in new editions.
 
-    *Draft.* This book is a draft edition. The chapters on installing and
-    removing FTPD were measured on test systems (containers) with the package
-    of the release candidate of 1.3.3. The
-    chapters say where a screen was taken with an earlier release, or not at
-    all; the sessions of the data-transfer chapters were not run again.
+    *What was measured.* The chapters on installing and removing FTPD were
+    measured on test systems (containers) with the package of 1.3.3 that was
+    built from the source of the release before it was published; the
+    published package differs from it in the version name and the time stamps,
+    not in the module that SMP installs. The chapters say where a screen was
+    taken with an earlier release, or not at all; the sessions of the
+    data-transfer chapters were not run again.
 
     Comments on this book may be addressed to the issue tracker of the
     mvslovers/ftpd repository on GitHub.
