@@ -743,7 +743,10 @@ banner show this. The return codes do not.
 *What has not been measured.* A system with a longer history than the TK5
 system, for example one that holds ids from earlier releases that SMP lost
 track of. A development build of 1.3.3-dev (#cmd("TFTP133")) has not been installed or
-removed with these steps, and the release has not been installed over one. A
+removed with the steps of this section, and the release has not been installed
+over one. The release candidate of 1.3.3 carries the same id, but it is a
+package, not a development build: it was removed with the main way of this
+chapter (steps 1 to 5), not with the steps of this section. A
 second development build installed over the first has not been
 measured with FTPD either. A test with another product that is built the same
 way showed that installing the same development id again ends with return code
@@ -774,6 +777,10 @@ The install job accepts the FMID in the same run in which it applies it. That
 closes both of the usual ways back:
 
 #screen(raw(read("../ex/ug-remove/restore-reject.txt")))
+
+This screen is from release 1.3.2 and names #cmd("TFTP132"). It was not taken
+again with 1.3.3; with 1.3.3 the same two lines are expected to name
+#cmd("TFTP133"), but that has not been measured.
 
 #cmd("RESTORE") refuses a SYSMOD that has been accepted
 (#cmd("HMA2452"), return code 12). #cmd("REJECT") then fails for a reason that

@@ -126,8 +126,9 @@ Before the tag:
    was not measured again, the text must say which release it comes from. The
    1.3.3 run did not cover the LIST and NLST sessions
    (`docs/books/ex/ug-data/`), the fallback `UCLIN` job, the development-build
-   section of `docs/uninstall.md` and `ug-remove`, or the `RESTORE`/`REJECT`
-   refusal; they are still from 1.3.2 or earlier, and so are the "measured on
+   section of `docs/uninstall.md` and `ug-remove`, the `RESTORE`/`REJECT`
+   refusal, or the two MVS/CE screens `ce-jclerr.txt` and `ce-rerun.txt` of
+   `ug-install` (job skipped, then rerun); they are still from 1.3.2 or earlier, and so are the "measured on
    1.3.2" notes next to them. Re-run them when a release changes what they
    show. Do the same for the inline captures of `docs/uninstall.md` and
    `docs/installation.md`.

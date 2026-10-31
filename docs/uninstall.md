@@ -895,8 +895,11 @@ the banner show this. The return codes do not.
 
 **What has not been measured.** A system with a longer history than the TK5
 system, for example one that holds ids from earlier releases that SMP lost track
-of. A development build of 1.3.3-dev (`TFTP133`) has not been installed or removed with
-these steps, and the release has not been installed over one. A second
+of. A development build of 1.3.3-dev (`TFTP133`) has not been installed or removed
+with the steps of this section, and the release has not been installed over one.
+The release candidate of 1.3.3 carries the same id, but it is a package, not a
+development build: it was removed with the main way of this document (steps 1 to
+5), not with the steps of this section. A second
 development build installed over the first has not been measured
 with FTPD either. A test with another product that is built the same way showed
 that installing the same development id again ends with return code 0, and that
@@ -931,6 +934,10 @@ usual ways back:
 HMA2452 ** SYSMOD TFTP132 SELECTED FOR RESTORE HAS BEEN ACCEPTED
 HMA2462 ** SYSMOD TFTP132 NOT FOUND ON SMPPTS LIBRARY
 ```
+
+These lines are from release 1.3.2 and name `TFTP132`. They were not taken
+again with 1.3.3; with 1.3.3 the same two lines are expected to name `TFTP133`,
+but that has not been measured.
 
 `RESTORE` refuses a SYSMOD that has been accepted (`HMA2452`, return code 12).
 `REJECT` then fails for a reason that looks unrelated: `HMA2462` says that the

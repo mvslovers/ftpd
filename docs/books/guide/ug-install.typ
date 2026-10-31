@@ -421,11 +421,18 @@ the SYSMOD is in the SMP inventory:
 
 #screen(raw(read("../ex/ug-install/ce-jclerr.txt")))
 
+This screen was taken on an MVS/CE system with release 1.3.2. It shows no
+release id, and it was not taken again with 1.3.3.
+
 Run the allocation job and submit the install job again. This time #cmd("RECV")
 ends with #cmd("COND CODE 0008"), because the SYSMOD is already received. The
 job skips the dry run, and #cmd("APPLY") and #cmd("ACCEPT") end with 0000:
 
 #screen(raw(read("../ex/ug-install/ce-rerun.txt")))
+
+This screen is also from 1.3.2 and shows #cmd("TFTP132") in the message that
+the SYSMOD was already received. With 1.3.3 the message names #cmd("TFTP133");
+that has not been measured.
 
 The installation is complete. #cmd("HMA2380") and #cmd("HMA2270") in the output
 of the #cmd("APPLY") say so (@ug-install-verify). The only thing missing is the
@@ -707,8 +714,9 @@ have an effect, the start also prints #cmd("FTPD062W") before the line
 *The #cmd("RAKF0004") line is expected.* It comes from RAKF and not from FTPD:
 FTPD logs in a user ID that cannot be valid, to see that RAKF refuses it, and
 RAKF reports the refusal. One such line per start is part of a healthy start
-(@ug-ops-check). The user ID is #cmd("?FTPDPRB") plus, on the test systems, one
-more character. If you see two lines #cmd("FTPD004E") in this place instead,
+(@ug-ops-check). The user ID is #cmd("?FTPDPRB"). RAKF may print one more
+character behind it (#cmd("?FTPDPRBO") above), so a rule that looks for the line
+has to match the prefix. If you see two lines #cmd("FTPD004E") in this place instead,
 the check has failed, and nobody can log in until the security tables are
 corrected and FTPD is started again (@ug-security-check).
 
