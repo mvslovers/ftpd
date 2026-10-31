@@ -17,7 +17,7 @@
 
     *Draft.* This book is a draft edition. The chapters on installing and
     removing FTPD were measured on test systems (containers) with the package
-    of the release candidate of 1.3.3, which carries a development name. The
+    of the release candidate of 1.3.3. The
     chapters say where a screen was taken with an earlier release, or not at
     all; the sessions of the data-transfer chapters were not run again.
 

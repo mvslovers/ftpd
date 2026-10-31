@@ -331,13 +331,11 @@ job; there is no third file to send.
 === What a Good Run Looks Like <ug-install-good>
 
 On a new installation, every step ends with #cmd("COND CODE 0000"). The
-screens below are the SMP output of a new installation of release 1.3.3,
-measured on a test system with the package of the release candidate. The
-package was built from #cmd("main") under a development name, so a start prints
-#cmd("1.3.3-DEV") in the banner; it carries the same FMID, #cmd("TFTP133"), as
-the release. The SYSMOD of release 1.3.3 is #cmd("TFTP133") and it deletes
-#cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"). The #cmd("RECV")
-step receives the SYSMOD:
+screens below are the SMP output of a new installation of release 1.3.3. They
+were measured on a test system with the package of the release candidate, which
+carries the same FMID, #cmd("TFTP133"), as the release. The SYSMOD of release
+1.3.3 is #cmd("TFTP133") and it deletes #cmd("TFTP132"), #cmd("TFTP131") and
+#cmd("TFTP130"). The #cmd("RECV") step receives the SYSMOD:
 
 #screen(raw(read("../ex/ug-install/receive.txt")))
 
@@ -370,6 +368,11 @@ installation has nothing to delete and ends with 00.
 
 SMP copies the module and does not link it again, so the link attributes
 (among them AC(1)) are exactly those of the build.
+
+#note[*Release-candidate builds.* A build of the release candidate was made
+from #cmd("main") under a development name and prints #cmd("1.3.3-DEV") in the
+banner. The package of release 1.3.3 prints #cmd("1.3.3"), as the start listing
+in @ug-install-start shows.]
 
 === List the Members <ug-install-verify>
 
