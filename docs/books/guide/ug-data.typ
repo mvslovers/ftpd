@@ -349,7 +349,11 @@ How the records are made depends on the transfer type:
   record of one blank, because a record of no bytes cannot be written.
 - *Binary and EBCDIC:* the bytes are cut into records of the record length, or
   of the block size for record format U. A last short record is padded with
-  binary zeros (not for record format U).
+  binary zeros (not for record format U). In a spanned data set (record format
+  #cmd("VBS"), or #cmd("VB") that is opened as spanned) a record holds the
+  record length minus 8 bytes, as in text (@ug-data-long). A data set with
+  #cmd("VBS") and #cmd("LRECL=600") gets records of 592 bytes, and the last one
+  is padded to 592.
 
 #idx("allocation")
 A data set that #cmd("put") creates is a sequential data set. FTPD allocates it

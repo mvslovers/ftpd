@@ -342,7 +342,8 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       #cmd("SITE TRUNCATE") is cut and reported in the #cmd("250")
       (@ref-site-truncate). In #cmd("TYPE A") an empty line in a data set of
       a variable or undefined record format is stored as a record of one blank
-      (_FTPD User's Guide_, "Uploading a Data Set").
+      (_FTPD User's Guide_, "Uploading a Data Set"). In #cmd("TYPE I") and
+      #cmd("TYPE E") the length of a record is in @ref-site-truncate.
       UFS: #cmd("150 Opening data connection for PATH") and
       #cmd("226 Transfer complete"). A file that exists is replaced. JES:
       submits the data as a job.],
