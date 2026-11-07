@@ -10,7 +10,7 @@
 ** headers so a host unit test can link it (test/tstjcd.c).
 **
 ** Where the statement ends decides where the credentials may go.  The operand
-** field of a card ends at the first blank outside quotes and parentheses;
+** field of a card ends at the first blank outside a quoted string;
 ** only a comma as its last character continues the statement.  A comma in
 ** the comment field behind the operands continues nothing, and a card whose
 ** operands run to column 71 has no room for the comma that would continue it
