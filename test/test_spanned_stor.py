@@ -28,11 +28,15 @@ MBT_TARGET_MVSMF_URL/_USER/_PASSWORD.
 
     test_spanned_stor.py [--host H] [--port P] [--user U] [--pass PW]
                          [--mvsmf URL] [--unit SYSDA] [--volume VOL]
-                         [--keep] [--json FILE] [--only VBS|VB|BIG|LIMIT]...
+                         [--keep] [--json FILE] [--only VBS|VB|BIG|LIMIT|LIMITVB]...
 
 Targets: LIMIT = the longest text line of RECFM=VBS 600/259: 592 data bytes
 (LRECL - 8) are stored, 593 and 596 are refused with a 451 that names the
 limit (no ABEND), and with SITE TRUNCATE a line of 596 is cut to 592 (ftpd#432);
+LIMITVB = the same for VB 600/259 allocated by FTPD (OPEN makes it VBS: 592,
+593 and 596 as for LIMIT, checked on the replies and the data set's attributes
+only), and VB 600/6233, which stays unspanned: 596 data bytes are stored and
+read back, 597 are refused (ftpd#432);
 VBS = RECFM=VBS 600/259 allocated by JCL (an existing data set);
 VB = RECFM=VB 600/259 allocated by FTPD through SITE (LRECL+4 > BLKSIZE, so
 OPEN makes it VBS); BIG = RECFM=VBS 255/6233 by JCL, 200-byte records that
@@ -373,6 +377,7 @@ def run_case(a, mvsmf, hlq, tag, kind, lrecl, blksz, mode):
 
 
 LIMIT_DATA = LRECL - 8   # RDW and SDW both come out of LRECL (ftpd#432)
+BIG_BLKSIZE_VB = 6233    # >= LRECL+4: VB 600 stays unspanned, limit LRECL-4
 
 
 def readback(a, mvsmf, dsn, rb, blksz):
@@ -455,6 +460,91 @@ def run_limit(a, mvsmf, hlq):
     return rows
 
 
+def run_limit_vb(a, mvsmf, hlq):
+    """The longest text line of a VB data set FTPD allocates itself: 600/259 is
+    made VBS by OPEN (limit 592), 600/6233 stays VB (limit 596)."""
+    dsn = "%s.TEST.SPLIMVB" % hlq
+    rb = "%s.TEST.SPRBLVB" % hlq
+    rows = []
+
+    def line(n):
+        return text_lines([n])[0].encode("ascii")
+
+    def row(target, name, ok, code, detail, **kw):
+        r = dict(target=target, mode=name, dsn=dsn, stor_code=code,
+                 complete=ok, detail=detail, anomalies=[], attrs_after="-")
+        r.update(kw)
+        rows.append(r)
+
+    def site(f, blksz, truncate=False):
+        cmds = ["SITE RECFM=VB", "SITE LRECL=%d" % LRECL, "SITE BLKSIZE=%d" % blksz,
+                "SITE TRACKS", "SITE PRIMARY=10", "SITE SECONDARY=10"]
+        for c in cmds + (["SITE TRUNCATE"] if truncate else []):
+            r = f.sendcmd(c)
+            if not r.startswith("200"):
+                raise RuntimeError("%s: %s" % (c, r))
+
+    def refused(f, tgt, n, limit):
+        code, reply = stor(f, "text", dsn, line(n) + b"\n")
+        ok = code == "451" and "(%d data bytes)" % limit in reply
+        row(tgt, "%d bytes refused" % n, ok, code,
+            "451 names the limit" if ok else "reply: %s" % reply)
+
+    tgt = "LIMITVB %d/%d" % (LRECL, BLKSIZE)
+    f = ftp_login(a)
+    try:
+        delete(f, dsn)
+        site(f, BLKSIZE)
+        for n in (LIMIT_DATA + 1, LIMIT_DATA + 4):
+            refused(f, tgt, n, LIMIT_DATA)
+        code, reply = stor(f, "text", dsn, line(LIMIT_DATA) + b"\n")
+        attrs = list_attrs(f, dsn)
+        ok = code.startswith("2") and attrs == "VBS %d %d" % (LRECL, BLKSIZE)
+        row(tgt, "%d bytes stored, OPEN made it VBS" % LIMIT_DATA, ok, code,
+            "data set is %s" % attrs if ok else "reply %s; data set %s" % (reply, attrs),
+            attrs_after=attrs)
+        delete(f, dsn)
+        f.close()
+
+        f = ftp_login(a)
+        site(f, BLKSIZE, truncate=True)
+        n = LIMIT_DATA + 4
+        code, reply = stor(f, "text", dsn, line(n) + b"\n")
+        attrs = list_attrs(f, dsn)
+        ok = code.startswith("2") and "truncated" in reply \
+            and attrs == "VBS %d %d" % (LRECL, BLKSIZE)
+        row(tgt, "%d bytes truncated" % n, ok, code,
+            "data set is %s" % attrs if ok else "reply %s; data set %s" % (reply, attrs),
+            attrs_after=attrs)
+        delete(f, dsn)
+        f.close()
+
+        tgt = "LIMITVB %d/%d" % (LRECL, BIG_BLKSIZE_VB)
+        f = ftp_login(a)
+        site(f, BIG_BLKSIZE_VB)
+        code, reply = stor(f, "text", dsn, line(LRECL - 4) + b"\n")
+        attrs = list_attrs(f, dsn)
+        if code.startswith("2"):
+            recs, anomalies = readback(a, mvsmf, dsn, rb, BIG_BLKSIZE_VB)
+        else:
+            recs, anomalies = [], []
+        ok = code.startswith("2") and attrs == "VB %d %d" % (LRECL, BIG_BLKSIZE_VB) \
+            and recs == [line(LRECL - 4).decode().encode("cp037")] and not anomalies
+        row(tgt, "%d bytes stored, not spanned" % (LRECL - 4), ok, code,
+            "one record of %d bytes" % (LRECL - 4) if ok else
+            "reply %s; data set %s; records %s; %s" % (
+                reply, attrs, [len(x) for x in recs], anomalies[:2]),
+            attrs_after=attrs, anomalies=anomalies[:2])
+        delete(f, dsn)
+        refused(f, tgt, LRECL - 3, LRECL - 4)
+    finally:
+        try:
+            f.close()
+        except Exception:
+            pass
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default="127.0.0.1")
@@ -468,7 +558,7 @@ def main():
     ap.add_argument("--volume", default="")
     ap.add_argument("--keep", action="store_true", help="keep the data sets")
     ap.add_argument("--json", help="write the rows to FILE")
-    ap.add_argument("--only", action="append", help="VBS, VB, BIG or LIMIT")
+    ap.add_argument("--only", action="append", help="VBS, VB, BIG, LIMIT or LIMITVB")
     a = ap.parse_args()
     if not a.mvsmf:
         print("no mvsMF URL (--mvsmf or MBT_TARGET_MVSMF_URL)", file=sys.stderr)
@@ -484,6 +574,15 @@ def main():
                 print(json.dumps(row), flush=True)
         except Exception as e:
             rows.append(dict(target="LIMIT %d/%d" % (LRECL, BLKSIZE), mode="limit",
+                             error="%s: %s" % (type(e).__name__, e), complete=None))
+            failed = True
+    if not a.only or "LIMITVB" in a.only:
+        try:
+            for row in run_limit_vb(a, mvsmf, hlq):
+                rows.append(row)
+                print(json.dumps(row), flush=True)
+        except Exception as e:
+            rows.append(dict(target="LIMITVB %d/%d" % (LRECL, BLKSIZE), mode="limit",
                              error="%s: %s" % (type(e).__name__, e), complete=None))
             failed = True
     for tag, kind, lrecl, blksz in CASES:
