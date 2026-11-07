@@ -2584,7 +2584,8 @@ mvs_store(ftpd_session_t *sess, const char *arg, int append)
         ** is counted in `over`.  A data set with no usable length keeps the
         ** old limit of the buffer. */
         maxdata = ftpd_rec_maxdata(
-            (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_V ? FTPD_REC_V :
+            (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_V ?
+                ((fp->recfm & _FILE_RECFM_S) ? FTPD_REC_VS : FTPD_REC_V) :
             (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U ? FTPD_REC_U :
                                                               FTPD_REC_F,
             fp->lrecl, fp->blksize, (int)sizeof(recbuf) - 1);
