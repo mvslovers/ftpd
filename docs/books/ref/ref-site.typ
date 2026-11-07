@@ -362,6 +362,31 @@ LRECL minus 4 bytes passed the check and then failed with
 #cmd("451 Write error on data set after N bytes received ..."). Since
 FTPD 1.3.4 such a line is refused or cut like any other line that is too long.
 
+#idx("TYPE I", "record length")#idx("TYPE E", "record length")#idx("spanned data set")
+*Binary and EBCDIC.* #cmd("TYPE I") and #cmd("TYPE E") have no lines. FTPD cuts
+the bytes it receives into records of equal length and pads the last record
+with #cmd("X'00'"). A transfer therefore never fails for a long record, and
+#cmd("SITE TRUNCATE") has no effect on it. The length of a record is:
+
+#tab(caption: [The record length of a binary or EBCDIC transfer])[
+  #table(columns: (1.6in, 1fr),
+    [Record format], [Bytes in a record],
+    [F, FB, V, VB, not spanned], [LRECL],
+    [VBS, and VB opened as spanned], [LRECL minus 8, as in the table above. A
+      data set with #cmd("VBS") and #cmd("LRECL=600") takes records of 592
+      bytes.],
+    [U], [BLKSIZE, and the last record is not padded.],
+  )
+]
+
+Before FTPD 1.3.4 the records of a spanned data set had LRECL bytes. The write
+routine of the C library takes at most LRECL minus 8, so the first
+#cmd("STOR") into such a data set ended with
+#cmd("451 Requested action aborted: local error in processing"), also for a
+file of 100 bytes, and the data set stayed empty. Since FTPD 1.3.4 the transfer
+is accepted. A spanned data set with a record length of 8 or less has no room
+for data, and the transfer is answered with #cmd("550 Dataset has zero record length").
+
 If the data set reports no length at all (the record length is zero, or the
 block size is zero for format U), the limit is 32767 bytes, the size of the
 buffer. A variable data set with a record length of 4 or less (8 or less if it is
@@ -382,7 +407,7 @@ exactly the number fits.
 
 The last line of the data is a line even without a line end. The switch has no
 effect on #cmd("TYPE I") and #cmd("TYPE E"), which cut the data into records by
-length, and none in the UFS and JES views. Before FTPD 1.3.0 the keyword
+length (see above), and none in the UFS and JES views. Before FTPD 1.3.0 the keyword
 did nothing, and FTPD cut every long line, with a plain #cmd("250").
 
 == JESOWNER <ref-site-jesowner>
