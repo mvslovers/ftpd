@@ -344,16 +344,28 @@ data set in the MVS view. The data bytes that one record holds:
   #table(columns: (1.6in, 1fr),
     [Record format], [Data bytes],
     [F, FB], [LRECL],
-    [V, VB, VBS], [LRECL minus 4. The 4 bytes are the record descriptor word.
-      A data set with #cmd("VB") and #cmd("LRECL=14") takes 10.],
+    [V, VB, not spanned], [LRECL minus 4. The 4 bytes are the record
+      descriptor word. A data set with #cmd("VB") and #cmd("LRECL=14") takes 10.],
+    [VBS, and VB opened as spanned], [LRECL minus 8. The record descriptor word
+      takes 4 bytes, and the write routine of the C library, which FTPD
+      uses, keeps 4 more. A data set with #cmd("VBS")
+      and #cmd("LRECL=600") takes 592.],
     [U], [BLKSIZE],
   )
 ]
 
+A variable data set is spanned when its record format is #cmd("VBS"), and
+also when it is #cmd("VB") and the block size is smaller than the record length
+plus 4: opening the data set then makes it spanned. Before FTPD 1.3.4 the limit
+of a spanned data set was LRECL minus 4 as well. A line of LRECL minus 7 to
+LRECL minus 4 bytes passed the check and then failed with
+#cmd("451 Write error on data set after N bytes received ..."). Since
+FTPD 1.3.4 such a line is refused or cut like any other line that is too long.
+
 If the data set reports no length at all (the record length is zero, or the
 block size is zero for format U), the limit is 32767 bytes, the size of the
-buffer. A variable data set with a record length of 4 or less has no data
-bytes: every line that is not empty is too long. FTPD counts the bytes of the line as they come
+buffer. A variable data set with a record length of 4 or less (8 or less if it is
+spanned) has no data bytes: every line that is not empty is too long. FTPD counts the bytes of the line as they come
 from the client, without the line end and without any CR. A line that has
 exactly the number fits.
 
