@@ -1710,6 +1710,35 @@ stor_put(const void *buf, size_t len, FILE *fp, int *saved_errno)
 }
 
 /* --------------------------------------------------------------------
+** Helper: the record length a binary or EBCDIC STOR cuts the stream into.
+**
+** F and V: LRECL.  U: BLKSIZE.  A spanned data set (RECFM=VBS, or VB that
+** OPEN made spanned) takes LRECL-8 data bytes at most: libc370's @@AWRITE
+** refuses a record whose RDW + data + 4 exceeds LRECL with ABEND 002, and
+** a chunk of LRECL bytes always runs into that, even for a file of 100
+** bytes, since the last record is padded to full length (#431, #432).
+**
+** Returns 0 when the data set holds no record at all.
+** ----------------------------------------------------------------- */
+static size_t
+stor_eff_lrecl(const FILE *fp)
+{
+    int max;
+
+    if ((fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U)
+        return fp->blksize > 0 ? (size_t)fp->blksize : 0;
+
+    if ((fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_V &&
+        (fp->recfm & _FILE_RECFM_S)) {
+        max = ftpd_rec_maxdata(FTPD_REC_VS, fp->lrecl, fp->blksize,
+                               fp->lrecl);
+        return max > 0 ? (size_t)max : 0;
+    }
+
+    return fp->lrecl > 0 ? (size_t)fp->lrecl : 0;
+}
+
+/* --------------------------------------------------------------------
 ** Helper: the SPACE= operand for the session's allocation unit.
 **
 ** TRK and CYL name themselves.  BLOCK has no keyword: SVC 99 takes an
@@ -2502,8 +2531,7 @@ mvs_store(ftpd_session_t *sess, const char *arg, int append)
         ** --------------------------------------------------------------- */
         int is_undefined =
             (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U;
-        size_t eff_lrecl = is_undefined
-            ? (size_t)fp->blksize : (size_t)fp->lrecl;
+        size_t eff_lrecl = stor_eff_lrecl(fp);
         char *record_buffer;
         size_t record_pos = 0;
         int recnum = 0;
@@ -2672,8 +2700,7 @@ mvs_store(ftpd_session_t *sess, const char *arg, int append)
         ** --------------------------------------------------------------- */
         int is_undefined =
             (fp->recfm & _FILE_RECFM_TYPE) == _FILE_RECFM_U;
-        size_t eff_lrecl = is_undefined
-            ? (size_t)fp->blksize : (size_t)fp->lrecl;
+        size_t eff_lrecl = stor_eff_lrecl(fp);
         char *record_buffer;
         size_t record_pos = 0;
 
