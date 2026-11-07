@@ -393,12 +393,17 @@ In text one line is one record. A record holds a fixed number of data bytes:
 - *Variable record formats (V):* the record length minus 4, because the record
   length counts the 4 bytes of the record descriptor word, which the system
   adds. A data set with #cmd("VB") and #cmd("LRECL=14") takes 10 bytes.
+- *Spanned variable record formats (VBS):* the record length minus 8: the
+  record descriptor word takes 4 bytes, and the write routine of the C library,
+  which FTPD uses, keeps 4 more. A data set with #cmd("VBS") and #cmd("LRECL=600") takes 592 bytes.
+  A #cmd("VB") data set whose block size is smaller than the record length plus 4
+  is opened as spanned and follows this rule too.
 - *Record format U:* the block size.
 
 A line of exactly this many bytes fits. The count is of the bytes that the
 client sent, without the line end and without any CR. A data set that reports
 no length takes lines of up to 32767 bytes. A variable data set with a record
-length of 4 or less has no data bytes, so every line that is not empty is too
+length of 4 or less (8 or less if it is spanned) has no data bytes, so every line that is not empty is too
 long.
 
 A longer line makes the upload fail. In the session the data set has records of
