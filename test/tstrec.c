@@ -25,6 +25,22 @@ main(void)
              "V with LRECL 4 holds no data");
     CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_V, 2, 0, 32767), 0,
              "V never goes negative");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_V, 600, 259, 32767), 596,
+             "V: LRECL 600 holds 596 data bytes, 592 + 4 is not the limit");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 600, 259, 32767), 592,
+             "VBS: LRECL less RDW and SDW, 592 of 600 (#432)");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 600, 259, 592), 592,
+             "VBS: the cap does not change the limit");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 255, 6233, 32767), 247,
+             "VBS 255 takes 247");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 8, 0, 32767), 0,
+             "VBS with LRECL 8 holds no data");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 5, 0, 32767), 0,
+             "VBS never goes negative");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 0, 0, 32767), -1,
+             "VBS with no LRECL: length unknown, not zero");
+    CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_VS, 40000, 0, 32767), 32767,
+             "VBS capped by the buffer");
     CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_F, 0, 0, 32767), -1,
              "F with no LRECL: length unknown, not zero");
     CHECK_EQ(ftpd_rec_maxdata(FTPD_REC_V, 0, 0, 32767), -1,

@@ -28,9 +28,12 @@ MBT_TARGET_MVSMF_URL/_USER/_PASSWORD.
 
     test_spanned_stor.py [--host H] [--port P] [--user U] [--pass PW]
                          [--mvsmf URL] [--unit SYSDA] [--volume VOL]
-                         [--keep] [--json FILE] [--only VBS|VB|BIG]...
+                         [--keep] [--json FILE] [--only VBS|VB|BIG|LIMIT]...
 
-Targets: VBS = RECFM=VBS 600/259 allocated by JCL (an existing data set);
+Targets: LIMIT = the longest text line of RECFM=VBS 600/259: 592 data bytes
+(LRECL - 8) are stored, 593 and 596 are refused with a 451 that names the
+limit (no ABEND), and with SITE TRUNCATE a line of 596 is cut to 592 (ftpd#432);
+VBS = RECFM=VBS 600/259 allocated by JCL (an existing data set);
 VB = RECFM=VB 600/259 allocated by FTPD through SITE (LRECL+4 > BLKSIZE, so
 OPEN makes it VBS); BIG = RECFM=VBS 255/6233 by JCL, 200-byte records that
 cross block boundaries.
@@ -369,6 +372,89 @@ def run_case(a, mvsmf, hlq, tag, kind, lrecl, blksz, mode):
     return row
 
 
+LIMIT_DATA = LRECL - 8   # RDW and SDW both come out of LRECL (ftpd#432)
+
+
+def readback(a, mvsmf, dsn, rb, blksz):
+    f = ftp_login(a)
+    try:
+        delete(f, rb)
+        jid, rc = mvsmf.run(readback_jcl(a.unit, a.volume, dsn, rb, max(blksz, 3120)))
+        if not rc.endswith("0000"):
+            raise RuntimeError("readback job %s ended %s" % (jid, rc))
+        buf = io.BytesIO()
+        f.voidcmd("TYPE I")
+        f.retrbinary("RETR '%s'" % rb, buf.write)
+        recs, anomalies, _ = parse_blocks(buf.getvalue())
+        if not a.keep:
+            delete(f, rb)
+        return recs, anomalies
+    finally:
+        f.close()
+
+
+def run_limit(a, mvsmf, hlq):
+    """The longest text line of VBS 600/259.  Rows like run_case's."""
+    dsn = "%s.TEST.SPLIMIT" % hlq
+    rb = "%s.TEST.SPRBLIM" % hlq
+    rows = []
+
+    def line(n):
+        return text_lines([n])[0].encode("ascii")
+
+    def row(name, ok, code, detail, **kw):
+        r = dict(target="LIMIT %d/%d" % (LRECL, BLKSIZE), mode=name, dsn=dsn,
+                 stor_code=code, complete=ok, detail=detail, anomalies=[],
+                 attrs_after="-")
+        r.update(kw)
+        rows.append(r)
+        return r
+
+    f = ftp_login(a)
+    try:
+        delete(f, dsn)
+        jid, rc = mvsmf.run(alloc_jcl(a.unit, a.volume, dsn, LRECL, BLKSIZE))
+        if not rc.endswith("0000"):
+            raise RuntimeError("allocation job %s ended %s" % (jid, rc))
+
+        for n in (LIMIT_DATA + 1, LIMIT_DATA + 4):
+            code, reply = stor(f, "text", dsn, line(n) + b"\n")
+            want = "(%d data bytes)" % LIMIT_DATA
+            ok = code == "451" and want in reply
+            row("%d bytes refused" % n, ok, code,
+                "reply: %s" % reply if not ok else "451 names the limit")
+
+        code, reply = stor(f, "text", dsn, line(LIMIT_DATA) + b"\n")
+        recs, anomalies = readback(a, mvsmf, dsn, rb, BLKSIZE)
+        ok = code.startswith("2") and recs == [line(LIMIT_DATA).decode().encode("cp037")] \
+            and not anomalies
+        row("%d bytes stored" % LIMIT_DATA, ok, code,
+            "one record of %d bytes" % LIMIT_DATA if ok else
+            "reply %s; records %s; %s" % (reply, [len(x) for x in recs], anomalies[:2]),
+            anomalies=anomalies[:2])
+
+        r = f.sendcmd("SITE TRUNCATE")
+        if not r.startswith("200"):
+            raise RuntimeError("SITE TRUNCATE: %s" % r)
+        n = LIMIT_DATA + 4
+        code, reply = stor(f, "text", dsn, line(n) + b"\n")
+        recs, anomalies = readback(a, mvsmf, dsn, rb, BLKSIZE)
+        ok = code.startswith("2") and "truncated" in reply \
+            and recs == [line(n)[:LIMIT_DATA].decode().encode("cp037")] and not anomalies
+        row("%d bytes truncated" % n, ok, code,
+            "cut to %d bytes" % LIMIT_DATA if ok else
+            "reply %s; records %s; %s" % (reply, [len(x) for x in recs], anomalies[:2]),
+            anomalies=anomalies[:2])
+        if not a.keep:
+            delete(f, dsn)
+    finally:
+        try:
+            f.close()
+        except Exception:
+            pass
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", default="127.0.0.1")
@@ -382,7 +468,7 @@ def main():
     ap.add_argument("--volume", default="")
     ap.add_argument("--keep", action="store_true", help="keep the data sets")
     ap.add_argument("--json", help="write the rows to FILE")
-    ap.add_argument("--only", action="append", help="VBS, VB or BIG")
+    ap.add_argument("--only", action="append", help="VBS, VB, BIG or LIMIT")
     a = ap.parse_args()
     if not a.mvsmf:
         print("no mvsMF URL (--mvsmf or MBT_TARGET_MVSMF_URL)", file=sys.stderr)
@@ -391,6 +477,15 @@ def main():
     hlq = a.user.upper()
 
     rows, failed = [], False
+    if not a.only or "LIMIT" in a.only:
+        try:
+            for row in run_limit(a, mvsmf, hlq):
+                rows.append(row)
+                print(json.dumps(row), flush=True)
+        except Exception as e:
+            rows.append(dict(target="LIMIT %d/%d" % (LRECL, BLKSIZE), mode="limit",
+                             error="%s: %s" % (type(e).__name__, e), complete=None))
+            failed = True
     for tag, kind, lrecl, blksz in CASES:
         if a.only and tag not in a.only:
             continue
