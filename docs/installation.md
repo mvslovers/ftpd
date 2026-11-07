@@ -525,14 +525,13 @@ HMA2461    SYSMOD TFTP132 NOT FOUND ON SMPSCDS LIBRARY
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
-The excerpt was measured on the upgrade from 1.3.2 to 1.3.3 with the package
-built from the source of the release before it was published. On the upgrades from 1.3.1 and from 1.3.0 the `APPLY`
-also ended with `COND CODE 0004`, and `HMA2461` named `TFTP131` and `TFTP130`
-(one test system for each of the three; the `ACCEPT` ended with 0000 on each).
-The published package was not used for the upgrades; the package that was
-measured differs from it in its version name and time stamps, not in the
-source. `HMA2240` is the old module being deleted from
-`FTPD.LINKLIB` before the new one is copied.
+The excerpt was measured on the upgrade from 1.3.2 to 1.3.3 with the published
+package of 1.3.3, on MVS/CE with 1.3.2 installed from its own published
+package. On the upgrades from 1.3.1 and from 1.3.0 the `APPLY` also ended with
+`COND CODE 0004`, and `HMA2461` named `TFTP131` and `TFTP130` (one test system
+for each of the three, set up the same way; the `ACCEPT` ended with
+`COND CODE 0000` on each, and `FTPD000I` named 1.3.3 afterwards). `HMA2240` is
+the old module being deleted from `FTPD.LINKLIB` before the new one is copied.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
 never will, because it was deleted rather than superseded. The `APPLY` itself
@@ -724,12 +723,10 @@ HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFT
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
-These lines were measured on a test system with the SMP package of 1.3.3 that
-was built from the source of the release before it was published; its SYSMOD is
-`TFTP133`. That package was built under a development name (its banner says
-`1.3.3-DEV`) and carries the FMID of the release; it differs from the
-published package in the version name and time stamps, not in the source. All eight
-steps of the install job ended with `COND CODE 0000`.
+These lines were measured on MVS/CE with the published package of 1.3.3,
+installed the way this guide describes (the allocation job, then the install
+job with `VOLUME('PUB000')` on both `RECEIVE`s); its SYSMOD is `TFTP133`. All
+eight steps of the install job ended with `COND CODE 0000`.
 
 **On an upgrade the `APPLY` ends `COND CODE 0004` instead, and that is
 correct** — `HMA2461` reporting that the deleted level has no backup entry.
@@ -834,7 +831,16 @@ your copy of the procedure if you want the plain `/S FTPD` to find it. An `IEBCO
 a larger block size failed on the test system (`IEB139I`, `IEB100I`, return
 code 8), which is why the job copies with `IEBGENER`.
 
-On MVS/CE, `SYS2.PARMLIB` exists and the default is fine. `M=` selects the
+On MVS/CE, `SYS2.PARMLIB` exists and the default is fine. **It already holds
+a member `FTPDPRM0`**, the settings of the image's FTPD 1.2.0. Replace it with
+the member from `FTPD.SAMPLIB` (the `IEBGENER` step above, with
+`SYS2.PARMLIB(FTPDPRM0)` as `SYSUT2`). If it stays, the new FTPD starts and
+reads the old settings. In the image measured, the old member sets
+`PASVADR=127,0,0,1`, `DEFUNIT=3390` and `DEFVOLUME=PUB001`, where the shipped
+member has `PASVADR=ANY` and leaves unit and volume to the system, and the
+start ends with `FTPD062W 1 SETTING(S) IN DD:FTPDPRM HAVE NO EFFECT AND WERE
+IGNORED` for `JESINTERFACELEVEL`, which FTPD no longer reads. `/F FTPD,CONFIG`
+shows the settings that are in effect. `M=` selects the
 member (default `FTPDPRM0`), so a second configuration can live alongside the
 first.
 
@@ -1053,18 +1059,19 @@ step 5); otherwise this start ends in `FTPD002E`/`FTPD091E`.
 A healthy start ends in `FTPD001I … READY`:
 
 ```
-FTPD000I FTPD <version> (A3F2C91) STARTING
+FTPD000I FTPD 1.3.3 (91A874E) STARTING
 FTPD005I LIBC370 2.25.1 (FCDE4E8)
 FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC RUNS AS <user>/<group>
 RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
 FTPD054I LISTENING ON ANY PORT 2121
-FTPD001I FTPD <version> READY
+FTPD001I FTPD 1.3.3 READY
 ```
 
-This is a start of 1.3.3 on a test system (the package built from the source of
-the release before it was published); the hash and
-the identity in the fourth line are those of your own setup. If your parameter
+This is the start of the published package of 1.3.3 on MVS/CE. The version and
+the hash in the first line, and the libc370 level and hash in the second, are
+those of the release you installed: a later release prints its own. The identity
+in the fourth line is the one RAKF gave your started task. If your parameter
 file still has settings that no longer have an effect, `FTPD062W` appears before
 `FTPD054I`.
 
