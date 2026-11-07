@@ -16,10 +16,10 @@ uses `UCLIN` alone stays as the [fallback](#the-fallback-uclin-alone).
 > never carried `TFTP100` the step ended early and left the ACDS untouched (see
 > [the fallback](#the-fallback-uclin-alone)). Use this document instead.
 
-> **Did you install a development build of `main`?** A build of 1.4.0-dev carries
-> `TFTP140`, which none of the jobs below names. A build of 1.3.3-dev carries
-> `TFTP133`, which they do name, but the release should not be installed over it
-> unseen. Go to
+> **Did you install a development build of `main`?** A build of 1.3.4-dev carries
+> `TFTP134`, and a build of 1.4.0-dev carries `TFTP140`; none of the jobs below
+> names either. A build of 1.3.3-dev carries `TFTP133`, which they do name, but
+> the release should not be installed over it unseen. Go to
 > [the section on development builds](#you-installed-a-development-build-of-main)
 > first.
 
@@ -531,24 +531,31 @@ accepted is in the distribution library.
 ## You installed a development build of `main`
 
 A development build of `main` is packaged under the FMID of the release that
-`main` is heading for. `main` is the line of the patch release 1.3.3, so a build
-of 1.3.3-dev carries `TFTP133`, the id of the release itself. A build that was
-packaged before `main` became 1.3.3-dev was a build of 1.4.0-dev and carries
-`TFTP140`, although 1.4.0 is not released. If you installed such a package by
-SMP, the system holds an id that you have to deal with before you install a
-release.
+`main` is heading for. `main` is the line of the patch release 1.3.4, so a build
+of 1.3.4-dev carries `TFTP134`, the id of the release itself, which is not
+released. A build packaged while `main` was 1.3.3-dev carries `TFTP133`, the id
+of the released 1.3.3. A build that was packaged before that was a build of
+1.4.0-dev and carries `TFTP140`, although 1.4.0 is not released. If you
+installed such a package by SMP, the system holds an id that you have to deal
+with before you install a release.
 
+- **`TFTP134`** is named by no job of the main way, as `TFTP140` is not. It is
+  the id of a development build of 1.3.4-dev, its banner says `1.3.4-DEV`, and
+  it stays in both zones and keeps the load module until you clean it up as
+  described here. Read `TFTP134` for `TFTP140` in the steps below: it goes into
+  the same places, right after `TFTP133`. This has not been run with a
+  `TFTP134` build; the measurements below are those of `TFTP140`.
 - **`TFTP140`** is named by no job of the main way. Neither the dummy function of
   step 2 nor the lists of step 3 know it, so it stays in both zones, and it still
   owns the load module. Install a release only after you have cleaned it up as
   described here.
 - **`TFTP133`** is named by the main way, which therefore removes such a build.
-  To install release 1.3.3 over it, clean the system up with the steps below and
-  leave out everything that they say about `TFTP140`. Both have the same id, so
-  SMP cannot tell the development build from the release. What SMP does with the
-  release package when its id is already installed has not been measured with
-  FTPD, so remove the build first. The banner of a development build says
-  `1.3.3-DEV`.
+  Release 1.3.3 carries the same id, so SMP cannot tell the development build
+  from the release; if the module on your system says `1.3.3-DEV` in its
+  banner, it is the build. To install a later release over it, clean the system
+  up with the steps below and leave out everything that they say about
+  `TFTP140` and `TFTP134`. What SMP does with a release package when its id is
+  already installed has not been measured with FTPD, so remove the build first.
 
 Ask SMP which id the system carries, with this job under the SMP procedure of
 your system (it is the one of step 2a in [installation.md](installation.md)):
@@ -560,16 +567,16 @@ your system (it is the one of step 2a in [installation.md](installation.md)):
 /*
 ```
 
-`FMID = TFTP140` means that you are in the right section, and so does any other
-id except `TFTP100`, `TFTP110`, `TFTP120`, `TFTP130`, `TFTP131`, `TFTP132` and
+`FMID = TFTP134` or `FMID = TFTP140` means that you are in the right section, and
+so does any other id except `TFTP100`, `TFTP110`, `TFTP120`, `TFTP130`, `TFTP131`, `TFTP132` and
 `TFTP133`. Only `TFTP140` has been measured. If the `FMID` is one of those seven,
 the main way above removes what the system holds. This section is then yours
 only if the id is `TFTP133`, the module is a development build (its banner says
-`1.3.3-DEV`) and you want to replace it with the release.
+`1.3.3-DEV`) and you want to replace it with a release.
 
 The steps are those of the main way, with three differences. The release package
-is on the system before FTPD stops, `TFTP140` is named in every list if that is
-your id (a `TFTP133` build needs no addition), and the libraries stay.
+is on the system before FTPD stops, `TFTP134` or `TFTP140` is named in every list
+if that is your id (a `TFTP133` build needs no addition), and the libraries stay.
 
 ### 1. Upload the release package first
 
@@ -802,7 +809,7 @@ HMA2050    ACCEPT PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 
 List the members of `FTPD.LINKLIB` and `FTPD.AFTPDLOD`: `FTPD` must be in both.
 Then `LIST CDS MOD(FTPD) .` must show the `FMID` of the release you installed,
-and not `TFTP140`. Start FTPD and read the banner; it must name the release:
+and not `TFTP134` or `TFTP140`. Start FTPD and read the banner; it must name the release:
 
 ```
 FTPD000I FTPD 1.3.2 (xxxxxxx) STARTING
@@ -846,7 +853,7 @@ depends on your parameter file):
 After a development build of `TFTP133` the `FMID` is the same either way. The
 banner tells them apart: it must say `1.3.3`, not `1.3.3-DEV`.
 
-**A banner that says `1.4.0-DEV` or `1.3.3-DEV` after this means that the server was loaded
+**A banner that says `1.4.0-DEV`, `1.3.4-DEV` or `1.3.3-DEV` after this means that the server was loaded
 from another library.** `mbt deploy` writes a development build to
 `FTPD.DEV.LINKLIB` by default, and a procedure whose `STEPLIB` names that
 library ahead of `FTPD.LINKLIB` loads the module from there. An SMP `DELETE`
@@ -904,7 +911,9 @@ development build installed over the first has not been measured
 with FTPD either. A test with another product that is built the same way showed
 that installing the same development id again ends with return code 0, and that
 a second, different development id deletes the first with one `HMA2461` for it.
-If your development build carries another id than `TFTP140` or `TFTP133`, put that id in the
+A development build of 1.3.4-dev (`TFTP134`) has not been installed or removed with
+the steps of this section either.
+If your development build carries another id than `TFTP140`, `TFTP134` or `TFTP133`, put that id in the
 `DELETE` operand of step 3 and in the lists of step 4.
 
 ## What is not removed, because SMP never owned it

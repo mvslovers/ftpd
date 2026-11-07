@@ -22,40 +22,48 @@ a second digit. At patch 9 cut the next minor, at minor 9 the next major;
 ftpd 1.2.10 cannot be expressed and must not be released.
 
 Current: 1.3.0 (`TFTP130`, deleting `TFTP120`) and the patch releases 1.3.1
-(`TFTP131`, deleting `TFTP130` only) and 1.3.2 (`TFTP132`, deleting `TFTP131`
-only) are released. 1.3.1 and 1.3.2 were cut on the branch `release-1.3.x`;
+(`TFTP131`, deleting `TFTP130` only), 1.3.2 (`TFTP132`, deleting `TFTP131`
+only) and 1.3.3 (`TFTP133`, deleting `TFTP132`, `TFTP131` and `TFTP130`) are
+released. 1.3.1 and 1.3.2 were cut on the branch `release-1.3.x`;
 mbt derives the id from the minor version only, so `mbt.toml` carried an
 explicit `fmid` and `delete` in `[smp]` on that branch. From 1.3.3 on, releases
 are cut from `main`: the branch `release-1.3.x` is contained in `main` and is
 not used any more, and the tags `v1.3.0` to `v1.3.2` hold its history.
-Not yet checked on any stand: `TFTP132`, `TFTP133` and `TFTP140`.
+Not yet checked on any stand: `TFTP132`, `TFTP133`, `TFTP134` and `TFTP140`.
 Because 1.3.2's `delete` named `TFTP131` only, a system that skipped 1.3.1
 had to install 1.3.1 first. 1.3.3 does not have that rule: it names all three
-earlier ids (below).
+earlier ids, and so does 1.3.4 (below).
 
-`main` is 1.3.3-dev and carries the explicit `fmid = "TFTP133"` and
-`delete = ["TFTP132", "TFTP131", "TFTP130"]` in `[smp]`; 1.3.3 is a patch
-release and mbt does not derive its id. The multi-id delete was measured on
-2026-10-30 (ftpd#373) on a system carrying only 1.3.0, only 1.3.1 or only 1.3.2:
-all three install cleanly, the APPLY ends RC 4 (`HMA2461`) and the ids stay as
-tombstones. It does not lift the element-ownership wall: a system on `TFTP120`
-or older still installs 1.3.0 first. The released package itself has not been
-measured. `TFTP140` is reserved for 1.4.0. A development build of `main`
-packaged before this change carries `TFTP140` (`docs/uninstall.md`). When 1.4.0
-is cut, `[smp]` needs an explicit `delete` that names `TFTP133` (and `TFTP132`,
-`TFTP131` and `TFTP130` for a system that skipped a patch), and the explicit
-`fmid` goes: the derived `TFTP140` is then right. A development
-build of `main` now carries `TFTP133`, the id of the release: do not install it
-on a system that will take 1.3.3 (the rule below about test installs).
+`TFTP133` is spent: 1.3.3 was released under it on 2026-10-31 (tag `v1.3.3`).
+`main` is 1.3.4-dev, the next patch release, and carries the explicit
+`fmid = "TFTP134"` and
+`delete = ["TFTP133", "TFTP132", "TFTP131", "TFTP130"]` in `[smp]`; a patch
+release is not derived by mbt. The multi-id delete was measured on 2026-10-30
+(ftpd#373) for 1.3.3, with three ids, on a system carrying only 1.3.0, only
+1.3.1 or only 1.3.2: all three install cleanly, the APPLY ends RC 4 (`HMA2461`)
+and the ids stay as tombstones. The four-id form of 1.3.4 has not been run on
+SMP; `mbt package` renders it on one `++VER` card and the longest line of the
+install job is 71 columns. The multi-id delete does not lift the
+element-ownership wall: a system on `TFTP120` or older still installs 1.3.0
+first. `TFTP140` is reserved for 1.4.0. A development build of `main` packaged
+before `main` became 1.3.3-dev carries `TFTP140`, and one packaged while it was
+1.3.3-dev carries `TFTP133` (`docs/uninstall.md`). When 1.4.0 is cut, `[smp]`
+needs an explicit `delete` that names the id of the last 1.3.x release
+(`TFTP134` as things stand) and `TFTP133`, `TFTP132`, `TFTP131` and `TFTP130`
+for a system that skipped a patch, and the explicit `fmid` goes: the derived
+`TFTP140` is then right. A development build of `main` carries `TFTP134`, the
+id of the release 1.3.4: do not install it on a system that will take 1.3.4
+(the rule below about test installs).
 
 `TFTP111` was assigned to a 1.1.1 that was never cut (the libc370 2.0 port made
 the next release 1.2.0) and is unspent and unassigned. Burned: `TFTP100`
 (1.0.0–1.0.2), `TFTP110` (1.1.0, released 2026-09-14), `TFTP120` (1.2.0,
 released 2026-10-13), `TFTP130` (1.3.0, released 2026-10-22), `TFTP131` (1.3.1,
-released 2026-10-27) and `TFTP132` (1.3.2, released 2026-10-28); `TFTP120` and
-`TFTP130` were free on the maintainer's word, no `LIST` was run on any stand
-before they shipped. `docs/uninstall.md` names every spent id and carries
-`TFTP132`; add each later id there.
+released 2026-10-27), `TFTP132` (1.3.2, released 2026-10-28) and `TFTP133`
+(1.3.3, released 2026-10-31); `TFTP120` and `TFTP130` were free on the
+maintainer's word, no `LIST` was run on any stand before they shipped.
+`docs/uninstall.md` names every spent id and carries `TFTP133`; add each later
+id there.
 
 Never re-spend an id, and never install a test package under the real one: a
 test needs a throwaway id **and** throwaway module names, because SMP keys
