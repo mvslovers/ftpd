@@ -56,7 +56,8 @@ failed attempt, and the log has a line with the level #cmd("[WARN]") for it.
 Since FTPD 1.3.3 an authorized FTPD checks the security system once, when it
 starts. FTPD asks RAKF to log in a user ID and a password that cannot be valid.
 RAKF refuses the login, and the start goes on. The console then has one line of
-RAKF for it, which is expected (@ug-ops-check).
+RAKF for it, which is expected (@ug-ops-check). *Do not define the user ID
+#cmd("?FTPDPRB") in RAKF.* FTPD uses it only for this check.
 
 If RAKF accepts the login, the security tables do not work as FTPD needs them,
 and FTPD writes #cmd("FTPD004E") on the console. FTPD stays up, but nobody can

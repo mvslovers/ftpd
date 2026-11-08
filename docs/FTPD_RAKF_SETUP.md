@@ -481,7 +481,8 @@ gating anything.
 Since FTPD 1.3.3 an authorized FTPD checks once at every start that RAKF
 verifies a user ID. It tries to log in the user ID `?FTPDPRB` with a password
 that cannot be valid. The `?` is not a character of a user ID, so a working
-RAKF refuses the login. Two things can show on the console.
+RAKF refuses the login. **Do not define the user ID `?FTPDPRB` in RAKF.** FTPD
+uses it only for this check. Two things can show on the console.
 
 **A normal start leaves one line of RAKF**, right after `FTPD004I`:
 

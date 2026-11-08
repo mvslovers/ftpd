@@ -40,6 +40,15 @@ with `451` and stored nothing.
   the name of the procedure, and `PROCSTEP` kept its value for the steps after
   it. A script that reads these two columns for jobs with procedures must be
   checked.
+- **The check at start writes `FTPD004E` again.** FTPD 1.3.4 is built with a
+  newer C runtime, which reports one answer of the security system to a login
+  differently from the runtime of 1.3.3. Built with the new runtime, the check
+  at start took that report for a refusal and did not write `FTPD004E` where
+  1.3.3 did. FTPD now reads the report as an accepted login and writes the two
+  lines of `FTPD004E`, as 1.3.3 does; every login is then refused until the
+  cause is corrected and FTPD restarted. No released FTPD was affected. Do not
+  define the user ID `?FTPDPRB` in the security system; FTPD uses it only for
+  this check.
 
 ## 1.3.3 — 2026-10-31
 
