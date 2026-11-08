@@ -36,7 +36,7 @@ register loaded from `=A(@Vn)` or into an X-var.
 
 ### Dependencies
 
-- **libc370 2.25.1** (required): the C runtime, from the cc370 sysroot (`[toolchain] libc370`) —
+- **libc370 2.29.2** (required): the C runtime, from the cc370 sysroot (`[toolchain] libc370`) —
   sockets, threads, JES2, RACF, dynalloc. Not a `[dependencies]` entry.
 - **ufsd** (soft/optional, `>=1.5.2` — the release that fixes the doubly allocated block that silently corrupts written files (ufsd#169); 1.5.1 made libufs report write errors; 1.4.0 was the first libc370 2.x release): UFS filesystem access via cross-address-space client library.
   If UFSD not running, UFS commands return `550 UFS service not available`.

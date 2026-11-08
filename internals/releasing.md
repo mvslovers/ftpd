@@ -78,7 +78,8 @@ RC 0 there is a blocker and is not fixed by adjusting the table.
 
 Why: the JES spool authorization (#90) takes the SAF return code of
 `racf_auth()` as it comes and reads RC 4 ("no profile") as "foreign jobs are
-hidden". Only libc370 2.25.1 was measured. If a libc370 returned 0 for a class
+hidden". Measured: libc370 2.25.1 and 2.29.2 (case 1 passes with both: foreign
+jobs hidden, own jobs listed). If a libc370 returned 0 for a class
 without profiles, every job on the spool would be open to every user, and if
 it returned 8, every foreign job would be shut; neither is a thing for the
 table in `ftpd_jwn_level` to cover up.
