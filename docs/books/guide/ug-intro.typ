@@ -97,11 +97,63 @@ FTPD runs on MVS 3.8j with these parts:
 - *UFSD*, if the UFS view is used. UFSD is a soft requirement: without it
   every UFS request is answered with #cmd("550 UFS service not available").
 
-FTPD 1.3 is built against LIBC/370 2.25.1, and its load module is
-link-edited authorized (AC(1)). FTPD 1.3.1, 1.3.2 and 1.3.3 carry the client library
-of UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
+FTPD 1.3.4 is built against LIBC/370 2.29.1, FTPD 1.3.0 to 1.3.3 against
+2.25.1. The load module is link-edited authorized (AC(1)). FTPD 1.3.1 to 1.3.4
+carry the client library of UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
 authorize them and how to upgrade from an earlier release is the subject of
 @ug-install.
+
+== What Is New in FTPD 1.3.4 <ug-intro-new-134>
+
+#idx("FTPD 1.3.4", "changes")
+FTPD 1.3.4 is a patch release. It changes these behaviours against 1.3.3 and
+adds no function. Each is described where the book explains the subject:
+
+#tab(caption: [Changes in FTPD 1.3.4])[
+  #table(columns: (2.3in, 1fr),
+    [Change], [Where],
+    [A #cmd("put") in text mode into a spanned data set stores every record. A
+      data set is spanned when its record format is #cmd("VBS"), and also when
+      it is #cmd("VB") and the block size is smaller than the record length
+      plus 4: opening the data set then makes it spanned. Before, a record that
+      crossed a block boundary lost its tail, and FTPD still answered
+      #cmd("250 Transfer completed successfully."). The cause was in the C
+      library, so FTPD 1.3.4 is linked with LIBC/370 2.29.1, which writes the
+      records of a spanned data set completely. A spanned data set that FTPD
+      1.3.3 or an earlier release received in text mode may be incomplete.],
+      [@ug-data-spanned, @ug-intro-needs],
+    [A text line of more than the record length minus 8 bytes is refused with
+      #cmd("451"), or cut with #cmd("SITE TRUNCATE"), when the data set is
+      spanned. Before, the limit was the record length minus 4. A line of the
+      record length minus 7 to minus 4 bytes passed the check, and the upload
+      failed with
+      #cmd("451 Write error on data set after N bytes received ...").],
+      [@ug-data-long, _FTPD Reference_, "TRUNCATE"],
+    [A binary or EBCDIC upload into a spanned data set cuts the bytes into
+      records of the record length minus 8 and is accepted. Before, it cut them
+      into records of the record length, and every upload failed with
+      #cmd("451 Requested action aborted: local error in processing"), also one
+      of 100 bytes, and stored nothing.],
+      [@ug-data-stor, _FTPD Reference_, "TRUNCATE"],
+    [The list of the spool files of a job with a procedure
+      (#cmd("dir JOB00036")) shows other values in the columns
+      #cmd("STEPNAME") and #cmd("PROCSTEP"). #cmd("STEPNAME") is the name of
+      the #cmd("EXEC") statement in the job, and #cmd("PROCSTEP") the name of
+      the step inside the procedure. For a step that is not part of a
+      procedure #cmd("PROCSTEP") is empty. Before, #cmd("STEPNAME") showed the
+      step of the procedure, #cmd("PROCSTEP") showed the name of the
+      procedure, and #cmd("PROCSTEP") stayed filled for the steps after it.
+      The values come from LIBC/370 2.29.1.],
+      [@ug-jes-output],
+    [The SMP FMID of the release is #cmd("TFTP134"). It deletes #cmd("TFTP133"),
+      #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130").],
+      [@ug-install, @ug-remove],
+  )
+] <ug-intro-new-134-tab>
+
+Two more changes have no row, because they change nothing that FTPD does: a
+corrected comment in the source, and the wording of the installation guide that
+comes in the package.
 
 == What Is New in FTPD 1.3.3 <ug-intro-new-133>
 

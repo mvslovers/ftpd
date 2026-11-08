@@ -292,7 +292,21 @@ The lines of the list are:
 - *The table:* the columns are the ID, the step (#cmd("STEPNAME")), the
   procedure step (#cmd("PROCSTEP")), the output class (#cmd("C")), the DD name
   and the byte count. The ID counts the files from 1. It is printed with
-  three digits.
+  three digits. For a job with a procedure, #cmd("STEPNAME") is the name on
+  the #cmd("EXEC") statement of the job and #cmd("PROCSTEP") the name of the
+  step inside the procedure. A step that is not part of a procedure has an
+  empty #cmd("PROCSTEP"). A job with in-stream procedure #cmd("P1") (steps
+  #cmd("PS1") and #cmd("PS2")) that runs as step #cmd("STEPA"), followed by an
+  own step #cmd("STEPB"), has these lines (FTPD 1.3.4):
+  #screen(```
+        ID  STEPNAME PROCSTEP C DDNAME   BYTE-COUNT
+        004 STEPA    PS1      H SYSPRINT        363
+        005 STEPA    PS2      H SYSPRINT        363
+        006 STEPB             H SYSPRINT        363
+```)
+  FTPD 1.3.3 and earlier showed the step of the procedure in #cmd("STEPNAME")
+  and the name of the procedure in #cmd("PROCSTEP"), and #cmd("PROCSTEP") kept
+  its value for the steps after the procedure.
 - *The last line:* #cmd("5 spool files") is the number of lines of the table.
   The line says #cmd("files") also for a job with one file.
 

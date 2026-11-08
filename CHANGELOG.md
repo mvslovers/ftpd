@@ -8,6 +8,39 @@ releases are on their [release pages](https://github.com/mvslovers/ftpd/releases
 A patch release for 1.3.3, cut from `main`. SMP FMID `TFTP134`, which deletes
 `TFTP133`, `TFTP132`, `TFTP131` and `TFTP130`.
 
+**Read this first: a text upload into a spanned data set could lose data up to
+1.3.3.** In FTPD 1.3.3 and earlier, a text `put` into a data set with record
+format `VBS`, or `VB` with a block size smaller than the record length plus 4
+(which the system opens as spanned), lost the end of every record that crossed
+a block boundary, and FTPD still answered `250 Transfer completed
+successfully.`. The reply cannot tell you whether a data set is complete.
+Upload the file again with 1.3.4. If the file is gone, the records after the
+damaged segment can still be read when the data set is read as `RECFM=U`; the
+lost end of each record is gone. A binary upload into such a data set failed
+with `451` and stored nothing.
+
+### Fixed
+
+- **A text upload into a spanned data set stores every record.** FTPD 1.3.4 is
+  linked with LIBC/370 2.29.1 (1.3.0 to 1.3.3: 2.25.1), which writes the
+  records of a spanned data set completely. The longest line is the record
+  length minus 8 bytes. A longer line is refused with `451`, or cut with
+  `SITE TRUNCATE`. Before, the limit was the record length minus 4: a line of
+  the record length minus 7 to minus 4 bytes passed the check, and the upload
+  failed with `451 Write error on data set after N bytes received ...`.
+- **A binary or EBCDIC upload into a spanned data set is accepted.** FTPD cuts
+  the bytes into records of the record length minus 8. Before, it cut them into
+  records of the record length, and every upload failed with
+  `451 Requested action aborted: local error in processing`, also one of
+  100 bytes.
+- **`LIST JOBnnnnn` names the steps of a job with a procedure differently.**
+  `STEPNAME` is the name on the `EXEC` statement of the job, and `PROCSTEP` the
+  name of the step inside the procedure; it is empty for a step outside a
+  procedure. Before, `STEPNAME` showed the step of the procedure and `PROCSTEP`
+  the name of the procedure, and `PROCSTEP` kept its value for the steps after
+  it. A script that reads these two columns for jobs with procedures must be
+  checked.
+
 ## 1.3.3 — 2026-10-31
 
 A patch release for 1.3.2: fixes only, no new function. It is cut from `main`.

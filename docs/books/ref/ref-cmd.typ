@@ -343,7 +343,12 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       (@ref-site-truncate). In #cmd("TYPE A") an empty line in a data set of
       a variable or undefined record format is stored as a record of one blank
       (_FTPD User's Guide_, "Uploading a Data Set"). In #cmd("TYPE I") and
-      #cmd("TYPE E") the length of a record is in @ref-site-truncate.
+      #cmd("TYPE E") the length of a record is in @ref-site-truncate. Into a
+      spanned data set (RECFM=VBS, or VB opened as spanned) every record is
+      stored since FTPD 1.3.4 (LIBC/370 2.29.1); before, a text upload lost
+      the end of a record that crossed a block boundary and was still answered
+      with the #cmd("250") (_FTPD User's Guide_, "Uploading into a Spanned
+      Data Set").
       UFS: #cmd("150 Opening data connection for PATH") and
       #cmd("226 Transfer complete"). A file that exists is replaced. JES:
       submits the data as a job.],
@@ -480,6 +485,11 @@ as before:
       last line #cmd("N spool files"). The ID is the number of
       #cmd("RETR JOBnnnnn.n"). Only the files that #cmd("RETR") can send are
       listed, at most 999 (FTPD 1.3.3; before it the list had its own layout).
+      The columns #cmd("STEPNAME") and #cmd("PROCSTEP") are the name of the
+      #cmd("EXEC") statement in the job and the name of the step in its
+      procedure, empty for a step outside a procedure (FTPD 1.3.4; before it
+      #cmd("STEPNAME") was the step of the procedure and #cmd("PROCSTEP") the
+      name of the procedure).
       #cmd("550 Jobid JOBnnnnn not found for JESJOBNAME=n, JESSTATUS=s, JESOWNER=o")
       if there is none, if the job is not in the status of
       #cmd("SITE JESSTATUS"), if the session may not see it, or if the ID has a
