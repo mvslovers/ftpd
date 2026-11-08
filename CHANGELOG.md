@@ -8,6 +8,16 @@ releases are on their [release pages](https://github.com/mvslovers/ftpd/releases
 A patch release for 1.3.3, cut from `main`. SMP FMID `TFTP134`, which deletes
 `TFTP133`, `TFTP132`, `TFTP131` and `TFTP130`.
 
+### Fixed
+
+- **The check at start writes `FTPD004E` again.** FTPD 1.3.4 is built with a
+  newer C runtime, which reports one answer of the security system to a login
+  differently from the runtime of 1.3.3. Built with the new runtime, the check
+  at start took that report for a refusal and did not write `FTPD004E` where
+  1.3.3 did. FTPD now reads the report as an accepted login and writes the two
+  lines of `FTPD004E`, as 1.3.3 does; every login is then refused until the
+  cause is corrected and FTPD restarted. No released FTPD was affected.
+
 ## 1.3.3 — 2026-10-31
 
 A patch release for 1.3.2: fixes only, no new function. It is cut from `main`.
