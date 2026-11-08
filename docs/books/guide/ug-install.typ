@@ -19,15 +19,16 @@ The names of the data sets carry no version. #cmd("FTPD.LINKLIB") is the same
 name in every release. The #cmd("STEPLIB") of the procedure and an APF entry
 are written once. The price is that two releases cannot be installed side by
 side: an upgrade replaces what is there. There is no way back to the previous
-release. The install job accepts the new level, and SMP refuses a
-#cmd("RESTORE") of an accepted function (@ug-remove-why). To take FTPD out of
-the system, follow @ug-remove.
+release. After an upgrade SMP refuses a #cmd("RESTORE") of the new level while
+it is only applied (@ug-install-upgrade), and it refuses it for an accepted
+function in every case (@ug-remove-why). To take FTPD out of the system, follow
+@ug-remove.
 
 == What Is in the Package <ug-install-files>
 
 #idx("package", "contents")
 The package #cmd("ftpd-1.3.4-dist.zip") (or #cmd("ftpd-1.3.4-dist.tar.gz")) has
-five files. In their names, 1.3.4 is the release.
+six files. In their names, 1.3.4 is the release.
 
 #tab(caption: [The files of the installation package])[
   #table(columns: (2.7in, 1fr),
@@ -37,25 +38,79 @@ five files. In their names, 1.3.4 is the release.
       RECEIVE reads.],
     [#cmd("ftpd-1.3.4-samplib.xmit")], [The sample library: the procedure of
       the started task and a configuration pattern.],
-    [#cmd("ftpd-1.3.4-alloc.jcl")], [Allocates the data sets SMP installs
-      into. Run once.],
-    [#cmd("ftpd-1.3.4-inst.jcl")], [Receives both XMIT files and installs
-      them. Can be repeated.],
+    [#cmd("ftpd-1.3.4-alloc.jcl")], [Job #cmd("FTPDALC"): allocates the data
+      sets SMP installs into. Run it once, for the first installation, not for
+      an upgrade.],
+    [#cmd("ftpd-1.3.4-inst.jcl")], [Job #cmd("FTPDINS"): the steps
+      #cmd("DELOLD"), #cmd("RECV1"), #cmd("RECV2"), #cmd("RECV") (RECEIVE),
+      #cmd("APPLYCHK") (APPLY CHECK) and #cmd("APPLY"). It ends after the
+      #cmd("APPLY"): the function is applied, not accepted.],
+    [#cmd("ftpd-1.3.4-accept.jcl")], [Job #cmd("FTPDACC"): the steps
+      #cmd("GUARD"), #cmd("NOTAPPL"), #cmd("ACCEPT") and #cmd("CLEANUP"). Submit
+      it when you have tried the product.],
   )
 ]
 
+There are three jobs, and you run them in this order: #cmd("FTPDALC") once,
+#cmd("FTPDINS"), and later #cmd("FTPDACC").
+
 FTPD is a single load module, #cmd("FTPD"). The sample library holds two
 members: #cmd("FTPD") is the procedure of the started task and
-#cmd("FTPDPRM0") is the configuration pattern. When the installation is done,
-they are here:
+#cmd("FTPDPRM0") is the configuration pattern. This is where everything ends up:
 
 #deflist(width: 1.6in,
   [#cmd("FTPD.LINKLIB")], [The load module. The #cmd("STEPLIB") points here.],
   [#cmd("FTPD.SAMPLIB")], [The patterns that you copy in @ug-install-proc.],
-  [#cmd("FTPD.AFTPDLOD")], [The distribution library of SMP. A later PTF can
-    be restored to the level in it. It is not a way back to the previous
-    release (@ug-remove-why).],
+  [#cmd("FTPD.AFTPDLOD")], [The distribution library of SMP, the base that a
+    #cmd("RESTORE") returns to. It is empty after the install job and filled by
+    the accept job. It is not a way back to the previous release
+    (@ug-remove-why).],
+  [#cmd("FTPD.FTPDLOAD")], [The staging library that the load module is received
+    into. The accept job scratches it.],
 )
+
+*The install job ends after the APPLY, on purpose.* ACCEPT is the point without
+a way back: SMP refuses #cmd("RESTORE") and #cmd("REJECT") for an accepted FMID
+(@ug-remove-why). The header of the install job says that a #cmd("RESTORE") can
+take the function out again until the ACCEPT. That holds for a first
+installation. After an upgrade a #cmd("RESTORE") is refused
+(@ug-install-upgrade). So the install job does not make the decision for you:
+try the product first, then submit #cmd("FTPDACC")
+(@ug-install-accept).
+
+#tab(caption: [What the jobs leave behind])[
+  #table(columns: (1.2in, 1fr, 1fr, 1fr),
+    [], [After #cmd("FTPDINS"), first installation], [After #cmd("FTPDINS"),
+      upgrade], [After #cmd("FTPDACC")],
+    [Job end], [CC 0000: every step RC 00], [CC 0004: #cmd("DELOLD"),
+      #cmd("RECV1"), #cmd("RECV2"), #cmd("RECV"), #cmd("APPLYCHK") end RC 00,
+      #cmd("APPLY") ends RC 04 (#cmd("HMA2461"), @ug-install-upgrade)],
+      [CC 0000: #cmd("GUARD"), #cmd("ACCEPT"), #cmd("CLEANUP") end RC 00,
+      #cmd("NOTAPPL") is not run],
+    [#cmd("TFTP134") in the target zone (CDS)], [#cmd("REC APP")],
+      [#cmd("REC APP")], [#cmd("REC APP ACC")],
+    [#cmd("TFTP134") in the distribution zone (ACDS)], [not found],
+      [not found], [#cmd("REC APP ACC RGN")],
+    [#cmd("TFTP133") to #cmd("TFTP130")], [tombstones in the CDS
+      (#cmd("DELBY = TFTP134")), none in the ACDS], [#cmd("TFTP133"): tombstone
+      in the CDS, in the ACDS still #cmd("REC APP ACC RGN")], [tombstones
+      (#cmd("DELBY = TFTP134")) in both zones, no #cmd("RGN") in the ACDS],
+    [#cmd("FTPD.LINKLIB")], [#cmd("FTPD")], [the new #cmd("FTPD")],
+      [the new #cmd("FTPD")],
+    [#cmd("FTPD.AFTPDLOD")], [empty], [still the module of 1.3.3], [the new
+      #cmd("FTPD"), the same as in #cmd("FTPD.LINKLIB")],
+    [#cmd("FTPD.FTPDLOAD") (staging)], [present], [present], [scratched],
+  )
+]
+
+This was measured on test containers (TK5 and MVS/CE) with the published package
+of 1.3.4, built by mbt 3.0.1. The first column is a first installation, the second
+an upgrade over an accepted 1.3.3. The tombstones appear on a first installation
+too: the SYSMOD names the four predecessors that it deletes, and SMP records them
+whether or not they were ever installed. The first installation was run on TK5 and
+on MVS/CE, the upgrade on TK5 (1.3.3, installed from its published package, to
+1.3.4), and the accept job on both (on MVS/CE after a first installation, on TK5
+after the upgrade). The last column is the same in every case.
 
 == What You Need <ug-install-prereq>
 
@@ -72,8 +127,8 @@ they are here:
 - A way to send a file to the host in binary (@ug-install-upload).
 - About 15 cylinders of disk space: 10 for the two libraries that the
   allocation job creates, the rest for the two targets of TSO RECEIVE. One of
-  them, the staging library, is scratched again by the last step of the
-  install job.
+  them, the staging library #cmd("FTPD.FTPDLOAD"), is scratched again by the
+  last step of the accept job\; until you submit that job it stays.
 
 === UFSD Is Optional <ug-install-ufsd>
 
@@ -139,20 +194,23 @@ releases, so it costs only that one. The start shows
 
 An APF entry on MVS 3.8j names the data set and the volume serial. An entry
 that is already there does not only permit a volume, it dictates one. The
-allocation job says #cmd("UNIT=SYSDA") and no volume, so it puts the library
-wherever #cmd("SYSDA") picks. If that is not the volume in the entry, you get
-a library that exists, holds the right module, and is not authorized. Pin the
-volume on the #cmd("LINKLIB") statement of the allocation job:
-
-#screen(```
-//LINKLIB  DD  DSN=FTPD.LINKLIB,DISP=(NEW,CATLG,DELETE),
-//            UNIT=SYSDA,VOL=SER=your-apf-volume,
-```)
+allocation job of 1.3.4 never lets #cmd("SYSDA") pick: it allocates
+#cmd("FTPD.LINKLIB") on the volume that #cmd("TGTVOL") names and
+#cmd("FTPD.AFTPDLOD") on #cmd("DLBVOL"). The defaults are #cmd("MVSRES") and
+#cmd("SMP000"), the volumes of an MVS/CE system\; on TK5 it is
+#cmd("TGTVOL=TK5RES,DLBVOL=TK5DLB") (@ug-install-alloc). The job does not read
+the APF list and does not say if the volumes differ. So set #cmd("TGTVOL") to
+the volume in the entry. If you do not, you get a library that exists, holds the
+right module, passes every check of @ug-install-verify, and is not authorized.
+(The allocation job of 1.3.3 and earlier said #cmd("UNIT=SYSDA") and no
+#cmd("VOL=SER"), which put the library wherever #cmd("SYSDA") picked.)
 
 Nothing reports the mismatch, because FTPD recovers from it: it falls back to
 the SVC and comes up authorized. The only place where the two routes can be
 told apart is #cmd("FTPD008I"). So #cmd("AUTHORIZED BY SVC") on a system where
-you added an APF entry is not a decision of the site but a symptom.
+you added an APF entry is not a decision of the site but a symptom. This was
+measured on a test system with an #cmd("IEAAPF00") entry for a data set that did
+not exist yet and the allocation job of 1.3.3, free to put it anywhere.
 
 FTPD warns and keeps running when the authorization fails
 (#cmd("FTPD003W APF SETUP FAILED RC=n")). The server starts and accepts
@@ -227,25 +285,57 @@ library ends with an S106 abend (@ug-install-trouble).
 == Allocating the Product Data Sets <ug-install-alloc>
 
 #idx("alloc.jcl")
-Submit #cmd("ftpd-1.3.4-alloc.jcl") as it is. The only things worth a change
-are the #cmd("UNIT=SYSDA") and the space on each DD statement (and the volume,
-if you use an APF entry, @ug-install-auth).
+Submit #cmd("ftpd-1.3.4-alloc.jcl") after you have set the two volumes. The job
+allocates every library on a volume you name, never on whatever #cmd("SYSDA")
+picks:
 
-The job creates #cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD") and nothing
-else. The libraries that the next step receives into are not allocated
-here, on purpose: TSO RECEIVE creates its own target and refuses to merge
-into an existing data set. The expected result is #cmd("COND CODE 0000").
+#tab(caption: [The volume parameters of the allocation job])[
+  #table(columns: (1in, 1fr, 1in),
+    [Parameter], [Volume of], [Default],
+    [#cmd("TGTVOL")], [The target library #cmd("FTPD.LINKLIB"), the one SMP
+      installs into.], [#cmd("MVSRES")],
+    [#cmd("DLBVOL")], [The distribution library #cmd("FTPD.AFTPDLOD"), the one
+      the ACCEPT fills.], [#cmd("SMP000")],
+  )
+]
 
-#note[Run this job once for the life of the system, not once for each
-release. The names carry no version, so a later upgrade of a 1.2.0 that SMP
-installed finds both data sets and skips this step. Skip it only if
-#cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD") exist. On MVS/CE they do not:
-the FTPD 1.2.0 of the image is not an SMP install (@ug-install-stop), so run
-the job there. A second run fails on #cmd("DISP=(NEW,CATLG,DELETE)")
-and changes nothing. The job has no DELETE step on purpose:
-#cmd("FTPD.AFTPDLOD") holds the accepted copy of the module, and a re-run that
-scratched it would leave the SMP records describing an installation that is no
-longer there. To start over, remove FTPD first, libraries included
+The defaults are the volumes of an MVS/CE system. On TK5 write
+#cmd("TGTVOL=TK5RES,DLBVOL=TK5DLB"), either on the #cmd("PROC") statement or on
+the statement #cmd("//ALLOC EXEC SMPALLOC,COND=(0,NE,CHECK)") at the end of the
+job. Whatever your system uses, the volume must be online. If an
+#cmd("IEAAPF00") entry for #cmd("FTPD.LINKLIB") exists, set #cmd("TGTVOL") to the
+volume that it names (@ug-install-auth). The space on each DD statement is the
+only other thing worth a change.
+
+The job has two steps. #cmd("CHECK") looks in the catalog for the two libraries.
+On a first run it prints #cmd("IDC3012I ENTRY ... NOT FOUND") for both, which is
+the answer you want, and ends with RC 0. Then #cmd("ALLOC") creates
+#cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD") and nothing else. The libraries
+that the next step receives into are not allocated here, on purpose: TSO RECEIVE
+creates its own target and refuses to merge into an existing data set. The
+expected result is #cmd("COND CODE 0000").
+
+*A second run does nothing.* If either library is already cataloged,
+#cmd("CHECK") lists it and ends with RC 8, #cmd("ALLOC") is not run
+(#cmd("IEF202I"), #cmd("IEF272I")) and the job ends with CC 0008. This was
+measured on MVS/CE. Without the look, a second run would have ended with RC 0 and
+left an uncataloged copy of the library on the other volume.
+
+*A volume that is not mounted holds the job.* It does not fail it. This was
+measured on TK5 with the default #cmd("MVSRES"), which TK5 does not have: the job
+log shows #cmd("IEF244I ... UNABLE TO ALLOCATE") and the console
+#cmd("IEF238D FTPDALC - REPLY DEVICE NAME OR 'CANCEL'"). Reply
+#cmd("R nn,CANCEL") (the reply number is on the console line), and the job ends
+in a JCL error. Correct the volume and submit the job again.
+
+#note[Run this job once, for the first installation. An upgrade skips it when
+the data sets are already there\; on MVS/CE they are not (@ug-install-stop), so
+MVS/CE runs it. If you skip it where #cmd("FTPD.LINKLIB") does not exist, the
+install job ends in a JCL error (@ug-install-ce-skip). The job has no DELETE step
+on purpose. After the accept job, #cmd("FTPD.AFTPDLOD") holds the accepted copy
+of the module that SMP keeps\; a re-run that scratched it would leave the SMP
+inventory reporting an installation that is no longer on the system, and nothing
+would say so. To start over, remove FTPD first, libraries included
 (@ug-remove).]
 
 == Stopping a Running FTPD <ug-install-stop>
@@ -290,23 +380,34 @@ names with the names you sent in @ug-install-upload:
   RECEIVE INDSN('CHANGE.ME.SAMPLIB') -       <- IBMUSER.FTPD.SAMP.XMIT
 ```)
 
-On most systems these are the only lines to change. On MVS/CE you can put the
-two receive targets on the public pack explicitly, by adding a
-#cmd("VOLUME('PUB000')") operand to both #cmd("DATASET()") operands (the steps
-#cmd("RECV1") and #cmd("RECV2")). A stock MVS/CE ends the job with return code
-0 without it and the data sets land on #cmd("PUB000") anyway; the operand only
-removes the dependence on that default.
+On most systems these are the only lines to change. On MVS/CE, name the volume.
+TSO RECEIVE allocates #cmd("FTPD.FTPDLOAD") and #cmd("FTPD.SAMPLIB") itself and
+lets the system pick the volume. Put the two data sets on the public pack
+explicitly: in both #cmd("RECEIVE") commands of the job (the steps #cmd("RECV1")
+and #cmd("RECV2")), take the comment marks off the #cmd("VOLUME") line and name
+the volume, #cmd("PUB000") on a stock MVS/CE:
 
 #screen(```
   RECEIVE INDSN('IBMUSER.FTPD.LOAD.XMIT') -
-    DATASET('FTPD.FTPDLOAD') VOLUME('PUB000')
+    VOLUME('PUB000') -
+    DATASET('FTPD.FTPDLOAD')
   RECEIVE INDSN('IBMUSER.FTPD.SAMP.XMIT') -
-    DATASET('FTPD.SAMPLIB') VOLUME('PUB000')
+    VOLUME('PUB000') -
+    DATASET('FTPD.SAMPLIB')
 ```)
 
-Submit the job. It has eight steps, and each runs only if the one before it
-ended well, so the job stops at the first failure. The SYSMOD is inline in the
-job; there is no third file to send.
+The header of the job says that steps 3 and 4 there (the names, and this volume)
+are the only edits it needs. On TK5 leave the #cmd("VOLUME") lines alone. This was
+measured on MVS/CE with this edit: #cmd("FTPD.FTPDLOAD") and #cmd("FTPD.SAMPLIB")
+on #cmd("PUB000"), #cmd("FTPD.LINKLIB") on #cmd("MVSRES") and
+#cmd("FTPD.AFTPDLOD") on #cmd("SMP000") (the defaults of the allocation job).
+#cmd("FTPD.SAMPLIB") is the library that you keep, so check it with ISPF 3.4
+after the job and read the volume from the listing. Without the
+#cmd("VOLUME") lines the job was not run on MVS/CE with 1.3.4.
+
+Submit the job. It has six steps, and each runs only if the ones before it ended
+well, so the job stops at the first failure and then it ends. The accept job is a
+job of its own. The SYSMOD is inline in the job; there is no third file to send.
 
 #tab(caption: [The steps of the install job])[
   #table(columns: (1.1in, 1fr),
@@ -320,25 +421,22 @@ job; there is no third file to send.
     [#cmd("APPLYCHK")], [A dry run. The #cmd("APPLY") runs only if this one
       ends with RC 0.],
     [#cmd("APPLY")], [Copies the load module into #cmd("FTPD.LINKLIB").],
-    [#cmd("ACCEPT")], [Copies the module into #cmd("FTPD.AFTPDLOD"), the base
-      that the #cmd("RESTORE") of a later PTF returns to. It also closes
-      #cmd("RESTORE") and #cmd("REJECT") for this release itself
-      (@ug-remove-why).],
-    [#cmd("CLEANUP")], [Scratches the staging library, which is spent now.],
   )
 ]
+
+At the end of the job, a comment says that the function is applied, not accepted,
+and names #cmd("ftpd-1.3.4-accept.jcl") as the next job. Do not submit it yet.
+Go on with @ug-install-proc to @ug-install-start, try the product, and then
+submit it (@ug-install-accept).
 
 === What a Good Run Looks Like <ug-install-good>
 
 On a new installation, every step ends with #cmd("COND CODE 0000"). The
-screens below are the SMP output of a new installation of release 1.3.3. They
-were measured on a test system with the package of 1.3.3 that was built from the
-source of the release before it was published. It carries the same FMID,
-#cmd("TFTP133"), as the release, and they were not taken again with 1.3.4. The
-SYSMOD of release 1.3.4 is #cmd("TFTP134") and it deletes #cmd("TFTP133"),
-#cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130"), so on 1.3.4 the id
-in these screens is #cmd("TFTP134") and the #cmd("DELETE") operand in the first
-one has four ids. The #cmd("RECV") step receives the SYSMOD:
+screens below are the SMP output of a new installation. They were measured with
+the published package of 1.3.4, installed the way this chapter describes (the
+allocation job, then the install job), on TK5 and on MVS/CE. All six steps of
+the install job ended with #cmd("COND CODE 0000"). The #cmd("RECV") step receives
+the SYSMOD:
 
 #screen(raw(read("../ex/ug-install/receive.txt")))
 
@@ -347,36 +445,37 @@ module and the step ends with return code 0:
 
 #screen(raw(read("../ex/ug-install/apply-new.txt")))
 
-The step then prints more reports; the screen shows the first. The status
-#cmd("DELETED") for the previous release also appears on a new installation,
-because the SYSMOD names it in its #cmd("DELETE") operand. The #cmd("ACCEPT")
-step has the same messages for the library #cmd("AFTPDLOD"):
-
-#screen(raw(read("../ex/ug-install/accept-new.txt")))
+The step then prints more reports; the screen shows the first lines. The status
+#cmd("DELETED") for the previous releases also appears on a new installation,
+because the SYSMOD names them in its #cmd("DELETE") operand. #cmd("HMA2380") is
+the message that separates a real installation from one that copied nothing. If
+it is not in the job log, nothing was installed, whatever the condition codes
+say.
 
 *On an upgrade the #cmd("APPLY") ends with #cmd("COND CODE 0004") instead, and
 that is correct.* The message #cmd("HMA2461") says that the deleted level has
-no backup entry to keep; it never will, because it was deleted rather than
+no backup entry to keep. It never will, because it was deleted rather than
 superseded:
 
 #screen(raw(read("../ex/ug-install/apply-upgrade.txt")))
 
-The screen is the upgrade from 1.3.2 to 1.3.3. The line #cmd("HMA2240") is the old
-module being deleted from #cmd("FTPD.LINKLIB") before the new one is copied.
-#cmd("HMA2270") is the line that says the #cmd("APPLY") worked; the return
-code is not. The install job expects the 0004: its #cmd("ACCEPT") step is
-gated by #cmd("COND=(4,LT,APPLY.HMASMP)") and not by #cmd("COND=(0,NE,...)"),
-so return code 04 passes and anything worse still stops the job. A new
-installation has nothing to delete and ends with 00.
+The screen is the upgrade from 1.3.3 to 1.3.4, measured with the published
+package of 1.3.4 on a TK5 test container with 1.3.3 installed from its own
+published package. The install job ended with the return codes #cmd("DELOLD") 0,
+#cmd("RECV1") 0, #cmd("RECV2") 0, #cmd("RECV") 0, #cmd("APPLYCHK") 0 and
+#cmd("APPLY") 4. The line #cmd("HMA2240") is the old module being deleted from
+#cmd("FTPD.LINKLIB") before the new one is copied. #cmd("HMA2270") is the line
+that says the #cmd("APPLY") worked\; the return code is not. On the upgrades from
+1.3.2, 1.3.1 and 1.3.0 to 1.3.3 (measured with the published package of 1.3.3,
+which was one job) the #cmd("APPLY") also ended with #cmd("COND CODE 0004"), and
+#cmd("HMA2461") named #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130").
 
-The upgrade to 1.3.4 was measured on a test system that was on 1.3.3 (reached
-through 1.2.0, 1.3.0 and 1.3.3 in turn). The screen shows the two lines of its
-#cmd("APPLY") that are known; the dots stand for the lines that were not
-taken. The #cmd("APPLY") ended with return code 4, the #cmd("RECEIVE"),
-#cmd("APPLYCHK") and #cmd("ACCEPT") with 0. The #cmd("ACCEPT") printed the same
-#cmd("HMA2380") for the library #cmd("AFTPDLOD"):
-
-#screen(raw(read("../ex/ug-install/apply-upgrade-134.txt")))
+The accept job expects the 0004: its #cmd("GUARD") step looks for #cmd("TFTP134")
+in the target zone and not at the return code of the install job, so the accept
+job runs through after CC 0004 (it was run that way). A new installation has
+nothing to delete and ends with 00 (measured with the 1.3.4 package on TK5 and
+on MVS/CE). On an upgrade, a #cmd("RESTORE") does not take the new level back
+(@ug-install-upgrade).
 
 SMP copies the module and does not link it again, so the link attributes
 (among them AC(1)) are exactly those of the build.
@@ -393,10 +492,22 @@ The return codes show that the job ran. They do not show that the work
 happened. #cmd("HMA2380") is the message that separates a real installation
 from one that copied nothing: if it is not in the job log, nothing was
 installed, whatever the condition codes say. SMP also names a library by its
-ddname, and a ddname says nothing about the data set behind it. An
-installation that owns none of its elements ends with RC 00 in every step and
-an empty library. So list the members, and take that as the result. ISPF 3.4
-does it, or submit this job:
+ddname, and a ddname says nothing about the data set behind it. SMP keys the
+ownership of an element on #cmd("MOD(name)"), and a SYSMOD that does not own an
+element skips it: the element summary then prints
+
+#screen(```
+TYPE   NAME      STATUS
+MOD    FTPD      NOT SEL
+```)
+
+Nothing is copied, and every other line still says success. An installation like
+that ends with RC 00 in every step and an empty library. The line for
+#cmd("LIBRARY=LINKLIB") is in the #cmd("APPLY") step of #cmd("FTPDINS")\; the one
+for #cmd("LIBRARY=AFTPDLOD") is in the #cmd("ACCEPT") step of #cmd("FTPDACC").
+(The #cmd("NOT SEL") case was run with the package of 1.3.2, whose install job
+also accepted (@ug-remove)\; not with this package.) So list the members, and take
+that as the result. ISPF 3.4 does it, or submit this job:
 
 #screen(```
 //FTPDLIST JOB (SYS),'FTPD MEMBERS',
@@ -405,28 +516,29 @@ does it, or submit this job:
 //SYSTSPRT DD  SYSOUT=*
 //SYSTSIN  DD  *
  LISTDS 'FTPD.LINKLIB' MEMBERS
+ LISTDS 'FTPD.AFTPDLOD' MEMBERS
  LISTDS 'FTPD.SAMPLIB' MEMBERS
 /*
 //
 ```)
 
-The job lists the directory:
+The job lists the directories. The screen shows the first two, after the install
+job of a first installation on TK5:
 
 #screen(raw(read("../ex/ug-install/members.txt")))
 
-The member #cmd("FTPD") must be there, and #cmd("FTPD.SAMPLIB") must list
-#cmd("FTPD") and #cmd("FTPDPRM0"). The volume depends on your system. The
-screen is from 1.3.3; after the install of 1.3.4, #cmd("FTPD.LINKLIB") and
-#cmd("FTPD.AFTPDLOD") each held the single member #cmd("FTPD"), and
-#cmd("FTPD.SAMPLIB") held #cmd("FTPD") and #cmd("FTPDPRM0").
+The member #cmd("FTPD") must be in #cmd("FTPD.LINKLIB"), and
+#cmd("FTPD.SAMPLIB") must list #cmd("FTPD") and #cmd("FTPDPRM0"). The volumes
+depend on your system. #cmd("FTPD.AFTPDLOD") is empty until the accept job has
+run, and holds the member #cmd("FTPD") after it (@ug-install-accept).
 
 If the list is empty although the job said success, the #cmd("APPLY") did not
 print #cmd("HMA2380"). Another SYSMOD owns the module name in the SMP
 inventory. FTPD 1.3.4 deletes #cmd("TFTP133"), #cmd("TFTP132"),
 #cmd("TFTP131") and #cmd("TFTP130"), so the owner goes away with the
-installation only if you come from 1.3.0, 1.3.1, 1.3.2 or 1.3.3. The usual cause is an older release that was not
-installed first (@ug-install-upgrade). The command
-#cmd("LIST CDS MOD(FTPD) .") names the owner.
+installation only if you come from 1.3.0, 1.3.1, 1.3.2 or 1.3.3. The usual cause
+is an older release that was not installed first (@ug-install-upgrade). The
+command #cmd("LIST CDS MOD(FTPD) .") names the owner.
 
 === MVS/CE: When the Allocation Job Was Skipped <ug-install-ce-skip>
 
@@ -439,23 +551,23 @@ the SYSMOD is in the SMP inventory:
 
 #screen(raw(read("../ex/ug-install/ce-jclerr.txt")))
 
-This screen was taken on an MVS/CE system with release 1.3.2. It shows no
-release id, and it was not taken again with 1.3.3 or 1.3.4.
-
 Run the allocation job and submit the install job again. This time #cmd("RECV")
-ends with #cmd("COND CODE 0008"), because the SYSMOD is already received. The
-job skips the dry run, and #cmd("APPLY") and #cmd("ACCEPT") end with 0000:
+ends with #cmd("COND CODE 0008"), because the SYSMOD is already received.
+#cmd("APPLYCHK") and #cmd("APPLY") are not run, and *nothing is installed*. There
+is no #cmd("ACCEPT") or #cmd("CLEANUP") in this job:
 
 #screen(raw(read("../ex/ug-install/ce-rerun.txt")))
 
-This screen is also from 1.3.2 and shows #cmd("TFTP132") in the message that
-the SYSMOD was already received. With 1.3.4 the message names #cmd("TFTP134");
-that has not been measured.
+Take the received SYSMOD out first: #cmd("REJECT S(TFTP134)") (RC 0,
+#cmd("HMA2270")). Then submit the install job again. It ends with CC 0000. This
+was measured on TK5 and on MVS/CE with the published package of 1.3.4, the first
+run ending in the JCL error at #cmd("APPLYCHK") that the screen above shows. If
+you run the allocation job first, none of this happens.
 
-The installation is complete. #cmd("HMA2380") and #cmd("HMA2270") in the output
-of the #cmd("APPLY") say so (@ug-install-verify). The only thing missing is the
-dry run of that attempt. If you run the allocation job first, none of this
-happens.
+The same #cmd("HMA3862") ends a second run of the install job when
+#cmd("TFTP134") is already applied: CC 0008, nothing changed. The way out there is
+a #cmd("RESTORE") (first installation only, @ug-install-upgrade) or the removal
+chapter (@ug-remove).
 
 == Procedures and Configuration <ug-install-proc>
 
@@ -711,23 +823,24 @@ On MVS/CE, stop the FTPD 1.2.0 that comes with the image first
 A healthy start ends with #cmd("FTPD001I ... READY"):
 
 #screen(```
-FTPD000I FTPD 1.3.4-DEV (A26EA6A) STARTING
+FTPD000I FTPD 1.3.4 (B079CED) STARTING
 FTPD005I LIBC370 2.29.2 (70E450F)
 FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC RUNS AS user/group
 RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
 FTPD054I LISTENING ON ANY PORT 2121
-FTPD001I FTPD 1.3.4-DEV READY
+FTPD001I FTPD 1.3.4 READY
 ```)
 
-The first two lines were measured on the release candidate of 1.3.4, built from
-#cmd("main"), whose version name still carries the suffix #cmd("-DEV"); the
-published package prints its own version name and hash there, and #cmd("FTPD001I")
-repeats the version name of the first line. The other lines are those of a
-start of 1.3.3 on a test system (the package built from the source of the
-release before it was published) and were not taken again with 1.3.4. The
-identity of your own setup is in the fourth line. The test systems started by the SVC route, so
-#cmd("FTPD008I") says #cmd("SVC (MODULE KEY 8)"); on a system with the load
+These lines were measured with the published package of 1.3.4 on MVS/CE, with
+FTPD started from the library of the install job, before the accept job. There
+the #cmd("FTPD004I") line read #cmd("FTPD/STARTED"), and the #cmd("RAKF0004") line
+carried one more character behind the name, as explained below. A start on TK5
+was not run with the published package. The version and the hash in the first
+line, and the LIBC/370 level and hash in the second, are those of the release you
+installed\; a later release prints its own. The identity in the fourth line is the
+one that RAKF gave your started task. The test system started by the SVC route, so
+#cmd("FTPD008I") says #cmd("SVC (MODULE KEY 8)")\; on a system with the load
 library in the APF list it says #cmd("LIBRARY (MODULE KEY 0)")
 (@ug-install-auth). If your parameter file still has settings that no longer
 have an effect, the start also prints #cmd("FTPD062W") before the line
@@ -756,6 +869,109 @@ Then log in from a client with #cmd("ftp -P 2121 your-mvs-host")
 worth it: it prints what FTPD parsed, not what the member says, so a typo that
 fell back to a default shows there and nowhere else (@ug-ops-con).
 
+== Accepting the Installation <ug-install-accept>
+
+#idx("accept job")
+#idx("accept.jcl")
+Submit #cmd("ftpd-1.3.4-accept.jcl") (job #cmd("FTPDACC")) when you have tried the
+product and want to keep this level. Nothing in it needs editing. It has four
+steps and ends with CC 0000 when the function is applied:
+
+#tab(caption: [The steps of the accept job])[
+  #table(columns: (1.1in, 1fr),
+    [Step], [What it does],
+    [#cmd("GUARD")], [#cmd("LIST CDS SYSMOD(TFTP134)"): is the function applied?
+      RC 0 if it is, RC 4 if it is not.],
+    [#cmd("NOTAPPL")], [Runs only when #cmd("GUARD") did not end with RC 0, and
+      ends the job with RC 8.],
+    [#cmd("ACCEPT")], [#cmd("ACCEPT S(TFTP134)"): copies the module into
+      #cmd("FTPD.AFTPDLOD"), the base that the #cmd("RESTORE") of a later PTF
+      returns to.],
+    [#cmd("CLEANUP")], [Scratches the staging library #cmd("FTPD.FTPDLOAD"),
+      which is spent now.],
+  )
+]
+
+*This is the point without a way back.* Once #cmd("TFTP134") is accepted, SMP
+refuses #cmd("RESTORE") and #cmd("REJECT") for it (@ug-remove-why). Until then, a
+first installation can still be taken out again with a #cmd("RESTORE")\; an
+upgrade cannot (@ug-install-upgrade).
+
+#cmd("ACCEPT") runs only when #cmd("GUARD") ended with RC 00, and
+#cmd("CLEANUP") scratches #cmd("FTPD.FTPDLOAD") only when #cmd("GUARD") and
+#cmd("ACCEPT") both ended with RC 00. The gate is the entry of #cmd("TFTP134") in
+the target zone, not the return code of the install job: after an upgrade the
+install job ends with CC 0004, and the accept job still runs through. The header
+of the accept job says to submit it after an install job whose APPLY CHECK and
+APPLY ended with RC 0, or with RC 4 for #cmd("HMA2461") (a predecessor in delete)
+or #cmd("HMA4441") alone, and not after RC 8 or 12. The #cmd("ACCEPT") step prints
+#cmd("HMA2380 COPY SUCCESSFUL ... LIBRARY=AFTPDLOD") for #cmd("FTPD"). These are
+the messages to look for after a first installation:
+
+#screen(raw(read("../ex/ug-install/accept-new.txt")))
+
+and the cleanup step prints #cmd("IDC0550I ENTRY (A) FTPD.FTPDLOAD DELETED").
+After an upgrade the #cmd("ACCEPT") also prints #cmd("HMA2240"): the module of
+1.3.3 that the new one replaces is deleted from #cmd("FTPD.AFTPDLOD"):
+
+#screen(raw(read("../ex/ug-install/accept-upgrade.txt")))
+
+Both screens were measured with the published package of 1.3.4. Then check three
+things: the member #cmd("FTPD") is in #cmd("FTPD.AFTPDLOD"), #cmd("FTPD.FTPDLOAD")
+is gone, and
+
+#screen(```
+//LIST    EXEC SMPAPP
+//SMPCNTL  DD  *
+ LIST CDS  SYSMOD(TFTP134) .
+ LIST ACDS SYSMOD(TFTP134) .
+/*
+```)
+
+shows #cmd("TFTP134") as #cmd("REC APP ACC") in both zones. Verify by listing
+the members of #cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD"), never by the
+condition codes (@ug-install-verify).
+
+*Submitting the accept job a second time* ends the job with #cmd("JCL ERROR"):
+#cmd("IEF212I ... FTPDLOAD - DATA SET NOT FOUND"), because the first run scratched
+the staging library. #cmd("GUARD") ends with RC 00 and no step after it runs, so
+the second run changes nothing.
+
+*Submitting it when #cmd("TFTP134") is not applied* (the install job never ran,
+or the function was taken out again by a #cmd("RESTORE") or by the removal job)
+ends #cmd("GUARD") with RC 04, because the entry is not in the target zone.
+#cmd("NOTAPPL") then ends with RC 08, and #cmd("ACCEPT") and #cmd("CLEANUP") do
+not run. The job ends with CC 0008, and nothing is accepted or scratched. This was
+measured after a removal.
+
+*The accept job may run while FTPD is up.* This was measured on MVS/CE: FTPD 1.3.4
+was started from the applied-only #cmd("FTPD.LINKLIB"), the accept job ran through
+(CC 0000), and #cmd("F FTPD,STATS") afterwards answered
+#cmd("FTPD010I STATUS: ACTIVE"). The accept job does not write
+#cmd("FTPD.LINKLIB").
+
+If the #cmd("ACCEPT") fails, #cmd("CLEANUP") does not run and nothing is
+scratched: fix the cause and submit the job again (that case was not run). If you
+decide not to accept, because you took the function out with a #cmd("RESTORE") or
+because you keep it applied, scratch the staging library yourself:
+
+#screen(```
+//SCRATCH EXEC PGM=IDCAMS
+//SYSPRINT DD  SYSOUT=*
+//SYSIN    DD  *
+  DELETE FTPD.FTPDLOAD NONVSAM SCRATCH PURGE
+/*
+```)
+
+The install job needs no such scratch before a second run: its #cmd("DELOLD")
+step deletes #cmd("FTPD.FTPDLOAD") and #cmd("FTPD.SAMPLIB") itself.
+
+*Not measured:* the accept job after an #cmd("APPLY") that printed
+#cmd("NOT SEL")\; a system where #cmd("PURGE=NO") is set in the PTS options\; an
+upgrade from 1.3.0, 1.3.1 or 1.3.2 straight to 1.3.4 (only 1.3.3 to 1.3.4 was
+run)\; and the accept job on a system where #cmd("TFTP134") is received but not
+applied.
+
 == Upgrading from an Earlier Release <ug-install-upgrade>
 
 #idx("upgrade")
@@ -777,7 +993,7 @@ which FMID owns the module. Run this under the SMP procedure:
     [Owner], [What to do],
     [#cmd("TFTP133"), #cmd("TFTP132"), #cmd("TFTP131") or #cmd("TFTP130")], [An
       upgrade from 1.3.3, 1.3.2, 1.3.1 or 1.3.0. Stop FTPD, skip the allocation job (the data sets
-      exist), run the install job and start FTPD. The data sets, the procedure,
+      exist), run the install job, start FTPD, try the product, then run the accept job. The data sets, the procedure,
       the APF entry and the member of the configuration stay. On 1.3.0 note
       that the client library of UFSD changes (UFSD 1.5.2 or later is needed
       for the UFS view).],
@@ -799,27 +1015,72 @@ which FMID owns the module. Run this under the SMP procedure:
   )
 ]
 
-For an upgrade from 1.3.0, 1.3.1, 1.3.2 or 1.3.3, the steps are those of a new
-installation without the allocation: stop FTPD (@ug-install-stop), run the
-install job (@ug-install-job) and start FTPD (@ug-install-start). The
-#cmd("APPLY") ends with #cmd("COND CODE 0004") (@ug-install-good). Do not trust
-the condition codes alone: check the member list and look for #cmd("HMA2380")
-in the job log. The banner must name the new release;
-#cmd("FTPD000I FTPD 1.3.0"), #cmd("1.3.1"), #cmd("1.3.2") or #cmd("1.3.3") on the
-first line
-means that the started task still runs the old load module.
+#cmd("TFTP130"), #cmd("TFTP131"), #cmd("TFTP132") and #cmd("TFTP133") stay in
+the SMP zones after the install as entries that only say
+#cmd("DELBY = TFTP134") or #cmd("DELBY = TFTP133"), also the ones your system
+never had. That is how SMP records a deleted id. They are not an install, and
+nothing needs to be done about them.
 
-The upgrade to 1.3.4 was measured on a test system that went through the
+For an upgrade from 1.3.0, 1.3.1, 1.3.2 or 1.3.3 there are five steps:
+
++ Stop FTPD (@ug-install-stop).
++ Skip the allocation job, if #cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD")
+  exist, which they do after an SMP install of 1.3.0, 1.3.1, 1.3.2 or 1.3.3.
+  The job allocates them new: its #cmd("CHECK") step looks in the catalog first
+  and ends with RC 8 on an existing library, so nothing is allocated twice
+  (@ug-install-alloc). #cmd("LISTCAT LEVEL(FTPD)")\; or ISPF 3.4 on
+  #cmd("FTPD.*") tells which case you are in.
++ Run the install job (@ug-install-job). It ends with #cmd("COND CODE 0004"):
+  the #cmd("APPLY") ends with #cmd("COND CODE 0004") on
+  #cmd("HMA2461 SYSMOD TFTP13x NOT FOUND ON SMPSCDS LIBRARY"), where
+  #cmd("TFTP13x") is the id that was installed (#cmd("TFTP130"),
+  #cmd("TFTP131"), #cmd("TFTP132") or #cmd("TFTP133")). That is the expected
+  result of a replacement (@ug-install-good). The job stops after the
+  #cmd("APPLY"): the new module is in #cmd("FTPD.LINKLIB"), and
+  #cmd("FTPD.AFTPDLOD") still holds the old one.
++ Start FTPD (@ug-install-start) and read the banner. It must name the new
+  release: #cmd("FTPD000I FTPD 1.3.4"). #cmd("FTPD 1.3.0"), #cmd("1.3.1"),
+  #cmd("1.3.2") or #cmd("1.3.3") on the first line means that the started task
+  still runs the old load module. Check the member list of
+  #cmd("FTPD.LINKLIB") and look for #cmd("HMA2380") in the job log, not at the
+  condition codes alone.
++ Try the product, then run the accept job (@ug-install-accept). It ends with
+  #cmd("COND CODE 0000"), scratches #cmd("FTPD.FTPDLOAD") and makes
+  #cmd("TFTP134") the base for any later #cmd("RESTORE"). It does not need FTPD
+  to be stopped (measured on MVS/CE with FTPD running). Until it has run, the
+  system holds #cmd("TFTP134") as applied and #cmd("TFTP133") as the accepted
+  level in the distribution zone.
+
+The upgrade to 1.3.4 was measured on a TK5 test container that went through the
 upgrade chain 1.2.0, 1.3.0, 1.3.3 and 1.3.4, each package installed through
-SMP. The 1.3.4 install ended with #cmd("RECEIVE") 0, #cmd("APPLYCHK") 0,
-#cmd("APPLY") 4 and #cmd("ACCEPT") 0, and the #cmd("APPLY") printed
-#cmd("HMA2461") for #cmd("TFTP133"). The upgrade from 1.3.0, 1.3.1 and 1.3.2
-directly to 1.3.4 was not measured; the SYSMOD of 1.3.4 names those ids in its
-delete list all the same. The upgrade to 1.3.3 was measured with the package
-built from the source of the release before it was published, on three test
-systems, one on each of 1.3.0, 1.3.1 and 1.3.2, each installed through SMP. On
-each, the #cmd("APPLY") ended with #cmd("COND CODE 0004") and #cmd("HMA2461")
-named the id that was installed, and the #cmd("ACCEPT") ended with 0000.
+SMP, the last one with the published package of 1.3.4. The install job ended
+with #cmd("COND CODE 0004"): #cmd("DELOLD"), #cmd("RECV1"), #cmd("RECV2"),
+#cmd("RECV") and #cmd("APPLYCHK") ended with RC 0, and #cmd("APPLY") with RC 4
+and #cmd("HMA2461 SYSMOD TFTP133 NOT FOUND ON SMPSCDS LIBRARY"). The accept job
+then ended with #cmd("COND CODE 0000"): #cmd("GUARD"), #cmd("ACCEPT") and
+#cmd("CLEANUP") with RC 0, and #cmd("NOTAPPL") not run. The upgrade from 1.3.0,
+1.3.1 and 1.3.2 directly to 1.3.4 was not measured\; the SYSMOD of 1.3.4 names
+those ids in its delete list all the same.
+
+*Until the accept job has run, a #cmd("RESTORE") does not take the upgrade
+back.* The header of the shipped install job says that until the
+#cmd("ACCEPT") a #cmd("RESTORE") can still take the function out again. After
+an upgrade over an accepted #cmd("TFTP133") that is not so. Measured with
+#cmd("RESTORE S(TFTP134)") after the install job of the upgrade above, with the
+new module still in #cmd("FTPD.LINKLIB"):
+
+#screen(```
+HMA2452 ** SYSMOD TFTP134 SELECTED FOR RESTORE DELETES SYSMODS
+HMA3703 ** RESTORE PROCESSING TERMINATED BECAUSE FUNCTION SYSMOD TFTP134 FAILED
+```)
+
+The #cmd("RESTORE") ended with RC 12 and changed nothing. So the way back from
+an applied #cmd("TFTP134") over #cmd("TFTP133") is not a #cmd("RESTORE").
+Either keep #cmd("TFTP134") and accept it, or remove FTPD as the removal
+chapter describes (@ug-remove)\; installing the old release afterwards was not
+run. On a first install, where nothing was deleted, a #cmd("RESTORE") does take
+the function out (measured: RC 0, #cmd("HMA2240") deleted the load module from
+#cmd("FTPD.LINKLIB")).
 
 If the configuration member of 1.2.0 still has a line for
 #cmd("JESINTERFACELEVEL"), #cmd("AUTHUSER") or a volume, the start also prints
@@ -875,18 +1136,39 @@ libraries are the way back until the banner says that the new release runs:
   #table(columns: (1.9in, 1fr),
     [Symptom], [Likely cause],
     [The allocation job fails, the data set exists], [It was run before, or
-      #cmd("FTPD.*") exists from an SMP install of 1.2.0. Do not force it
+      #cmd("FTPD.*") exists from an SMP install of 1.2.0. The #cmd("CHECK") step
+      ends with RC 8 and #cmd("ALLOC") is not run. Do not force it
       (@ug-install-alloc).],
     [The install job ends in a JCL error at #cmd("APPLYCHK"): #cmd("IEF212I")
       #cmd("LINKLIB - DATA SET NOT FOUND")], [#cmd("FTPD.LINKLIB") does not
       exist: the allocation job was skipped. This is the MVS/CE case, where the
       image's FTPD is not an SMP install. Run the allocation job and submit the
       install job again (@ug-install-ce-skip).],
-    [After the allocation job, #cmd("RECV") ends with #cmd("COND CODE 0008"):
-      #cmd("HMA3862 SYSMOD TFTP134 ALREADY RECEIVED")], [The earlier run
-      received the SYSMOD before it stopped. #cmd("APPLYCHK") is skipped,
-      #cmd("APPLY") and #cmd("ACCEPT") end with 0000. The installation is
-      complete; check #cmd("HMA2380") (@ug-install-ce-skip).],
+    [After the allocation job, the install job ends with #cmd("COND CODE 0008")
+      in #cmd("RECV"): #cmd("HMA3862 SYSMOD TFTP134 ALREADY RECEIVED")], [The
+      first run had already received the SYSMOD before it stopped at
+      #cmd("APPLYCHK"). The run ends with RC 8 in #cmd("RECV") (#cmd("HMA3862"),
+      #cmd("HMA3902"), #cmd("HMA3920"), #cmd("HMA2481")). #cmd("APPLYCHK") and
+      #cmd("APPLY") are not run (#cmd("IEF202I")\; and #cmd("IEF272I")), and
+      nothing is installed. There is no #cmd("ACCEPT") or #cmd("CLEANUP") in this
+      job. Take the received SYSMOD out first with #cmd("REJECT S(TFTP134)")
+      (RC 0, #cmd("HMA2270")), then submit the install job again\; it ends with
+      #cmd("COND CODE 0000") (@ug-install-ce-skip). The same #cmd("HMA3862")
+      ends a second run of the install job when #cmd("TFTP134") is already
+      applied: #cmd("COND CODE 0008"), nothing changed. The way out there is a
+      #cmd("RESTORE") (first install only, @ug-install-upgrade) or the removal
+      chapter (@ug-remove).],
+    [The accept job ends in a JCL error: #cmd("IEF212I") #cmd("FTPDLOAD - DATA
+      SET NOT FOUND")], [The staging library is not there: an earlier accept job
+      scratched it. #cmd("GUARD") ended with RC 0 and no step ran, so nothing
+      changed (@ug-install-accept). Check with #cmd("LIST CDS SYSMOD(TFTP134)")
+      that #cmd("REC APP ACC") is there.],
+    [The accept job ends with #cmd("COND CODE 0008") in #cmd("NOTAPPL")],
+      [#cmd("GUARD") did not find #cmd("TFTP134") in the target zone (it ended
+      with RC 4): the install job never ran, ended with RC 8 or 12 before the
+      #cmd("APPLY"), or the function was taken out again. #cmd("ACCEPT") and
+      #cmd("CLEANUP") did not run\; nothing is accepted or scratched. Measured
+      after a removal (@ug-install-accept).],
     [#cmd("IEC031I D37-04 ... SYS1.PARMLIB"), abend SD37, while copying
       #cmd("FTPDPRM0") (TK5)], [#cmd("SYS1.PARMLIB") is full. Compress it, or
       use a PARMLIB of your own (@ug-install-parmlib).],

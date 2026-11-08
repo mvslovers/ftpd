@@ -10,7 +10,8 @@ uses `UCLIN` alone stays as the [fallback](#the-fallback-uclin-alone).
 > **The removal instructions in older archives are wrong.**
 > `README.md` in `ftpd-1.0.?-dist.zip` says to run `RESTORE` and then
 > `REJECT`. Both are refused once the FMID has been accepted, which the install
-> job does in the same run as the APPLY. From 1.1.0 the shipped README says so
+> job of those archives does in the same run as the APPLY (from 1.3.4 the accept
+> job does it). From 1.1.0 the shipped README says so
 > itself and points here. The `UCLIN` job in this document as it stood up to
 > 1.2.0 has a second flaw: it ran both zones in one step, and on a system that
 > never carried `TFTP100` the step ended early and left the ACDS untouched (see
@@ -45,8 +46,13 @@ patch level (`FTPD.V1R0M2.LINKLIB`) while the FMID moved only per minor. If you
 find data sets of this kind, add the qualifier to every name below. The jobs
 below have not been measured on such a system.
 
-The staging library `FTPD.FTPDLOAD` is not on the list, because the cleanup
-step of the install job scratched it.
+The staging library `FTPD.FTPDLOAD` is on the list **until the accept job has
+run**. The accept job of 1.3.4 scratches it; so did the install job of 1.3.3 and
+earlier. A system that stopped after the install job of 1.3.4 still has it, and the
+removal has to scratch it by hand (step 5). Which of the two states your system
+is in decides what step 2 and step 5 show; the section
+[applied, not accepted](#applied-not-accepted) says
+what was measured in each.
 
 **Earlier releases left their FMIDs behind.** Since 1.1.0 there is one FMID per
 *release*: `TFTP110` is 1.1.0 and nothing else, `TFTP120` is 1.2.0,
@@ -153,35 +159,36 @@ Submit this job:
 //
 ```
 
-Read the three SMP steps one by one. The output below was taken with 1.3.3 and
-not taken again with 1.3.4 (see *What has been measured* below), so the receive
-echoes the card of that release, with seven ids. With 1.3.4 the second line of
-the card ends with `TFTP133,TFTP134) .`. The receive ends with return code 04:
+Read the three SMP steps one by one. The output below was measured with the
+published package of 1.3.4, on a TK5 test container that had gone from 1.2.0
+through 1.3.0 and 1.3.3 to 1.3.4 and had accepted it (see *What has been
+measured* below). The receive ends with return code 04:
 
 ```
  RECEIVE SELECT(TFTPDEL) .
 ----------++FUNCTION(TFTPDEL) .
 ----------++VER(Z038) DELETE(TFTP100,TFTP110,TFTP120,TFTP130,TFTP131,TFTP132,
-----------            TFTP133) .
+----------            TFTP133,TFTP134) .
 HMA3971    SYSMOD TFTPDEL HAS NO ELEMENTS
 HMA3930    SYSMOD TFTPDEL SUCCESSFULLY RECEIVED
 HMA2050    RECEIVE PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
-The apply deletes the load module from the target library. It also ends with
-return code 04, because SMP does not find the release that you remove in the
-restore data set (`HMA2461`). The output below comes from a system that had
-been upgraded to 1.3.3 through SMP, so the message names `TFTP133`, the release
-that you remove. On a system with 1.3.4 the message is expected to name
-`TFTP134`:
+The apply deletes the load module from the target library. When 1.3.4 is
+accepted it also ends with return code 04, because SMP does not find the release
+that you remove in the restore data set (`HMA2461`):
 
 ```
  APPLY S(TFTPDEL) DIS(WRITE) .
 HMA2240    SUCCESSFULLY DELETED LMOD FTPD ON LINKLIB LIBRARY
 HMA2270    APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTPDEL
-HMA2461    SYSMOD TFTP133 NOT FOUND ON SMPSCDS LIBRARY
+HMA2461    SYSMOD TFTP134 NOT FOUND ON SMPSCDS LIBRARY
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
+
+**When 1.3.4 is only applied, not accepted**, the apply ends with return code 00
+and prints no `HMA2461`: the restore data set holds the entry. Everything else is
+the same. See [applied, not accepted](#applied-not-accepted).
 
 The accept deletes the copy from the distribution library and ends with return
 code 00:
@@ -218,35 +225,38 @@ If a step ends higher than 04, the following `APPLY` or `ACCEPT` step does not
 run; the last step does, and shows what is still there. Read the output of the
 failed step; do not repeat the job before you know what it did.
 
-**What has been measured.** The jobs of steps 2 to 5 were last run on test systems
-(containers) with the package of 1.3.3 that was built from the source of the
-release before it was published. It carries the FMID `TFTP133`. It was built
-under a development name, so its banner says `1.3.3-DEV`; it differs from the
-published package in the names and time stamps, not in the source. The output in this document
-is from the run on a system that started from the TK5 image with 1.2.0 and had
-gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3 by upgrades through SMP. A system
-that had gone through 1.3.0 and 1.3.1 only gave the same return codes, and so
-did one that carried 1.2.0 through SMP and had received the install job of 1.3.3
-on top of it. That job copies nothing (see [installation.md](installation.md)),
-so `TFTP120` still owned the module. The return codes were the same there, too
-(04, 04, 00, 00 for the four steps of step 2), and both libraries were empty
-afterwards. The only difference is in the `APPLY`: it printed `HMA2461` twice,
-once for `TFTP120` and once for `TFTP133`. A system with a new installation of
-1.3.3 and no upgrade before it was not removed in this run. A system whose data
-sets carry the patch level in their names, and a dummy function with a `++MAC`
-element instead of none, have not been measured. Whatever the system, the `LIST`
-in step 4 is the proof.
+**What has been measured.** With the **published package of 1.3.4** (built by
+mbt 3.0.1), the jobs of steps 2 to 4, and the scratch jobs of step 5, were run on TK5
+test containers in three states of the system:
 
-**Release 1.3.4 was not removed in this way.** What was measured with its
-package is the install, in [installation.md](installation.md): the upgrade from
-1.3.3 through SMP, and what the inventory holds afterwards. The inventory then
-shows `TFTP134` with the status
-`REC APP ACC`, and the marks `DELBY = TFTP134` on `TFTP133` and
-`DELBY = TFTP133` on `TFTP132`, `TFTP131` and `TFTP130`. The dummy function
-with the eight ids and the `UCLIN` jobs with their nine entries were not run
-with that package. They differ from the jobs of 1.3.3 by one id, `TFTP134`,
-and the `++VER` card, which is continued on a second line since 1.3.3. The
-`LIST` in step 4 stays the proof.
+| State | How it was reached |
+|---|---|
+| accepted | 1.3.3 installed, then the install job and the accept job of 1.3.4 (an upgrade) |
+| applied, first install | the allocation job and the install job of 1.3.4, no accept job |
+| applied, upgrade | 1.3.3 installed, then the install job of 1.3.4 only |
+
+In all three states the `RECEIVE` ended RC 04, `ACCEPT` ended RC 00, both
+libraries were empty afterwards, and the job ended CC 0004. The `APPLY` ended RC 04
+with `HMA2461` in the accepted state and RC 00 without it in both applied
+states. The `ACCEPT` printed `HMA2240 SUCCESSFULLY DELETED MODULE FTPD ON AFTPDLOD
+LIBRARY` where the distribution library held a copy (the accepted state, and the
+applied upgrade, where it still held the module of 1.3.3), and not in the applied
+first install, where it was empty. The jobs of step 3 gave the same output in all
+three states, and the scratch job of step 5 ended CC 0000.
+
+The earlier runs, with the package of 1.3.3 (built from the source of the release
+before it was published, banner `1.3.3-DEV`), on a system that started from
+the TK5 image with 1.2.0 and had gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3,
+gave the same return codes. So did a system that carried 1.2.0 through SMP and had
+received the install job of 1.3.3 on top of it, which copies nothing (see
+[installation.md](installation.md)): there `TFTP120` still owned the module, and the
+`APPLY` printed `HMA2461` twice, for `TFTP120` and for `TFTP133`.
+
+**Not measured:** a system with a new installation of 1.3.4 that was accepted
+without an upgrade before it; a system on MVS/CE (the removal ran on TK5 only); a
+system whose data sets carry the patch level in their names; a dummy function with
+a `++MAC` element instead of none; and a system where `PURGE=NO` is set. Whatever
+the system, the `LIST` in step 4 is the proof.
 
 ## 3. Free the ids
 
@@ -316,13 +326,15 @@ library:
 Every `DEL` finds its entry, because the dummy function left a mark for every id
 it named, also for those that the system never had. Both `UCLIN` steps end with
 return code 00, and each `DEL` reports `HMA2550 UPDATE COMPLETE`. This is the
-output of step `UCLCDS`, taken with 1.3.3, which had eight entries; with 1.3.4
-a `DEL` for `TFTP134` follows the one for `TFTPDEL`:
+output of step `UCLCDS` with nine entries, measured with the published package of
+1.3.4 (identical in the three states of step 2):
 
 ```
  UCLIN CDS .
   DEL SYSMOD(TFTPDEL) .
 HMA2550    UPDATE COMPLETE FOR TFTPDEL
+  DEL SYSMOD(TFTP134) .
+HMA2550    UPDATE COMPLETE FOR TFTP134
   DEL SYSMOD(TFTP133) .
 HMA2550    UPDATE COMPLETE FOR TFTP133
   DEL SYSMOD(TFTP132) .
@@ -352,7 +364,8 @@ instead of it.
 
 The last step of the job is the result. For every id, in both zones, it must
 answer that the entry was not found. These are the first two of the eighteen
-statements, as the step printed them with 1.3.3:
+statements, as the step printed them with 1.3.4 (all eighteen answered the same in
+the three states of step 2):
 
 ```
  RESETRC .
@@ -382,7 +395,8 @@ entry that is still there, whether it shows the status `REC APP ACC` or only a
 before step 3 has run. The output was taken with release 1.3.2 and the dummy
 function of that release, which ended with `TFTP132`; it was not taken again
 with 1.3.3 or 1.3.4. The stanzas have the same form, and with the job of this
-document the `DELETE` line of `TFTPDEL` ends with `TFTP134`:
+document the `DELETE` line of `TFTPDEL` ends with `TFTP134` (the stanzas of the
+`DELBY = TFTP134` marks of an installed 1.3.4 were seen in the install runs):
 
 ```
  LIST CDS  SYSMOD(TFTP132) .
@@ -422,11 +436,73 @@ meant for names that are free. Delete them in a job of your own:
 //
 ```
 
-Each statement ends with `IDC0550I ENTRY (A) ... DELETED`.
+Each statement ends with `IDC0550I ENTRY (A) ... DELETED` and the job ends CC 0000
+(measured in the three states of step 2).
+
+**If the accept job never ran, the staging library `FTPD.FTPDLOAD` is still
+there** (`LISTCAT LEVEL(FTPD)` shows it), and the job above does not name it. The
+removal of step 2 does not touch it either. Add
+
+```
+  DELETE FTPD.FTPDLOAD NONVSAM SCRATCH PURGE
+```
+
+to the job in that case. It was scratched in the same way in the two applied states
+of step 2, with `IDC0550I`. Do not add the statement when the library is not
+there: a `DELETE` of a name that is not cataloged ends with `IDC3012I` and a return
+code above 0 (not run here).
 
 **Do this only when you remove FTPD for good.** After an upgrade, these are the
 data sets that the next release installs into; leave them. `FTPD.SAMPLIB` may
-stay. The install job scratches it itself the next time.
+stay. The install job scratches it itself the next time. If you remove it too,
+`DELETE FTPD.SAMPLIB NONVSAM SCRATCH PURGE` ended with `IDC0550I`.
+
+## Applied, not accepted
+
+The install job of 1.3.4 ends after the `APPLY`, and the accept job is a job of
+its own ([installation.md](installation.md), section 1 and step 9a). A system that
+has run the first and not the second holds `TFTP134` as applied (`REC APP` in the
+target zone, nothing in the distribution zone) and still has the staging library
+`FTPD.FTPDLOAD`. What the removal does there, measured with the published package
+of 1.3.4 on TK5 test containers, for a first install and for an upgrade over an
+accepted 1.3.3:
+
+- **The main way works unchanged** (steps 1 to 5). The job of step 2 ended CC 0004
+  in both states, like in the accepted state, with two differences: the `APPLY`
+  ended RC 00 and printed no `HMA2461` (the restore data set holds the entry), and,
+  on the first install, the `ACCEPT` printed no `HMA2240` for the distribution
+  library, which was empty. Both libraries were empty afterwards. The jobs of step 3
+  printed the same, and all eighteen `LIST` statements answered "not found".
+- **The staging library has to be scratched by hand** (step 5): neither step 2 nor
+  step 3 touches `FTPD.FTPDLOAD`, and the scratch job of step 5 does not name it.
+- **On a first install, a `RESTORE` takes the function out too.** Measured: job
+  `RESTORE S(TFTP134)` with `HMASMP.LINKLIB` and `HMASMP.AFTPDLOD` statements, RC
+  00, `HMA2240 SUCCESSFULLY DELETED LMOD FTPD ON LINKLIB LIBRARY` and `HMA2270`. The
+  entry of `TFTP134` is gone from the target zone afterwards, and the marks
+  `DELBY = TFTP134` on `TFTP130` to `TFTP133` stay. A `REJECT S(TFTP134)` after it
+  ends RC 12 (`HMA2462 ** SYSMOD TFTP134 NOT FOUND ON SMPPTS LIBRARY`): nothing is
+  left to reject. The install job of the same package ran again with every step RC
+  00 afterwards. How to clear the four marks was not run; the fallback below is the
+  way that does not need the function.
+- **After an upgrade, a `RESTORE` is refused.** Measured with the new module in
+  `FTPD.LINKLIB` and `TFTP133` accepted:
+
+  ```
+  HMA2452 ** SYSMOD TFTP134 SELECTED FOR RESTORE DELETES SYSMODS
+  HMA3703 ** RESTORE PROCESSING TERMINATED BECAUSE FUNCTION SYSMOD TFTP134 FAILED
+  ```
+
+  The job ended RC 12 and changed nothing. The header of the shipped install job
+  says that a `RESTORE` can still take the function out until the `ACCEPT`: that
+  holds for the first install and not here. The main way is the way out.
+- **A received, not applied `TFTP134`** (the install job ended in a JCL error at
+  `APPLYCHK`, see the troubleshooting table of
+  [installation.md](installation.md)) is taken out with `REJECT S(TFTP134)`, RC 00
+  (measured). The accept job on such a system was not run.
+- **The accept job on a system where `TFTP134` is not applied**, for example after
+  the removal, ends CC 0008: `GUARD` RC 04, `NOTAPPL` RC 08, no `ACCEPT`, no
+  `CLEANUP`, nothing changed (measured after a removal). So the accept job cannot
+  undo a removal or accept something that is not there.
 
 ## The fallback: UCLIN alone
 
@@ -552,7 +628,11 @@ Then read the `LIST` as in step 4, here eighteen statements without `TFTPDEL` an
 with the two module entries, and, if you remove FTPD for good, scratch the
 libraries as in step 5. `UCLIN` changes only the inventory: until you scratch
 them, the load module is still in the target library, and the copy that SMP
-accepted is in the distribution library.
+accepted is in the distribution library. (If the accept job of 1.3.4 never ran,
+the distribution zone holds no entry for `TFTP134` and the distribution library
+no copy, and `FTPD.FTPDLOAD` is still there. The fallback was not run in that
+state, so expect the `UCLACDS` statements for `TFTP134` to find nothing, and take
+the `LIST` as the proof.)
 
 ## You installed a development build of `main`
 
@@ -820,9 +900,13 @@ libraries exist. This has not been run: the test runs skipped the allocation job
 after the development install. The steps and the checks are those of the upgrade in
 [installation.md](installation.md).
 
-`RECEIVE`, `APPLY CHECK`, `APPLY` and `ACCEPT` all end with return code 00. The
-`APPLY` prints no `HMA2461`. Both steps copy the module, and that is the line
-to look for:
+The package of 1.3.4 has three jobs. Its install job ends after the `APPLY`, and
+the accept job does the `ACCEPT` (see [installation.md](installation.md)); the flow
+of this section was not run with that package. The excerpts below are from the
+package of 1.3.2, whose install job also accepted: `RECEIVE`, `APPLY CHECK`, `APPLY`
+and `ACCEPT` all ended with return code 00. The `APPLY` printed no `HMA2461`. Both
+steps copy the module, and that is the line to look for (with the package of 1.3.4,
+the `LIBRARY=AFTPDLOD` line is in the accept job):
 
 ```
  APPLY S(TFTP132) DIS(WRITE) .
@@ -838,7 +922,9 @@ HMA2050    ACCEPT PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 
 ### 7. Check the result
 
-List the members of `FTPD.LINKLIB` and `FTPD.AFTPDLOD`: `FTPD` must be in both.
+List the members of `FTPD.LINKLIB` and `FTPD.AFTPDLOD`: `FTPD` must be in both
+(with the package of 1.3.4, `FTPD.AFTPDLOD` is filled by the accept job, not by the
+install job).
 Then `LIST CDS MOD(FTPD) .` must show the `FMID` of the release you installed,
 and not `TFTP140`. Start FTPD and read the banner; it must name the release:
 
@@ -937,9 +1023,9 @@ system, for example one that holds ids from earlier releases that SMP lost track
 of. A development build of 1.3.4-dev (`TFTP134`) or of 1.3.3-dev (`TFTP133`) has not
 been installed or removed with the steps of this section, and the release has not
 been installed over one. The packages of 1.3.3 and 1.3.4 that were measured
-carry the same ids, but they are packages, not development builds: the one of
-1.3.3 was removed with the main way of this document (steps 1 to 5), not with
-the steps of this section, and the one of 1.3.4 was installed only. A second
+carry the same ids, but they are packages, not development builds: the ones of
+1.3.3 and 1.3.4 were removed with the main way of this document (steps 1 to 5), not
+with the steps of this section. A second
 development build installed over the first has not been measured
 with FTPD either. A test with another product that is built the same way showed
 that installing the same development id again ends with return code 0, and that
@@ -966,9 +1052,10 @@ Those are yours to delete.
 
 ## Why `RESTORE` and `REJECT` do not work
 
-Worth knowing, because the messages point away from the cause. The install job
-accepts the FMID in the same run in which it applies it. That closes both of the
-usual ways back:
+Worth knowing, because the messages point away from the cause. Once the FMID is
+accepted, both of the usual ways back are closed. The accept job of 1.3.4 does
+that; the install job of 1.3.3 and earlier did it in the same run in which it
+applied the FMID:
 
 ```
 HMA2452 ** SYSMOD TFTP132 SELECTED FOR RESTORE HAS BEEN ACCEPTED
@@ -976,8 +1063,10 @@ HMA2462 ** SYSMOD TFTP132 NOT FOUND ON SMPPTS LIBRARY
 ```
 
 These lines are from release 1.3.2 and name `TFTP132`. They were not taken
-again with 1.3.3 or 1.3.4; with 1.3.4 the same two lines are expected to name
-`TFTP134`, but that has not been measured.
+again with 1.3.3 or 1.3.4 after an `ACCEPT`; with 1.3.4 the same two lines are
+expected to name `TFTP134`, but that has not been measured. What was measured with
+1.3.4 is the state before the accept job: see [applied, not
+accepted](#applied-not-accepted).
 
 `RESTORE` refuses a SYSMOD that has been accepted (`HMA2452`, return code 12).
 `REJECT` then fails for a reason that looks unrelated: `HMA2462` says that the
@@ -999,10 +1088,13 @@ after the `ACCEPT` there. No `UCLIN` statement was found that changes the system
 entry, so this document does not change it. It removes the FMID in ways that do
 not need the PTS.
 
-## Why the install job accepts at all
+## Why there is an accept at all
 
 The `ACCEPT` fills the distribution library, which is the base a later
 `RESTORE` of a **PTF** returns to. Without it, a `RESTORE` would delete the
 module rather than revert it, because there would be no previous level to go
 back to. The price is what this document is about: the FMID itself becomes
-permanent by documented means.
+permanent by documented means. Since 1.3.4 the accept is a job of its own, so that
+you try the product first and decide then; until it has run, the function is
+applied and not accepted, and the section [applied, not
+accepted](#applied-not-accepted) says what that allows and what it does not.

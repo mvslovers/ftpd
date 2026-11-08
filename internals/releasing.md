@@ -20,7 +20,7 @@ wrong twice: the candidates were packaged locally by an mbt whose install
 job still ran the `ACCEPT`; the published packages (mbt 3.0.1,
 mvslovers/mbt#328) have an install job that ends after the `APPLY` and a
 separate accept job, `ftpd-<version>-accept.jcl` (job `FTPDACC`: `GUARD`,
-`ACCEPT`, `CLEANUP`), and nobody had compared the guides with them.
+`NOTAPPL`, `ACCEPT`, `CLEANUP`), and nobody had compared the guides with them.
 
 - What is measured for the release (first install, upgrade, removal, the
   guides, the release page) is the artefact of the release run
@@ -39,7 +39,10 @@ separate accept job, `ftpd-<version>-accept.jcl` (job `FTPDACC`: `GUARD`,
   each job (the comment header of every `.jcl` lists them) against the step
   tables and the upgrade and removal instructions. A difference is a stop:
   the release goes back to the board, and the page is not published as it
-  is.
+  is. `tools/check-install-docs.sh ftpd-X.Y.Z-dist.tar.gz` (or `--release
+  vX.Y.Z`) does the file-name half of this: it fails when a text names a file
+  that is not in the archive, or the archive holds a file that
+  `docs/installation.md` does not name. The steps stay a comparison by hand.
 - A text that describes a job it was not measured with says so and names
   the package it was measured with.
 

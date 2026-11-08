@@ -41,13 +41,18 @@ one; now there is one installation and an upgrade replaces it.
 
 ## 1. What is in the archive
 
+The package holds six files:
+
 | File | What it is |
 |------|------------|
 | `README.md` | this guide |
 | `ftpd-<version>-load.xmit` | the FTPD load module, as a TSO RECEIVE-ready XMIT |
 | `ftpd-<version>-samplib.xmit` | the sample library: STC procedure and configuration pattern |
-| `ftpd-<version>-alloc.jcl` | allocates the datasets SMP installs into — **run once** |
-| `ftpd-<version>-inst.jcl` | receives everything and installs it — repeatable |
+| `ftpd-<version>-alloc.jcl` | job `FTPDALC`: allocates the datasets SMP installs into. **Run it once**, for the first install; not for an upgrade |
+| `ftpd-<version>-inst.jcl` | job `FTPDINS`: steps `DELOLD`, `RECV1`, `RECV2`, `RECV` (RECEIVE), `APPLYCHK` (APPLY CHECK) and `APPLY`. It **ends after the APPLY**: the function is applied, not accepted |
+| `ftpd-<version>-accept.jcl` | job `FTPDACC`: steps `GUARD`, `NOTAPPL`, `ACCEPT` and `CLEANUP`. Submit it when you have tried the product |
+
+Three jobs, run in this order: `FTPDALC` once, `FTPDINS`, and later `FTPDACC`.
 
 FTPD is a single load module. The sample library holds two members, `FTPD`
 (the started task procedure) and `FTPDPRM0` (the configuration pattern).
@@ -58,7 +63,103 @@ Where everything ends up:
 FTPD.LINKLIB     the load module -- point STEPLIB here
 FTPD.SAMPLIB     the patterns you copy from in step 7
 FTPD.AFTPDLOD    SMP's distribution library, the base a RESTORE returns to
+                 (empty after the install job, filled by the accept job)
+FTPD.FTPDLOAD    the staging library the load module is received into;
+                 scratched by the accept job
 ```
+
+**The install job stops after the APPLY, on purpose.** ACCEPT is the point
+without a way back: SMP refuses RESTORE and REJECT for an accepted FMID
+(section 11). The header of the install job says that until the ACCEPT a RESTORE
+can still take the function out again. That holds for a first install; **after
+an upgrade a RESTORE is refused** (section 2a). So the install job does not make
+the decision for you: try the product first, then submit `FTPDACC`.
+
+What the jobs leave behind, measured on test containers (TK5 and MVS/CE) with the
+published package of 1.3.4 (built by mbt 3.0.1). The first column is a first
+install, the second an upgrade over an accepted 1.3.3:
+
+| | After `FTPDINS`, first install | After `FTPDINS`, upgrade | After `FTPDACC` |
+|---|---|---|---|
+| Job end | CC 0000: every step RC 00 | CC 0004: `DELOLD`, `RECV1`, `RECV2`, `RECV`, `APPLYCHK` end RC 00, `APPLY` ends RC 04 (`HMA2461`, see [section 2a](#2a-upgrading-from-130-131-132-and-133)) | CC 0000: `GUARD`, `ACCEPT`, `CLEANUP` end RC 00, `NOTAPPL` is not run |
+| `TFTP134` in the target zone (CDS) | `REC APP` | `REC APP` | `REC APP ACC` |
+| `TFTP134` in the distribution zone (ACDS) | not found | not found | `REC APP ACC RGN` |
+| `TFTP133` to `TFTP130` | tombstones in the CDS (`DELBY = TFTP134`), none in the ACDS | `TFTP133`: tombstone in the CDS; in the ACDS still `REC APP ACC RGN` | tombstones (`DELBY = TFTP134`) in both zones, no `RGN` in the ACDS |
+| `FTPD.LINKLIB` | `FTPD` | the new `FTPD` | the new `FTPD` |
+| `FTPD.AFTPDLOD` | empty | still the module of 1.3.3 | the new `FTPD`, the same as in `FTPD.LINKLIB` |
+| `FTPD.FTPDLOAD` (staging) | present | present | scratched |
+
+The tombstones appear on a first install too: the SYSMOD names the four
+predecessors it deletes, and SMP records them whether or not they were ever
+installed. The first install was run on TK5 and on MVS/CE, the upgrade on TK5
+(1.3.3, installed from its published package, to 1.3.4), and the accept job on both
+(on MVS/CE after a first install, on TK5 after the upgrade); the last column is the
+same in every case.
+
+**The accept job.** Nothing in it needs editing. `GUARD` runs
+`LIST CDS SYSMOD(TFTP134)`. Only when that ends RC 00 does `ACCEPT` run, and
+`CLEANUP` scratches `FTPD.FTPDLOAD` only when `GUARD` and `ACCEPT` both ended RC
+00. The gate is the entry of `TFTP134` in the target zone, not the return code of
+the install job: after an upgrade the install job ends CC 0004, and the accept job
+still runs through. The header of the accept job says to submit it after an install
+job whose APPLY CHECK and APPLY ended RC 0, or RC 4 for `HMA2461` (a predecessor in
+delete) or `HMA4441` alone, and not after RC 8 or 12. The `ACCEPT` step prints
+`HMA2380 COPY SUCCESSFUL ... LIBRARY=AFTPDLOD` for `FTPD`.
+
+**Submitting the accept job a second time** ends the job with `JCL ERROR`:
+`IEF212I ... FTPDLOAD - DATA SET NOT FOUND`, because the first run scratched the
+staging library. `GUARD` ends RC 00 and no step after it runs, so the second run
+changes nothing.
+
+**Submitting it when `TFTP134` is not applied** (the install job never ran, or
+the function was taken out again by a RESTORE or by the removal job): `GUARD` ends
+RC 04 (the entry is not in the target zone), `NOTAPPL` ends RC 08, and `ACCEPT`
+and `CLEANUP` do not run. The job ends CC 0008, and nothing is accepted or
+scratched. Measured after a removal.
+
+**The accept job may run while FTPD is up.** Measured on MVS/CE: FTPD 1.3.4 was
+started from the applied-only `FTPD.LINKLIB`, the accept job ran through (CC
+0000), and `F FTPD,STATS` afterwards answered `FTPD010I STATUS: ACTIVE`. The
+accept job does not write `FTPD.LINKLIB`.
+
+**Not measured:** the accept job after an APPLY that printed `NOT SEL`; a system
+where `PURGE=NO` is set in the PTS options; an upgrade from 1.3.0, 1.3.1 or
+1.3.2 straight to 1.3.4 (only 1.3.3 to 1.3.4 was run); and the accept job on a
+system where `TFTP134` is received but not applied.
+
+**Verify the install by listing the members of `FTPD.LINKLIB` (and, after the
+accept job, of `FTPD.AFTPDLOD`), never by the condition codes.** SMP keys element
+ownership on `MOD(name)`, and a SYSMOD that does not own an element skips it: the
+element summary then prints
+
+```
+TYPE   NAME      STATUS
+MOD    FTPD      NOT SEL
+```
+
+nothing is copied, and every other line still says success. The message that
+separates a real install from that one is:
+
+```
+HMA2380 COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=...
+```
+
+If that line is not in the job log, nothing was copied. The line for
+`LIBRARY=LINKLIB` is in the `APPLY` step of `FTPDINS`; the one for
+`LIBRARY=AFTPDLOD` is in the `ACCEPT` step of `FTPDACC`. (The `NOT SEL` case was run with the package of 1.3.2, whose install job also accepted, see the removal guide; not with this package.)
+
+After the accept job, check three more things: `FTPD.AFTPDLOD` holds the member
+`FTPD`, `FTPD.FTPDLOAD` is gone, and
+
+```
+//LIST    EXEC SMPAPP
+//SMPCNTL  DD  *
+ LIST CDS  SYSMOD(TFTP134) .
+ LIST ACDS SYSMOD(TFTP134) .
+/*
+```
+
+shows `TFTP134` as `REC APP ACC` in both zones.
 
 ---
 
@@ -76,7 +177,8 @@ FTPD.AFTPDLOD    SMP's distribution library, the base a RESTORE returns to
 - A way to upload a **binary** file to the host — see step 3.
 - Roughly 15 cylinders of DASD: 10 for the two libraries the allocation job
   creates, the rest for the two TSO RECEIVE targets. One of those, the staging
-  library, is scratched again by the last step of the install job.
+  library `FTPD.FTPDLOAD`, is scratched again by the last step of the accept
+  job; until you submit that job it stays.
 
 ### UFSD is optional
 
@@ -159,22 +261,21 @@ volume.
 **The same rule bites the other way round, and that is the direction that
 catches people.** If the entry is already there — added ahead of the install,
 or left from a previous release — it does not merely *permit* a volume, it
-**dictates** one. The shipped allocation job says `UNIT=SYSDA` and no
-`VOL=SER`, so it puts the library wherever `SYSDA` happens to pick. If that is
-not the volume in the entry, you get a library that exists, holds the right
-module, passes every check in section 6 — and is not authorised. Pin it:
-
-```
-//LINKLIB  DD  DSN=FTPD.LINKLIB,DISP=(NEW,CATLG,DELETE),
-//            UNIT=SYSDA,VOL=SER=your-apf-volume,
-```
+**dictates** one. The allocation job of 1.3.4 never lets `SYSDA` pick: it
+allocates `FTPD.LINKLIB` on the volume `TGTVOL` names and `FTPD.AFTPDLOD` on
+`DLBVOL` (defaults `MVSRES` and `SMP000`, the volumes of an MVS/CE system; on TK5
+`TGTVOL=TK5RES,DLBVOL=TK5DLB`, see step 4). It does not read the APF list and does
+not say if the volumes differ. So set `TGTVOL` to the volume in the entry. If you
+do not, you get a library that exists, holds the right module, passes every check
+in section 6 — and is not authorised. (The allocation job of 1.3.3 and earlier
+said `UNIT=SYSDA` and no `VOL=SER`, which put the library wherever `SYSDA` picked.)
 
 Nothing reports the mismatch, because FTPD recovers from it: `clib_apf_setup()`
 falls back to SVC 244 and the server comes up authorised anyway. The only place
 the two are distinguishable is the startup message below — which is why
 `AUTHORIZED BY SVC` **on a system where you added an APF entry** is not a site
 decision but a symptom. Measured on a test system with an `IEAAPF00` entry for
-a data set that did not exist yet and an allocation job free to put it
+a data set that did not exist yet and the allocation job of 1.3.3, free to put it
 anywhere.
 
 The two routes are not equivalent in one respect that matters if you ever have
@@ -307,10 +408,12 @@ is in its own guide
 ([ufsd/docs/installation.md](https://github.com/mvslovers/ufsd/blob/main/docs/installation.md)).
 FTPD without UFSD is not affected.
 
-The upgrade to 1.3.4 was measured on a test system that went through the
+The upgrade to 1.3.4 was measured on a TK5 test container that went through the
 upgrade chain 1.2.0, 1.3.0, 1.3.3 and 1.3.4, each package installed through
-SMP. The 1.3.4 install ended with `RECEIVE` 0, `APPLYCHK` 0, `APPLY` 4 and
-`ACCEPT` 0, and the `APPLY` printed `HMA2461` for `TFTP133`. The upgrade from
+SMP, the last one with the published package of 1.3.4. The install job ended CC
+0004: `DELOLD`, `RECV1`, `RECV2`, `RECV` and `APPLYCHK` RC 0, `APPLY` RC 4 with
+`HMA2461 SYSMOD TFTP133 NOT FOUND ON SMPSCDS LIBRARY`. The accept job then ended
+CC 0000: `GUARD`, `ACCEPT` and `CLEANUP` RC 0, `NOTAPPL` not run. The upgrade from
 1.3.0, 1.3.1 and 1.3.2 directly to 1.3.4 was not measured; the SYSMOD
 of 1.3.4 names those ids in its delete list all the same.
 
@@ -319,14 +422,17 @@ of 1.3.4 names those ids in its delete list all the same.
 1. **Stop FTPD** (`/P FTPD`, step 5).
 2. **Skip the allocation job** (step 4) — if `FTPD.LINKLIB` and
    `FTPD.AFTPDLOD` exist, which they do after an SMP install of 1.3.0, 1.3.1,
-   1.3.2 or 1.3.3. The job allocates them `NEW`, so on an existing pair it
-   would fail. `LISTCAT LEVEL(FTPD)` (or ISPF 3.4 on `FTPD.*`) tells which
+   1.3.2 or 1.3.3. The job allocates them `NEW`: its `CHECK` step looks in the
+   catalog first and ends RC 8 on an existing library, so nothing is allocated
+   twice (step 4). `LISTCAT LEVEL(FTPD)` (or ISPF 3.4 on `FTPD.*`) tells which
    case you are in.
-3. **Run the install job** (step 6). The `APPLY` ends `COND CODE 0004` on
-   `HMA2461 SYSMOD TFTP13x NOT FOUND ON SMPSCDS LIBRARY`, where `TFTP13x` is the
-   id that was installed (`TFTP130`, `TFTP131`, `TFTP132` or `TFTP133`). That is
-   the expected result of a replacement; see *One return code that looks wrong
-   and is not* in section 2b.
+3. **Run the install job** (step 6). It ends CC 0004: the `APPLY` ends
+   `COND CODE 0004` on `HMA2461 SYSMOD TFTP13x NOT FOUND ON SMPSCDS LIBRARY`,
+   where `TFTP13x` is the id that was installed (`TFTP130`, `TFTP131`, `TFTP132`
+   or `TFTP133`). That is the expected result of a replacement; see *One return
+   code that looks wrong and is not* in section 2b. The job **stops after the
+   APPLY**: the new module is in `FTPD.LINKLIB`, and `FTPD.AFTPDLOD` still holds
+   the old one.
 4. **Start FTPD** (`/S FTPD`) and read the banner. It must name the new
    release:
 
@@ -339,6 +445,29 @@ of 1.3.4 names those ids in its delete list all the same.
    started task still runs the old load module. Check the member list of
    `FTPD.LINKLIB` and the job log for `HMA2380 COPY SUCCESSFUL` — not the
    condition codes.
+5. **Try the product, then run the accept job** (`FTPDACC`, section 1). It ends
+   CC 0000, scratches `FTPD.FTPDLOAD` and makes `TFTP134` the base for any later
+   RESTORE. It does not need FTPD to be stopped (measured on MVS/CE with FTPD
+   running). Until it has run, the system holds `TFTP134` as applied and `TFTP133`
+   as the accepted level in the distribution zone.
+
+**Until the accept job has run, a RESTORE does not take the upgrade back.** The
+header of the shipped install job says that until the ACCEPT a RESTORE can still
+take the function out again. After an upgrade over an accepted `TFTP133` that is
+not so. Measured with `RESTORE S(TFTP134)` after the install job of the upgrade
+above, with the new module still in `FTPD.LINKLIB`:
+
+```
+HMA2452 ** SYSMOD TFTP134 SELECTED FOR RESTORE DELETES SYSMODS
+HMA3703 ** RESTORE PROCESSING TERMINATED BECAUSE FUNCTION SYSMOD TFTP134 FAILED
+```
+
+The RESTORE ended RC 12 and changed nothing. So the way back from an applied
+`TFTP134` over `TFTP133` is not a RESTORE. Either keep `TFTP134` and accept it,
+or remove FTPD as the removal guide describes (installing the old release
+afterwards was not run). On a first install, where nothing was deleted, a RESTORE does take the
+function out (measured: RC 0, `HMA2240` deleted the load module from
+`FTPD.LINKLIB`).
 
 ### From 1.2.0: install 1.3.0 first
 
@@ -526,45 +655,37 @@ SMP's `COPY`, so the library only needs to be APF-authorised.
 
 ### One return code that looks wrong and is not
 
-On an upgrade the `APPLY` step ends **`COND CODE 0004`**, not `0000`:
+On an upgrade the `APPLY` step of the install job ends **`COND CODE 0004`**, not
+`0000`, and so does the job:
 
 ```
 HMA2240    SUCCESSFULLY DELETED LMOD FTPD ON LINKLIB LIBRARY
-HMA4180    INLINE JCLIN PROCESSING SUCCESSFUL FOR SYSMOD=TFTP133
-HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP133 - RETURN CODE=00
-HMA2270    APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP133
-HMA2461    SYSMOD TFTP132 NOT FOUND ON SMPSCDS LIBRARY
+HMA4180    INLINE JCLIN PROCESSING SUCCESSFUL FOR SYSMOD=TFTP134
+HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP134 - RETURN CODE=00
+HMA2270    APPLY PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP134
+HMA2461    SYSMOD TFTP133 NOT FOUND ON SMPSCDS LIBRARY
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 04
 ```
 
-The excerpt was measured on the upgrade from 1.3.2 to 1.3.3 with the published
-package of 1.3.3, on MVS/CE with 1.3.2 installed from its own published
-package; it was not taken again with 1.3.4, whose `APPLY` names `TFTP134` in
-the first three of these lines. On the upgrades from 1.3.1 and from 1.3.0 the `APPLY` also ended with
-`COND CODE 0004`, and `HMA2461` named `TFTP131` and `TFTP130` (one test system
-for each of the three, set up the same way; the `ACCEPT` ended with
-`COND CODE 0000` on each, and `FTPD000I` named 1.3.3 afterwards). `HMA2240` is
-the old module being deleted from `FTPD.LINKLIB` before the new one is copied.
-
-The upgrade to 1.3.4 was measured on a test system that was on 1.3.3 (reached
-through 1.2.0, 1.3.0 and 1.3.3 in turn). Of the lines above, the log of that
-`APPLY` is known for these two:
-
-```
-HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP134 - RETURN CODE=00
-HMA2461    SYSMOD TFTP133 NOT FOUND ON SMPSCDS LIBRARY
-```
-
-The `HMA2380` line was printed again with `LIBRARY=AFTPDLOD` for the
-`ACCEPT`. The return codes were `RECEIVE` 0, `APPLYCHK` 0, `APPLY` 4 and
-`ACCEPT` 0, as in the excerpt above and as the install job expects.
+The excerpt was measured on the upgrade from 1.3.3 to 1.3.4 with the published
+package of 1.3.4, on a TK5 test container with 1.3.3 installed from its own
+published package. The return codes of the install job were `DELOLD` 0, `RECV1`
+0, `RECV2` 0, `RECV` 0, `APPLYCHK` 0 and `APPLY` 4. The accept job that followed
+printed `HMA2380 COPY SUCCESSFUL ... LIBRARY=AFTPDLOD` for the `ACCEPT` and ended
+CC 0000. On the upgrades from 1.3.2, 1.3.1 and 1.3.0 to 1.3.3 (measured with the
+published package of 1.3.3, which was one job) the `APPLY` also ended with
+`COND CODE 0004`, and `HMA2461` named `TFTP132`, `TFTP131` and `TFTP130`.
+`HMA2240` is the old module being deleted from `FTPD.LINKLIB` before the new one
+is copied.
 
 `HMA2461` is SMP noting that the deleted level has no backup entry to keep — it
 never will, because it was deleted rather than superseded. The `APPLY` itself
-succeeded, which `HMA2270` says. The install job expects this: its `ACCEPT`
-step is gated `COND=(4,LT,APPLY.HMASMP)` rather than `(0,NE,…)`, so `RC 04`
-passes and anything worse still stops the job. A *fresh* install has nothing to
-delete and ends `RC 00`.
+succeeded, which `HMA2270` says. The accept job expects this: its `GUARD` looks for
+`TFTP134` in the target zone and not at the return code of the install job, so the
+job runs through after CC 0004 (it was run that way). Its header names RC 4 for
+`HMA2461` as the normal end of an upgrade, and RC 8 or 12 as the reason not to
+submit it. A *fresh* install has nothing to delete and ends RC 00 (measured with the
+1.3.4 package on TK5 and on MVS/CE).
 
 ---
 
@@ -633,22 +754,48 @@ option syntax is client-dependent — consult its file-transfer documentation.
 
 ## 4. Allocate the product datasets
 
-Submit `ftpd-<version>-alloc.jcl` unchanged, unless you want a specific unit or
-volume — the `UNIT=SYSDA` and the space on each DD are the only things worth
-editing.
+Submit `ftpd-<version>-alloc.jcl` after you have set the two volumes. The job
+allocates every library on a volume you name, never on whatever `SYSDA` picks:
 
-It creates `FTPD.LINKLIB` and `FTPD.AFTPDLOD` and nothing else. The
-libraries the next step receives into are deliberately **not** allocated here:
-TSO RECEIVE creates its own target and refuses to merge into an existing
-dataset.
+| Parameter | Volume of | Default |
+|---|---|---|
+| `TGTVOL` | the target library `FTPD.LINKLIB` (the one SMP installs into) | `MVSRES` |
+| `DLBVOL` | the distribution library `FTPD.AFTPDLOD` (the one the ACCEPT fills) | `SMP000` |
+
+The defaults are the volumes of an MVS/CE system. **On TK5 write
+`TGTVOL=TK5RES,DLBVOL=TK5DLB`**, either on the `PROC` statement or on the
+`//ALLOC EXEC SMPALLOC,COND=(0,NE,CHECK)` statement at the end of the job.
+Whatever your system uses, the volume must be online. If an `IEAAPF00` entry for
+`FTPD.LINKLIB` exists, set `TGTVOL` to the volume it names (see
+[Authorisation](#authorisation)). The space on each DD is the only other thing
+worth editing.
+
+The job has two steps. `CHECK` looks in the catalog for the two libraries. On a
+first run it prints `IDC3012I ENTRY ... NOT FOUND` for both, which is the answer
+wanted, and ends RC 0; then `ALLOC` creates `FTPD.LINKLIB` and `FTPD.AFTPDLOD`
+and nothing else. The libraries the next step receives into are deliberately
+**not** allocated here: TSO RECEIVE creates its own target and refuses to merge
+into an existing dataset.
 
 Expect `COND CODE 0000`.
+
+**A second run does nothing.** If either library is already cataloged, `CHECK`
+lists it and ends RC 8, `ALLOC` is not run (`IEF202I`, `IEF272I`) and the job ends
+CC 0008. Measured on MVS/CE. Without the look, a second run would have ended RC 0
+and left an uncataloged copy of the library on the other volume.
+
+**A volume that is not mounted holds the job.** It does not fail it. Measured on
+TK5 with the default `MVSRES`, which TK5 does not have: the job log shows
+`IEF244I ... UNABLE TO ALLOCATE` and the console `IEF238D FTPDALC - REPLY DEVICE
+NAME OR 'CANCEL'`. Reply `R nn,CANCEL` (the reply number is on the console
+line); the job then ends in a JCL error. Correct the volume and submit the job
+again.
 
 > **Run this once**, on the first install. An upgrade skips it when the data
 > sets are already there; on MVS/CE they are not (step 5), so MVS/CE runs it.
 > If you skip it where `FTPD.LINKLIB` does not exist, the install job ends in a
 > JCL error (see *Troubleshooting*). There is no DELETE step in it, on purpose. After the
-> install, `FTPD.AFTPDLOD` holds SMP's accepted copy of the module; a
+> accept job, `FTPD.AFTPDLOD` holds SMP's accepted copy of the module; a
 > re-run that scratched it would leave the SMP inventory reporting an install
 > that is no longer on the system, and nothing would say so. To start over,
 > remove FTPD first, libraries included — see
@@ -709,23 +856,30 @@ Those are the only lines you have to change on most systems. Submit it.
 
 **On MVS/CE, name the volume.** TSO RECEIVE allocates `FTPD.FTPDLOAD` and
 `FTPD.SAMPLIB` itself and lets the system pick the volume. Put the two data
-sets on the public pack explicitly by adding `VOLUME('PUB000')` to each
-`DATASET(...)` operand:
+sets on the public pack explicitly: in both `RECEIVE` commands of the job, take
+the comment marks off the `VOLUME` line and name the volume, `PUB000` on a stock
+MVS/CE:
 
 ```
   RECEIVE INDSN('IBMUSER.FTPD.LOAD.XMIT') -
-    DATASET('FTPD.FTPDLOAD') VOLUME('PUB000')
+    VOLUME('PUB000') -
+    DATASET('FTPD.FTPDLOAD')
   RECEIVE INDSN('IBMUSER.FTPD.SAMP.XMIT') -
-    DATASET('FTPD.SAMPLIB') VOLUME('PUB000')
+    VOLUME('PUB000') -
+    DATASET('FTPD.SAMPLIB')
 ```
 
-On a stock MVS/CE image the job also ends `RC 0` without it and the data sets
-land on `PUB000` anyway; the operand only removes the dependence on that
-default. `FTPD.SAMPLIB` is the one you keep, so check it with ISPF 3.4 after
-the job and read the volume from the listing.
+The job's own header says that steps 3 and 4 there (the names, and this volume)
+are the only edits it needs; on TK5 leave the `VOLUME` lines alone. Measured
+on MVS/CE with this edit: `FTPD.FTPDLOAD` and `FTPD.SAMPLIB` on `PUB000`,
+`FTPD.LINKLIB` on `MVSRES` and `FTPD.AFTPDLOD` on `SMP000` (the defaults of the
+allocation job). `FTPD.SAMPLIB` is the one you keep, so check it with ISPF 3.4
+after the job and read the volume from the listing. Without the `VOLUME` lines the
+job was not run on MVS/CE with 1.3.4.
 
-The job runs eight steps, each conditional on the one before, so it stops at
-the first failure rather than building on it:
+**The job runs six steps, each conditional on the ones before, so it stops at
+the first failure rather than building on it, and then it ends.** The accept job
+is a job of its own:
 
 | Step | What it does |
 |------|--------------|
@@ -735,25 +889,25 @@ the first failure rather than building on it:
 | `RECV` | receives the SYSMOD into the SMP inventory |
 | `APPLYCHK` | dry run — `APPLY` only proceeds if this ends RC 0 |
 | `APPLY` | copies the load module into `FTPD.LINKLIB` |
-| `ACCEPT` | copies the module into `FTPD.AFTPDLOD`, the base a later `RESTORE` of a PTF returns to |
-| `CLEANUP` | scratches the staging library, which is now spent |
 
 The SYSMOD travels inline in the job — there is no third file to upload.
+
+At the end of the job a comment says the function is applied, not accepted, and
+names `ftpd-<version>-accept.jcl` as the next job. **Do not submit it yet.** Run
+the steps 7 to 9, try the product, then submit it (step 9a).
 
 **What a good run looks like.** On a fresh install, every step `COND CODE
 0000`, and in the SMP output:
 
 ```
-HMA3930    SYSMOD TFTP133 SUCCESSFULLY RECEIVED
-HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP133 - RETURN CODE=00
+HMA3930    SYSMOD TFTP134 SUCCESSFULLY RECEIVED
+HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=LINKLIB - SYSMOD=TFTP134 - RETURN CODE=00
 HMA2050    APPLY PROCESSING COMPLETED - HIGHEST RETURN CODE IS 00
 ```
 
-These lines were measured on MVS/CE with the published package of 1.3.3 (not
-taken again with 1.3.4, whose SYSMOD is `TFTP134`), installed the way this guide
-describes (the allocation job, then the install
-job with `VOLUME('PUB000')` on both `RECEIVE`s); its SYSMOD is `TFTP133`. All
-eight steps of the install job ended with `COND CODE 0000`.
+These lines were measured with the published package of 1.3.4, installed the way
+this guide describes (the allocation job, then the install job), on TK5 and on
+MVS/CE. All six steps of the install job ended with `COND CODE 0000`.
 
 **On an upgrade the `APPLY` ends `COND CODE 0004` instead, and that is
 correct** — `HMA2461` reporting that the deleted level has no backup entry.
@@ -1086,23 +1240,23 @@ step 5); otherwise this start ends in `FTPD002E`/`FTPD091E`.
 A healthy start ends in `FTPD001I … READY`:
 
 ```
-FTPD000I FTPD 1.3.4-DEV (A26EA6A) STARTING
+FTPD000I FTPD 1.3.4 (B079CED) STARTING
 FTPD005I LIBC370 2.29.2 (70E450F)
 FTPD008I AUTHORIZED BY SVC (MODULE KEY 8)
 FTPD004I STC RUNS AS <user>/<group>
 RAKF0004 INVALID ATTEMPT TO ACCESS SYSTEM:  USER:?FTPDPRBO
 FTPD054I LISTENING ON ANY PORT 2121
-FTPD001I FTPD 1.3.4-DEV READY
+FTPD001I FTPD 1.3.4 READY
 ```
 
-The first two lines were measured on the release candidate of 1.3.4, built
-from `main`, whose version name still carries the suffix `-DEV`. The published
-package prints its own version name and hash there; `FTPD001I` repeats the
-version name of the first line. The other lines are those of the start of the
-published package of 1.3.3 on MVS/CE and were not taken again with 1.3.4. The
-version and the hash in the first line, and the libc370 level and hash in the
-second, are those of the release you installed: a later release prints its own. The identity
-in the fourth line is the one RAKF gave your started task. If your parameter
+These lines were measured with the published package of 1.3.4 on MVS/CE, with FTPD
+started from the library of the install job, before the accept job. There the
+`FTPD004I` line read `FTPD/STARTED` and the `RAKF0004` line carried one more
+character behind the name, as explained below. A start on TK5 was not run
+with the published package. The version and the hash in the first line, and
+the libc370 level and hash in the second, are those of the release you installed: a
+later release prints its own. The identity in the fourth line is the one RAKF gave
+your started task. If your parameter
 file still has settings that no longer have an effect, `FTPD062W` appears before
 `FTPD054I`.
 
@@ -1175,6 +1329,56 @@ visible there and nowhere else.
 
 ---
 
+## 9a. Accept
+
+Submit `ftpd-<version>-accept.jcl` (job `FTPDACC`) when you have tried the
+product and want to keep this level. Nothing in it needs editing. It has four
+steps and ends CC 0000 when the function is applied:
+
+| Step | What it does |
+|------|--------------|
+| `GUARD` | `LIST CDS SYSMOD(TFTP134)`: is the function applied? RC 0 if it is, RC 4 if it is not |
+| `NOTAPPL` | runs only when `GUARD` did not end RC 0, and ends the job with RC 8 |
+| `ACCEPT` | `ACCEPT S(TFTP134)`: copies the module into `FTPD.AFTPDLOD`, the base a later `RESTORE` of a PTF returns to |
+| `CLEANUP` | scratches the staging library `FTPD.FTPDLOAD`, which is now spent |
+
+**This is the point without a way back.** Once `TFTP134` is accepted, SMP refuses
+`RESTORE` and `REJECT` for it (section 11). Until then, a first install can still
+be taken out again with a `RESTORE`; an upgrade cannot (section 2a).
+
+What the job leaves behind, and what it prints in the failure cases, is in
+section 1. The messages to look for:
+
+```
+HMA2380    COPY SUCCESSFUL - MOD=FTPD - LMOD=FTPD - LIBRARY=AFTPDLOD - SYSMOD=TFTP134 - RETURN CODE=00
+HMA2270    ACCEPT PROCESSING SUCCESSFULLY COMPLETED FOR SYSMOD TFTP134
+IDC0550I ENTRY (A) FTPD.FTPDLOAD DELETED
+```
+
+(measured with the published package of 1.3.4; after an upgrade the `ACCEPT` also
+prints `HMA2240 SUCCESSFULLY DELETED MODULE FTPD ON AFTPDLOD LIBRARY`, the module
+of 1.3.3 that the new one replaces.) Then check the three things at the end of
+section 1: the member `FTPD` in `FTPD.AFTPDLOD`, no `FTPD.FTPDLOAD`, and `REC APP
+ACC` for `TFTP134` in both zones.
+
+If the `ACCEPT` fails, `CLEANUP` does not run and nothing is scratched: fix the
+cause and submit the job again. (That case was not run.) If you decide not to
+accept — you took the function out with a `RESTORE`, or you keep it applied —
+scratch the staging library yourself:
+
+```
+//SCRATCH EXEC PGM=IDCAMS
+//SYSPRINT DD  SYSOUT=*
+//SYSIN    DD  *
+  DELETE FTPD.FTPDLOAD NONVSAM SCRATCH PURGE
+/*
+```
+
+The install job needs no such scratch before a second run: its `DELOLD` step
+deletes `FTPD.FTPDLOAD` and `FTPD.SAMPLIB` itself.
+
+---
+
 ## 10. What FTPD can reach
 
 Three namespaces, selected per session:
@@ -1199,10 +1403,13 @@ the architecture is in
 
 Because the installation is SMP-managed, there is a defined way back — but it
 is **not** the `RESTORE` followed by `REJECT` that SMP documentation leads you
-to expect. The install job accepts the FMID in the same run as the APPLY, and
+to expect. The accept job accepts the FMID (step 9a), and
 an accepted function SYSMOD refuses both: `RESTORE` because it was accepted,
 and `REJECT` because the SMPPTS no longer holds the SYSMOD (`PURGE=YES` in its
-system entry on the system measured).
+system entry on the system measured). Between the install job and the accept job
+the function is only applied: a `RESTORE` then removes it on a first install, and
+is refused after an upgrade (section 2a). The removal guide has the measured
+states of both.
 
 The way that works is a dummy function, `TFTPDEL`, which deletes every release
 of FTPD through `++VER DELETE` and takes the load module out of both libraries
@@ -1226,7 +1433,9 @@ in step 7, and your RAKF definitions. Those are yours to delete.
 |---------|--------------|
 | Allocation job fails, dataset already exists | It was already run, or `FTPD.*` exists from an SMP install of 1.2.0. Do not force it — see the warning in step 4 |
 | The install job ends in a JCL error at `APPLYCHK`: `IEF212I ... APPLYCHK LINKLIB - DATA SET NOT FOUND` | `FTPD.LINKLIB` does not exist: the allocation job (step 4) was skipped. This is the MVS/CE case: there the image's FTPD is not an SMP install and `FTPD.*` is not there. Run the allocation job, then resubmit the install job — and read the next row |
-| After the allocation job, the resubmitted install job ends `COND CODE 0008` in `RECV`: `HMA3862 ** SYSMOD TFTP134 ALREADY RECEIVED` | The first run had already received the SYSMOD before it stopped at `APPLYCHK`. The rerun skips `APPLYCHK` (`IEF202I ... NOT RUN BECAUSE OF CONDITION CODES`), then `APPLY` and `ACCEPT` end `COND CODE 0000` and `CLEANUP` runs. The install is complete: look for `HMA2380` and `HMA2270` in the `APPLY` output and check `FTPD.LINKLIB` as in step 6. The dry run did not take place on that run. The message was measured with the package of 1.3.2 (`TFTP132`); it names the id of the package you run, `TFTP134` for this one, and was not taken again |
+| After the allocation job, the resubmitted install job ends `COND CODE 0008` in `RECV`: `HMA3862 ** SYSMOD TFTP134 ALREADY RECEIVED` | The first run had already received the SYSMOD before it stopped at `APPLYCHK`. The rerun ends RC 8 in `RECV` (`HMA3862`, `HMA3902`, `HMA3920`, `HMA2481`); `APPLYCHK` and `APPLY` are not run (`IEF202I ... NOT RUN BECAUSE OF CONDITION CODES`, `IEF272I`), and **nothing is installed**. There is no `ACCEPT` or `CLEANUP` in this job. Take the received SYSMOD out first: `REJECT S(TFTP134)` (RC 0, `HMA2270`), then submit the install job again; it ends CC 0000 (measured on TK5 and on MVS/CE with the published package of 1.3.4, the first run ending in the JCL error at `APPLYCHK` described in the row above). The same `HMA3862` ends a second run of the install job when `TFTP134` is already applied: CC 0008, nothing changed. The way out there is a `RESTORE` (first install only, section 2a) or the removal guide |
+| The accept job ends in a JCL error: `IEF212I ... FTPDLOAD - DATA SET NOT FOUND` | The staging library is not there: a first accept job scratched it. `GUARD` ended RC 0 and no step ran, so nothing changed (step 9a). Check with `LIST CDS SYSMOD(TFTP134)` that `REC APP ACC` is there |
+| The accept job ends `COND CODE 0008` in `NOTAPPL` | `GUARD` did not find `TFTP134` in the target zone (it ended RC 4): the install job never ran, ended RC 8 or 12 before the `APPLY`, or the function was taken out again. `ACCEPT` and `CLEANUP` did not run; nothing is accepted or scratched. Measured after a removal |
 | `IEC031I D37-04 ... SYS1.PARMLIB` (`ABEND SD37`) while copying `FTPDPRM0` — TK5 | `SYS1.PARMLIB` is full. Compress it or use a PARMLIB of your own — step 7 |
 | `RECV1`/`RECV2` fails, target exists | Something else allocated it. RECEIVE refuses to merge; scratch it and re-run |
 | `APPLYCHK` ends non-zero, `APPLY` skipped | Read the SMP output — the check exists to stop before anything is written. A missing DD is the usual cause |
