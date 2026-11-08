@@ -22,8 +22,8 @@ over either one unseen. Start with @ug-remove-dev.]
 #note[*The removal instructions in older archives are wrong.* The file
 #cmd("README.md") in #cmd("ftpd-1.0.?-dist.zip") says to run #cmd("RESTORE")
 and then #cmd("REJECT"). Both are refused once the FMID has been accepted,
-which the install job does in the same run as the #cmd("APPLY")
-(@ug-remove-why). From 1.1.0 the shipped README says so itself. The UCLIN job
+which the install job of those archives does in the same run as the
+#cmd("APPLY") (from 1.3.4 the accept job does it, @ug-remove-why). From 1.1.0 the shipped README says so itself. The UCLIN job
 of the installation guide as it stood up to 1.2.0 had a second flaw: it ran
 both zones in one step, and on a system that never carried #cmd("TFTP100") the
 step ended early and left the ACDS untouched (@ug-remove-uclin). Use this
@@ -48,8 +48,12 @@ patch level (#cmd("FTPD.V1R0M2.LINKLIB")) while the FMID moved only per minor.
 If you find data sets of this kind, add the qualifier to every name below. The
 jobs below have not been measured on such a system.
 
-The staging library #cmd("FTPD.FTPDLOAD") is not on the list, because the
-cleanup step of the install job scratched it.
+The staging library #cmd("FTPD.FTPDLOAD") is on the list *until the accept job
+has run*. The accept job of 1.3.4 scratches it\; so did the install job of 1.3.3
+and earlier. A system that stopped after the install job of 1.3.4 still has it,
+and the removal has to scratch it by hand (step 5). Which of the two states your
+system is in decides what step 2 and step 5 show\; the section
+_Applied, Not Accepted_ (@ug-remove-applied) says what was measured in each.
 
 *Earlier releases left their FMIDs behind.* Since 1.1.0 there is one FMID for
 each release: #cmd("TFTP110") is 1.1.0 and nothing else, #cmd("TFTP120") is
@@ -163,22 +167,22 @@ Submit this job:
 //
 ```)
 
-Read the three SMP steps one by one. The screens below were taken with 1.3.3
-and not taken again with 1.3.4 (see _What has been measured_ below), so the
-receive echoes the card of that release, with seven ids. With 1.3.4 the second
-line of the card ends with #cmd("TFTP133,TFTP134) ."). The receive ends with
-return code 04:
+Read the three SMP steps one by one. The screens below were measured with the
+published package of 1.3.4, on a TK5 test container that had gone from 1.2.0
+through 1.3.0 and 1.3.3 to 1.3.4 and had accepted it (see _What has been
+measured_ below). The receive ends with return code 04:
 
 #screen(raw(read("../ex/ug-remove/dummy-recv.txt")))
 
-The apply deletes the load module from the target library. It also ends with
-return code 04, because SMP does not find the release that you remove in the
-restore data set (#cmd("HMA2461")). The output below comes from a system that
-had been upgraded to 1.3.3 through SMP, so the message names #cmd("TFTP133"),
-the release that you remove. On a system with 1.3.4 the message is expected to
-name #cmd("TFTP134"):
+The apply deletes the load module from the target library. When 1.3.4 is
+accepted it also ends with return code 04, because SMP does not find the release
+that you remove in the restore data set (#cmd("HMA2461")):
 
 #screen(raw(read("../ex/ug-remove/dummy-apply.txt")))
+
+*When 1.3.4 is only applied, not accepted,* the apply ends with return code 00
+and prints no #cmd("HMA2461"): the restore data set holds the entry. Everything
+else is the same. See _Applied, Not Accepted_ (@ug-remove-applied).
 
 The accept deletes the copy from the distribution library and ends with return
 code 00:
@@ -196,37 +200,45 @@ step does not run; the last step does, and shows what is still there. Read
 the output of the failed step; do not repeat the job before you know what it
 did.
 
-*What has been measured.* The jobs of steps 2 to 5 were last run on test systems
-(containers) with the package of 1.3.3 that was built from the source of the
-release before it was published. It carries the FMID #cmd("TFTP133"). It was
-built under a development name, so its banner says #cmd("1.3.3-DEV"); it
-differs from the published package in the names and time stamps, not in the
-source. The
-screens of this chapter are from the run on a system that started from the TK5
-image with 1.2.0 and had gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3 by
-upgrades through SMP. A system that had gone through 1.3.0 and 1.3.1 only gave
-the same return codes, and so did one that carried 1.2.0 through SMP and had
-received the install job of 1.3.3 on top of it. That
-job copies nothing (@ug-install-upgrade), so #cmd("TFTP120") still owned the
-module. The return codes were the same there, too (04, 04, 00, 00 for the four
-steps of step 2), and both libraries were empty afterwards. The only
-difference is in the #cmd("APPLY"): it printed #cmd("HMA2461") twice, once for
-#cmd("TFTP120") and once for #cmd("TFTP133"). A system with a new installation
-of 1.3.3 and no upgrade before it was not removed in this run. A system whose
-data sets carry the patch level in their names, and a dummy function with a
-#cmd("++MAC") element instead of none, have not been measured. Whatever the
-system, the #cmd("LIST") in step 4 is the proof.
+*What has been measured.* With the *published package of 1.3.4* (built by
+mbt 3.0.1), the jobs of steps 2 to 4, and the scratch jobs of step 5, were run
+on TK5 test containers in three states of the system:
 
-*Release 1.3.4 was not removed in this way.* What was measured with its
-package is the install (@ug-install): the upgrade from 1.3.3 through SMP, and
-what the inventory holds afterwards. The inventory then shows #cmd("TFTP134")
-with the status #cmd("REC APP ACC"), and the marks #cmd("DELBY = TFTP134") on
-#cmd("TFTP133") and #cmd("DELBY = TFTP133") on #cmd("TFTP132"),
-#cmd("TFTP131") and #cmd("TFTP130"). The dummy function with the eight ids and
-the UCLIN jobs with their nine entries were not run with that package. They
-differ from the jobs of 1.3.3 by one id, #cmd("TFTP134"), and the
-#cmd("++VER") card, which is continued on a second line since 1.3.3. The
-#cmd("LIST") in step 4 stays the proof.
+#tab(caption: [The three states of the system that were measured])[
+  #table(columns: (1.4in, 1fr),
+    [State], [How it was reached],
+    [accepted], [1.3.3 installed, then the install job and the accept job of 1.3.4 (an upgrade)],
+    [applied, first install], [the allocation job and the install job of 1.3.4, no accept job],
+    [applied, upgrade], [1.3.3 installed, then the install job of 1.3.4 only],
+  )
+]
+
+In all three states the #cmd("RECEIVE") ended with return code 04, the
+#cmd("ACCEPT") ended with 00, both libraries were empty afterwards, and the job
+ended with condition code 0004. The #cmd("APPLY") ended with return code 04 and
+#cmd("HMA2461") in the accepted state, and with 00 and without it in both
+applied states. The #cmd("ACCEPT") printed
+#cmd("HMA2240 SUCCESSFULLY DELETED MODULE FTPD ON AFTPDLOD LIBRARY") where the
+distribution library held a copy (the accepted state, and the applied upgrade,
+where it still held the module of 1.3.3), and not in the applied first install,
+where it was empty. The jobs of step 3 gave the same output in all three states,
+and the scratch job of step 5 ended with condition code 0000.
+
+The earlier runs, with the package of 1.3.3 (built from the source of the release
+before it was published, banner #cmd("1.3.3-DEV")), on a system that started from
+the TK5 image with 1.2.0 and had gone through 1.3.0, 1.3.1 and 1.3.2 to 1.3.3,
+gave the same return codes. So did a system that carried 1.2.0 through SMP and
+had received the install job of 1.3.3 on top of it, which copies nothing
+(@ug-install-upgrade): there #cmd("TFTP120") still owned the module, and the
+#cmd("APPLY") printed #cmd("HMA2461") twice, for #cmd("TFTP120") and for
+#cmd("TFTP133").
+
+*Not measured:* a system with a new installation of 1.3.4 that was accepted
+without an upgrade before it\; a system on MVS/CE (the removal ran on TK5 only)\;
+a system whose data sets carry the patch level in their names\; a dummy function
+with a #cmd("++MAC") element instead of none\; and a system where
+#cmd("PURGE=NO") is set. Whatever the system, the #cmd("LIST") in step 4 is the
+proof.
 
 == Step 3: Free the Ids <ug-remove-free>
 
@@ -299,8 +311,8 @@ Every #cmd("DEL") finds its entry, because the dummy function left a mark for
 every id it named, also for those that the system never had. Both #cmd("UCLIN")
 steps end with return code 00, and each #cmd("DEL") reports
 #cmd("HMA2550 UPDATE COMPLETE"). This is the output of the step
-#cmd("UCLCDS"), taken with 1.3.3, which had eight entries; with 1.3.4 a
-#cmd("DEL") for #cmd("TFTP134") follows the one for #cmd("TFTPDEL"):
+#cmd("UCLCDS") with nine entries, measured with the published package of 1.3.4
+(identical in the three states of step 2):
 
 #screen(raw(read("../ex/ug-remove/uclcds-free.txt")))
 
@@ -315,7 +327,8 @@ step 2 and not instead of it.
 
 The last step of the job is the result. For every id, in both zones, it must
 answer that the entry was not found. These are the first two of the eighteen
-statements, as the step printed them with 1.3.3:
+statements, as the step printed them with 1.3.4 (all eighteen answered the same
+in the three states of step 2):
 
 #screen(raw(read("../ex/ug-remove/list-gone.txt")))
 
@@ -334,7 +347,9 @@ what the statements #cmd("LIST CDS SYSMOD(TFTP132)") and
 The screen was taken with release 1.3.2 and the dummy function of that release,
 which ended with #cmd("TFTP132"); it was not taken again with 1.3.3 or 1.3.4.
 The stanzas have the same form, and with the job of this chapter the
-#cmd("DELETE") line of #cmd("TFTPDEL") ends with #cmd("TFTP134"):
+#cmd("DELETE") line of #cmd("TFTPDEL") ends with #cmd("TFTP134") (the stanzas
+of the #cmd("DELBY = TFTP134") marks of an installed 1.3.4 were seen in the
+install runs):
 
 #screen(raw(read("../ex/ug-remove/list-present.txt")))
 
@@ -357,11 +372,80 @@ is meant for names that are free. Delete them in a job of your own:
 //
 ```)
 
-Each statement ends with #cmd("IDC0550I ENTRY (A) ... DELETED").
+Each statement ends with #cmd("IDC0550I ENTRY (A) ... DELETED") and the job ends
+with condition code 0000 (measured in the three states of step 2).
+
+*If the accept job never ran, the staging library #cmd("FTPD.FTPDLOAD") is still
+there* (#cmd("LISTCAT LEVEL(FTPD)") shows it), and the job above does not name
+it. The removal of step 2 does not touch it either. Add
+
+#screen(```
+  DELETE FTPD.FTPDLOAD NONVSAM SCRATCH PURGE
+```)
+
+to the job in that case. It was scratched in the same way in the two applied
+states of step 2, with #cmd("IDC0550I"). Do not add the statement when the
+library is not there: a #cmd("DELETE") of a name that is not cataloged ends with
+#cmd("IDC3012I") and a return code above 0 (not run here).
 
 *Do this only when you remove FTPD for good.* After an upgrade, these are the
 data sets that the next release installs into; leave them. #cmd("FTPD.SAMPLIB")
-may stay. The install job scratches it itself the next time.
+may stay. The install job scratches it itself the next time. If you remove it
+too, #cmd("DELETE FTPD.SAMPLIB NONVSAM SCRATCH PURGE") ended with
+#cmd("IDC0550I").
+
+== Applied, Not Accepted <ug-remove-applied>
+
+#idx("accept job")
+The install job of 1.3.4 ends after the #cmd("APPLY"), and the accept job is a
+job of its own (@ug-install-job). A system that has run the first and not the
+second holds #cmd("TFTP134") as applied (#cmd("REC APP") in the target zone,
+nothing in the distribution zone) and still has the staging library
+#cmd("FTPD.FTPDLOAD"). What the removal does there, measured with the published
+package of 1.3.4 on TK5 test containers, for a first install and for an upgrade
+over an accepted 1.3.3:
+
+- *The main way works unchanged* (steps 1 to 5). The job of step 2 ended with
+  condition code 0004 in both states, like in the accepted state, with two
+  differences: the #cmd("APPLY") ended with return code 00 and printed no
+  #cmd("HMA2461") (the restore data set holds the entry), and, on the first
+  install, the #cmd("ACCEPT") printed no #cmd("HMA2240") for the distribution
+  library, which was empty. Both libraries were empty afterwards. The jobs of
+  step 3 printed the same, and all eighteen #cmd("LIST") statements answered
+  "not found".
+- *The staging library has to be scratched by hand* (step 5): neither step 2 nor
+  step 3 touches #cmd("FTPD.FTPDLOAD"), and the scratch job of step 5 does not
+  name it.
+- *On a first install, a #cmd("RESTORE") takes the function out too.* Measured:
+  a job #cmd("RESTORE S(TFTP134)") with #cmd("HMASMP.LINKLIB") and
+  #cmd("HMASMP.AFTPDLOD") statements, return code 00,
+  #cmd("HMA2240 SUCCESSFULLY DELETED LMOD FTPD ON LINKLIB LIBRARY") and
+  #cmd("HMA2270"). The entry of #cmd("TFTP134") is gone from the target zone
+  afterwards, and the marks #cmd("DELBY = TFTP134") on #cmd("TFTP130") to
+  #cmd("TFTP133") stay. A #cmd("REJECT S(TFTP134)") after it ends with return
+  code 12 (#cmd("HMA2462 ** SYSMOD TFTP134 NOT FOUND ON SMPPTS LIBRARY")):
+  nothing is left to reject. The install job of the same package ran again with
+  every step ending with return code 00 afterwards. How to clear the four marks
+  was not run\; the fallback (@ug-remove-uclin) is the way that does not need
+  the function.
+- *After an upgrade, a #cmd("RESTORE") is refused.* Measured with the new module
+  in #cmd("FTPD.LINKLIB") and #cmd("TFTP133") accepted:
+
+  #screen(raw(read("../ex/ug-remove/restore-refused.txt")))
+
+  The job ended with return code 12 and changed nothing. The header of the
+  shipped install job says that a #cmd("RESTORE") can still take the function out
+  until the #cmd("ACCEPT"): that holds for the first install and not here. The
+  main way is the way out.
+- *A received, not applied #cmd("TFTP134")* (the install job ended in a JCL error
+  at #cmd("APPLYCHK"), see the troubleshooting table in @ug-install-trouble) is
+  taken out with #cmd("REJECT S(TFTP134)"), return code 00 (measured). The accept
+  job on such a system was not run.
+- *The accept job on a system where #cmd("TFTP134") is not applied*, for example
+  after the removal, ends with condition code 0008: #cmd("GUARD") return code
+  04, #cmd("NOTAPPL") return code 08, no #cmd("ACCEPT"), no #cmd("CLEANUP"),
+  nothing changed (measured after a removal). So the accept job cannot undo a
+  removal or accept something that is not there.
 
 == The Fallback: UCLIN Alone <ug-remove-uclin>
 
@@ -465,7 +549,12 @@ Then read the #cmd("LIST") as in step 4, here eighteen statements without
 #cmd("TFTPDEL") and with the two module entries, and, if you remove FTPD for
 good, scratch the libraries as in step 5. #cmd("UCLIN") changes only the
 inventory: until you scratch them, the load module is still in the target
-library, and the copy that SMP accepted is in the distribution library.
+library, and the copy that SMP accepted is in the distribution library. (If the
+accept job of 1.3.4 never ran, the distribution zone holds no entry for
+#cmd("TFTP134") and the distribution library no copy, and
+#cmd("FTPD.FTPDLOAD") is still there. The fallback was not run in that state, so
+expect the #cmd("UCLACDS") statements for #cmd("TFTP134") to find nothing, and
+take the #cmd("LIST") as the proof.)
 
 == You Installed a Development Build <ug-remove-dev>
 
@@ -706,14 +795,20 @@ and the libraries exist. This has not been run: the test runs skipped the
 allocation job after the development install. The steps and the checks are those of the
 upgrade (@ug-install-upgrade).
 
-#cmd("RECEIVE"), #cmd("APPLY CHECK"), #cmd("APPLY") and #cmd("ACCEPT") all end
-with return code 00. The #cmd("APPLY") prints no #cmd("HMA2461"). Both steps
-copy the module, and that is the line to look for:
+The package of 1.3.4 has three jobs. Its install job ends after the
+#cmd("APPLY"), and the accept job does the #cmd("ACCEPT") (@ug-install-job)\; the
+flow of this section was not run with that package. The excerpts below are from
+the package of 1.3.2, whose install job also accepted: #cmd("RECEIVE"),
+#cmd("APPLY CHECK"), #cmd("APPLY") and #cmd("ACCEPT") all ended with return code
+00. The #cmd("APPLY") printed no #cmd("HMA2461"). Both steps copy the module, and
+that is the line to look for (with the package of 1.3.4, the
+#cmd("LIBRARY=AFTPDLOD") line is in the accept job):
 
 #screen(raw(read("../ex/ug-remove/dev-apply-rc.txt")))
 
 Then list the members of #cmd("FTPD.LINKLIB") and #cmd("FTPD.AFTPDLOD"):
-#cmd("FTPD") must be in both.
+#cmd("FTPD") must be in both (with the package of 1.3.4, #cmd("FTPD.AFTPDLOD") is
+filled by the accept job, not by the install job).
 
 #screen(raw(read("../ex/ug-remove/dev-members.txt")))
 
@@ -790,9 +885,8 @@ track of. A development build of 1.3.4-dev (#cmd("TFTP134")) or of 1.3.3-dev
 (#cmd("TFTP133")) has not been installed or removed with the steps of this
 section, and the release has not been installed over one. The packages of 1.3.3
 and 1.3.4 that were measured carry the same ids, but they are packages, not
-development builds: the one of 1.3.3 was removed with the main way of this
-chapter (steps 1 to 5), not with the steps of this section, and the one of 1.3.4
-was installed only. A
+development builds: the ones of 1.3.3 and 1.3.4 were removed with the main way
+of this chapter (steps 1 to 5), not with the steps of this section. A
 second development build installed over the first has not been
 measured with FTPD either. A test with another product that is built the same
 way showed that installing the same development id again ends with return code
@@ -819,14 +913,17 @@ SMP never owned these, so you have to take care of them:
 
 == Why RESTORE and REJECT Do Not Work <ug-remove-why>
 
-The install job accepts the FMID in the same run in which it applies it. That
-closes both of the usual ways back:
+Once the FMID is accepted, both of the usual ways back are closed. The accept
+job of 1.3.4 does that\; the install job of 1.3.3 and earlier did it in the same
+run in which it applied the FMID:
 
 #screen(raw(read("../ex/ug-remove/restore-reject.txt")))
 
 This screen is from release 1.3.2 and names #cmd("TFTP132"). It was not taken
-again with 1.3.3 or 1.3.4; with 1.3.4 the same two lines are expected to name
-#cmd("TFTP134"), but that has not been measured.
+again with 1.3.3 or 1.3.4 after an #cmd("ACCEPT")\; with 1.3.4 the same two
+lines are expected to name #cmd("TFTP134"), but that has not been measured. What
+was measured with 1.3.4 is the state before the accept job: see _Applied, Not
+Accepted_ (@ug-remove-applied).
 
 #cmd("RESTORE") refuses a SYSMOD that has been accepted
 (#cmd("HMA2452"), return code 12). #cmd("REJECT") then fails for a reason that
@@ -846,8 +943,13 @@ Two things have not been measured: a system with #cmd("PURGE=NO"), and a
 found that changes the system entry, so this book does not change it. It
 removes the FMID in ways that do not need the PTS.
 
-The price of the accept is that the FMID itself becomes permanent by
-documented means. What the accept buys is that a later #cmd("RESTORE") of a PTF
-returns to the distribution library; without it, a #cmd("RESTORE") would delete
-the module rather than revert it, because there would be no previous level to
-go back to.
+== Why There Is an Accept at All
+
+The #cmd("ACCEPT") fills the distribution library, which is the base a later
+#cmd("RESTORE") of a *PTF* returns to. Without it, a #cmd("RESTORE") would
+delete the module rather than revert it, because there would be no previous
+level to go back to. The price is what this chapter is about: the FMID itself
+becomes permanent by documented means. Since 1.3.4 the accept is a job of its
+own, so that you try the product first and decide then\; until it has run, the
+function is applied and not accepted, and the section _Applied, Not Accepted_
+(@ug-remove-applied) says what that allows and what it does not.
