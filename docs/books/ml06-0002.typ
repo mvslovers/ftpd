@@ -12,7 +12,7 @@
     #text(font: head-font, weight: "bold", size: 11pt)[First Edition (October 2026)]
 
     This edition applies to Version 1 Release 3 of FTPD, the FTP server for
-    MVS 3.8j (ftpd 1.3.3), and to all subsequent releases and modifications
+    MVS 3.8j (ftpd 1.3.4), and to all subsequent releases and modifications
     until otherwise indicated in new editions.
 
     Comments on this book may be addressed to the issue tracker of the

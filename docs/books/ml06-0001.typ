@@ -12,15 +12,18 @@
     #text(font: head-font, weight: "bold", size: 11pt)[First Edition (October 2026)]
 
     This edition applies to Version 1 Release 3 of FTPD, the FTP server for
-    MVS 3.8j (ftpd 1.3.3), and to all subsequent releases and modifications
+    MVS 3.8j (ftpd 1.3.4), and to all subsequent releases and modifications
     until otherwise indicated in new editions.
 
-    *What was measured.* The chapters on installing and removing FTPD were
-    measured on test systems (containers) with the package of 1.3.3 that was
-    built from the source of the release before it was published; the
-    published package differs from it in the version name and the time stamps,
-    not in the source. The chapters say where a screen was
-    taken with an earlier release, or not at all; the sessions of the
+    *What was measured.* The upgrade to 1.3.4 in the chapter on installing
+    FTPD was measured on a test system (a container) with the release
+    candidate of 1.3.4, built from the source of the release before it was
+    published; the published package differs from it in the version name and
+    the time stamps, not in the source. The start listing of that chapter
+    takes its first two lines from it. The other screens of the chapters on
+    installing and removing FTPD were not taken again with 1.3.4: they come
+    from the package of 1.3.3, and where the text says so from 1.3.2 or 1.3.1.
+    The chapters name the release for each of them. The sessions of the
     data-transfer chapters were not run again.
 
     Comments on this book may be addressed to the issue tracker of the
