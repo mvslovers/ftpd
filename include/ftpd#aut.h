@@ -30,6 +30,10 @@ int ftpd_auth_pass(ftpd_session_t *sess, const char *password)
 ** check of this server is not working, and every login is refused
 ** afterwards (server->open_security).
 **
+** racf_login() reports an accepted login either as an ACEE or, since libc370
+** 2.28.0, as NULL with RC 8 when the ACEE is not the one of the user asked
+** for.  ftpd_probe_accepted() (ftpd#prb.h) reads both as accepted.
+**
 ** Does nothing when the server is not APF authorized (racf_login() would
 ** ABEND S047; every PASS is refused anyway).  Called once, from
 ** initialize(), before the first client is served.

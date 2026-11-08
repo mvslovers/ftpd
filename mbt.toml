@@ -80,6 +80,12 @@ sources = ["test/tstuer.c", "src/ftpd#urc.c"]
 [test.TSTANM]
 sources = ["test/tstanm.c", "src/ftpd#anm.c"]
 
+# ftpd_probe_accepted() -- did the security system accept the check login of
+# the start check (#443).  ftpd#prb.c is free of ftpd.h and of MVS services,
+# so this is DUAL like TSTADR.
+[test.TSTPRB]
+sources = ["test/tstprb.c", "src/ftpd#prb.c"]
+
 # ftpd_list_nomem() -- a list builder's NULL with errno ENOMEM is a storage
 # shortage, not an empty result (#118).  ftpd#lse.c is free of project and MVS
 # headers, so this is DUAL like TSTADR.

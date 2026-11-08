@@ -8,6 +8,7 @@
 #include "ftpd#ses.h"
 #include "ftpd#aut.h"
 #include "ftpd#anm.h"
+#include "ftpd#prb.h"
 #include <mvs/lock.h>               /* lock()/unlock() — identity window */
 
 #define FTPD_MAX_AUTH_ATTEMPTS  3
@@ -279,13 +280,17 @@ ftpd_auth_probe(ftpd_server_t *server)
 
     acee = racf_login(FTPD_PROBE_USER, FTPD_PROBE_PASS, NULL, &racf_rc);
 
-    if (!acee && racf_rc != 0) {
+    /* What counts as accepted, including the NULL with rc 8 that
+    ** racf_login() answers since libc370 2.28.0 for an ACEE that is not
+    ** the requested user's, is decided in ftpd#prb.c (see ftpd#prb.h). */
+    if (!ftpd_probe_accepted(acee != NULL, racf_rc)) {
         ftpd_log(LOG_DEBUG, "%s: the security system refused the check "
                  "login, rc=%d", __func__, racf_rc);
         return 0;
     }
 
-    ftpd_log(LOG_ERROR, "%s: the check login was accepted, rc=%d", __func__, racf_rc);
+    ftpd_log(LOG_ERROR, "%s: the check login was accepted, rc=%d%s", __func__,
+             racf_rc, acee ? "" : " (no ACEE returned)");
     server->open_security = 1;
 
     if (acee && acee != server->stc_acee) {
