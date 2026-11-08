@@ -94,7 +94,8 @@ after the identity of the started task is read.
 - *What:* FTPD asks RAKF to log in the user ID #cmd("?FTPDPRB") with a password
   that cannot be valid. The character #cmd("?") is not a character of a RACF
   user ID. RAKF refuses the login. That is the expected answer, and FTPD
-  writes nothing about it to the console.
+  writes nothing about it to the console. Do not define the user ID
+  #cmd("?FTPDPRB") in the security system; FTPD uses it only for this check.
 - *If RAKF accepts the login:* FTPD writes the two lines of #cmd("FTPD004E")
   (@apx-messages) to the console and one line with the level #cmd("[ERROR]") to
   the log. FTPD goes on with the start, opens the listener and accepts

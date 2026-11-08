@@ -433,6 +433,28 @@ cut lines. The rule applies to #cmd("put") and #cmd("append") of the MVS view
 in text. In binary the bytes are cut into records by length, so no line can be
 too long.
 
+=== Uploading into a Spanned Data Set <ug-data-spanned>
+
+#idx("spanned data set")#idx("VBS")
+A variable data set is spanned when its record format is #cmd("VBS"), and also
+when it is #cmd("VB") and its block size is smaller than the record length plus
+4: opening the data set then makes it spanned. A record of a spanned data set
+may be longer than a block, and the system writes it in several pieces. Such a
+data set takes records of the record length minus 8 data bytes at most
+(@ug-data-long), in text as well as in binary (@ug-data-stor).
+
+#note[*Changed in FTPD 1.3.4.* FTPD 1.3.4 is linked with LIBC/370 2.29.2, and
+with it a #cmd("put") in text mode stores every record of a spanned data set.
+Up to FTPD 1.3.3 the C library lost the end of a record that crossed a block
+boundary, and FTPD did not notice: the reply was
+#cmd("250 Transfer completed successfully."), and the data set lacked the end
+of every record that had crossed a block boundary. A data set that a text
+upload of FTPD 1.3.3 or an earlier release wrote into a spanned data set cannot
+be checked from the reply. Upload the file again with FTPD 1.3.4.
+A binary upload into a spanned data set failed with
+#cmd("451 Requested action aborted: local error in processing") in those
+releases and stored nothing.]
+
 === When the Space Is Not Enough <ug-data-space>
 
 #idx("space", "out of")#idx("552")
