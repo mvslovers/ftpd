@@ -3,17 +3,18 @@
 Changes that matter to someone who installs or runs FTPD. The notes for earlier
 releases are on their [release pages](https://github.com/mvslovers/ftpd/releases).
 
-## 1.3.4 — unreleased
+## 1.3.4 — 2026-11-08
 
 A patch release for 1.3.3, cut from `main`. SMP FMID `TFTP134`, which deletes
 `TFTP133`, `TFTP132`, `TFTP131` and `TFTP130`.
 
-**Read this first: a text upload into a spanned data set could lose data up to
-1.3.3.** In FTPD 1.3.3 and earlier, a text `put` into a data set with record
-format `VBS`, or `VB` with a block size smaller than the record length plus 4
-(which the system opens as spanned), lost the end of every record that crossed
-a block boundary, and FTPD still answered `250 Transfer completed
-successfully.`. The reply cannot tell you whether a data set is complete.
+**Read this first: a text upload into a spanned data set could lose data in
+1.3.0 to 1.3.3.** In FTPD 1.3.0 to 1.3.3 (measured with 1.3.3; earlier releases
+were not measured), a text `put` into a data set with record format `VBS`, or
+`VB` with a block size smaller than the record length plus 4 (which the C
+library opens as spanned), lost the end of every record that crossed a block
+boundary, and FTPD still answered `250 Transfer completed successfully.`. The
+reply cannot tell you whether a data set is complete.
 Upload the file again with 1.3.4. If the file is gone, the records after the
 damaged segment can still be read when the data set is read as `RECFM=U`; the
 lost end of each record is gone. A binary upload into such a data set failed
