@@ -3,10 +3,11 @@
 
 A record of a spanned data set (RECFM=VBS, or RECFM=VB whose BLKSIZE is below
 LRECL+4, which libc370's OPEN exit turns into VBS) that does not fit the rest
-of the block is written as several segments.  libc370 2.25.1 (measured; the
-cause is libc370#757) flags the first segment as a last one and loses the
-tail, and fwrite()/fflush() still report success, so FTPD's check of ferror()
-in stor_put() sees nothing.
+of the block is written as several segments.  libc370 up to 2.28.0 (measured
+with 2.25.1; the cause is libc370#757, fixed in 2.29.1) flags the first
+segment as a last one and loses the tail, and fwrite()/fflush() still report
+success, so FTPD's check of ferror() in stor_put() sees nothing.  With 2.29.1
+and later every case below is complete.
 
 For each target and each transfer mode this stores data whose records
 cross block boundaries, among them records that span more than two blocks

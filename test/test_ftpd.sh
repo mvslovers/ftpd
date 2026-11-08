@@ -42,12 +42,23 @@
 #       or misplaced member with 501 and leave the data set alone (#335, #339)
 #   22. The end of the JOB statement of a submitted stream: USER and PASSWORD
 #       go behind the real end of it or the stream is refused with 550 (#383)
+#   23. STOR into spanned data sets (RECFM=VBS, or VB with BLKSIZE <
+#       LRECL+4): every record is on disk, text and binary, records over
+#       one block boundary and over more than two blocks; the limit of a
+#       record (#430, #431, #432; runs test_spanned_stor.py, needs python3
+#       and the mvsMF variables, see below)
 #
 # Test 13 reads the operator command F FTPD,STATS, which an FTP client cannot
 # reach.  Set FTPD_CONSOLE to a command that sends one operator command and
 # prints the system's answer, for example
 #     FTPD_CONSOLE='mbt target console env --' ./test_ftpd.sh ...
 # Without it Test 13 is reported as SKIPPED, not as passed.
+#
+# Test 23 runs test/test_spanned_stor.py, which allocates and reads back data
+# sets through mvsMF.  Set MBT_TARGET_MVSMF_URL, MBT_TARGET_MVSMF_USER,
+# MBT_TARGET_MVSMF_PASSWORD (and MBT_TARGET_VOLUME for the volume of the
+# new data sets), for example with `eval "$(mvsce-target status NAME)"`.
+# Without the URL, or without python3, Test 23 is reported as SKIPPED.
 #
 # Test 18 changes SYS1.SECURE.CNTL(PROFILES) and (USERS) of the system under
 # test and puts them back.  Run it against a throwaway container only.
@@ -4124,6 +4135,51 @@ if [ -n "$JE_ID_z" ] && grep -q " $JE_ID_z .*OUTPUT" "$TMPDIR/ftp_je_ls.log"; th
     fi
 else
     info "job $JE_ID_n (n) left the output queue: the default message class of this system prints and purges the job (control job $JE_ID_z is gone as well), so its owner is read from job $JE_ID_m (m) only"
+fi
+
+# ============================================================
+# Test 23: STOR into spanned data sets (#430)
+#
+# A record of a RECFM=VBS data set, or of a RECFM=VB one whose BLKSIZE is
+# below LRECL+4 (OPEN makes it VBS), that does not fit the rest of a block is
+# written as several segments.  libc370 before 2.29.1 lost the tail of every
+# such record and still reported success, so STOR answered 250 for an
+# incomplete data set.  test_spanned_stor.py stores records over one and over
+# more than two block boundaries, copies the blocks to a RECFM=U data set and
+# rebuilds the records from BDW, RDW and segment flags; each of its rows is
+# one case here.  It also checks the record limit of VBS and VB (#431, #432).
+# ============================================================
+section "Test 23: STOR into spanned data sets (#430)"
+
+SP_PY="$(dirname "$0")/test_spanned_stor.py"
+if ! command -v python3 >/dev/null 2>&1; then
+    info "SKIPPED: python3 is not installed, test_spanned_stor.py cannot run"
+elif [ -z "$MBT_TARGET_MVSMF_URL" ]; then
+    info "SKIPPED: MBT_TARGET_MVSMF_URL is not set, the data sets cannot be allocated and read back"
+elif [ ! -f "$SP_PY" ]; then
+    fail "test_spanned_stor.py is missing next to $0"
+else
+    SP_OUT="$TMPDIR/spanned.out"
+    python3 "$SP_PY" --host "$HOST" --port "$PORT" --user "$USER" \
+        --pass "$PASS" --volume "${MBT_TARGET_VOLUME:-}" > "$SP_OUT" 2>&1
+    SP_RC=$?
+    SP_ROWS=0
+    SP_BAD=0
+    while IFS= read -r row; do
+        SP_ROWS=$((SP_ROWS + 1))
+        name=$(printf '%s' "$row" | sed 's/^{"target": "\([^"]*\)", "mode": "\([^"]*\)".*/\1, \2/')
+        if printf '%s' "$row" | grep -q '"complete": true'; then
+            pass "spanned STOR: $name"
+        else
+            fail "spanned STOR: $name"
+            SP_BAD=$((SP_BAD + 1))
+            printf '%s\n' "$row" | sed 's/^/    /'
+        fi
+    done < <(grep '^{"target"' "$SP_OUT")
+    if [ "$SP_ROWS" -eq 0 ] || { [ "$SP_RC" -ne 0 ] && [ "$SP_BAD" -eq 0 ]; }; then
+        fail "test_spanned_stor.py ended with exit status $SP_RC and $SP_ROWS case(s)"
+        tail -10 "$SP_OUT" | sed 's/^/    /'
+    fi
 fi
 
 # ============================================================
