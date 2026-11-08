@@ -345,7 +345,7 @@ The rules for names are in the _FTPD User's Guide_, "Working with Data Sets".
       (_FTPD User's Guide_, "Uploading a Data Set"). In #cmd("TYPE I") and
       #cmd("TYPE E") the length of a record is in @ref-site-truncate. Into a
       spanned data set (RECFM=VBS, or VB opened as spanned) every record is
-      stored since FTPD 1.3.4 (LIBC/370 2.29.1); before, a text upload lost
+      stored since FTPD 1.3.4 (LIBC/370 2.29.2); before, a text upload lost
       the end of a record that crossed a block boundary and was still answered
       with the #cmd("250") (_FTPD User's Guide_, "Uploading into a Spanned
       Data Set").

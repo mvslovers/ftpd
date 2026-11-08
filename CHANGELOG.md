@@ -22,7 +22,7 @@ with `451` and stored nothing.
 ### Fixed
 
 - **A text upload into a spanned data set stores every record.** FTPD 1.3.4 is
-  linked with LIBC/370 2.29.1 (1.3.0 to 1.3.3: 2.25.1), which writes the
+  linked with LIBC/370 2.29.2 (1.3.0 to 1.3.3: 2.25.1), which writes the
   records of a spanned data set completely. The longest line is the record
   length minus 8 bytes. A longer line is refused with `451`, or cut with
   `SITE TRUNCATE`. Before, the limit was the record length minus 4: a line of

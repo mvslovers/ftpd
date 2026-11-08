@@ -97,7 +97,7 @@ FTPD runs on MVS 3.8j with these parts:
 - *UFSD*, if the UFS view is used. UFSD is a soft requirement: without it
   every UFS request is answered with #cmd("550 UFS service not available").
 
-FTPD 1.3.4 is built against LIBC/370 2.29.1, FTPD 1.3.0 to 1.3.3 against
+FTPD 1.3.4 is built against LIBC/370 2.29.2, FTPD 1.3.0 to 1.3.3 against
 2.25.1. The load module is link-edited authorized (AC(1)). FTPD 1.3.1 to 1.3.4
 carry the client library of UFSD 1.5.2 (@ug-install-ufsd). Which libraries to install, how to
 authorize them and how to upgrade from an earlier release is the subject of
@@ -118,7 +118,7 @@ adds no function. Each is described where the book explains the subject:
       plus 4: opening the data set then makes it spanned. Before, a record that
       crossed a block boundary lost its tail, and FTPD still answered
       #cmd("250 Transfer completed successfully."). The cause was in the C
-      library, so FTPD 1.3.4 is linked with LIBC/370 2.29.1, which writes the
+      library, so FTPD 1.3.4 is linked with LIBC/370 2.29.2, which writes the
       records of a spanned data set completely. A spanned data set that FTPD
       1.3.3 or an earlier release received in text mode may be incomplete.],
       [@ug-data-spanned, @ug-intro-needs],
@@ -143,7 +143,7 @@ adds no function. Each is described where the book explains the subject:
       procedure #cmd("PROCSTEP") is empty. Before, #cmd("STEPNAME") showed the
       step of the procedure, #cmd("PROCSTEP") showed the name of the
       procedure, and #cmd("PROCSTEP") stayed filled for the steps after it.
-      The values come from LIBC/370 2.29.1.],
+      The values come from LIBC/370 2.29.2.],
       [@ug-jes-output],
     [The SMP FMID of the release is #cmd("TFTP134"). It deletes #cmd("TFTP133"),
       #cmd("TFTP132"), #cmd("TFTP131") and #cmd("TFTP130").],

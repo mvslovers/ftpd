@@ -443,7 +443,7 @@ may be longer than a block, and the system writes it in several pieces. Such a
 data set takes records of the record length minus 8 data bytes at most
 (@ug-data-long), in text as well as in binary (@ug-data-stor).
 
-#note[*Changed in FTPD 1.3.4.* FTPD 1.3.4 is linked with LIBC/370 2.29.1, and
+#note[*Changed in FTPD 1.3.4.* FTPD 1.3.4 is linked with LIBC/370 2.29.2, and
 with it a #cmd("put") in text mode stores every record of a spanned data set.
 Up to FTPD 1.3.3 the C library lost the end of a record that crossed a block
 boundary, and FTPD did not notice: the reply was
