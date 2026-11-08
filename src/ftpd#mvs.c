@@ -2479,7 +2479,7 @@ mvs_store(ftpd_session_t *sess, const char *arg, int append)
 
     /* fclose() unallocates what it allocated; mark the DD this STOR made
     ** the same way, so every close below -- and recovery's -- releases it.
-    ** Relies on libc370 2.25.1 internals (FILE flags, __fpfree): re-check
+    ** Relies on libc370 2.29.2 internals (FILE flags, __fpfree): re-check
     ** on a libc370 bump. */
     if (held_dd)
         fp->flags |= _FILE_FLAG_DYNAMIC;

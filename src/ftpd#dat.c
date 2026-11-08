@@ -384,7 +384,7 @@ ftpd_data_recv(ftpd_session_t *sess, void *buf, int len)
     ** therefore doing nothing the library was not already doing, while
     ** stating a fact about the emulator in a socket wrapper that has no
     ** business knowing it, and hiding any bulk path recv() might ever gain
-    ** (#124).  The toolchain pin is at 2.25.1, so the runtime this links
+    ** (#124).  The toolchain pin is at 2.29.2, so the runtime this links
     ** against has the library-side cap.
     **
     ** The mirror, send(), is capped the same way since libc370 2.24.0
